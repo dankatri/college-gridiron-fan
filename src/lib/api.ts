@@ -107,6 +107,7 @@ const getTeamConference = async (teamName: string): Promise<string> => {
 export const fetchTeamRoster = async (teamName: string, year: number = 2025): Promise<ApiPlayer[]> => {
   try {
     const players = await apiRequest(`/roster?team=${encodeURIComponent(teamName)}&year=${year}`);
+    console.log(`Fetched roster for ${teamName}:`, players?.slice(0, 3)); // Debug first 3 players
     return players || [];
   } catch (error) {
     console.error(`Failed to fetch roster for ${teamName}:`, error);
@@ -182,23 +183,26 @@ const calculateProjectedPoints = (stats: any, position: string): number => {
 const convertApiPlayerToPlayer = async (apiPlayer: ApiPlayer, stats: any): Promise<Player> => {
   const conference = await getTeamConference(apiPlayer.team);
   
-  // Handle different name field possibilities
+  // Handle different name field possibilities with better validation
   let fullName = '';
   
-  if (apiPlayer.name) {
-    // Some endpoints return full name
+  // Try different name field combinations
+  if (apiPlayer.name && typeof apiPlayer.name === 'string' && apiPlayer.name.trim()) {
     fullName = apiPlayer.name.trim();
   } else if (apiPlayer.first_name || apiPlayer.last_name) {
-    // Other endpoints return separate first/last names
-    const firstName = apiPlayer.first_name || '';
-    const lastName = apiPlayer.last_name || '';
+    const firstName = (apiPlayer.first_name || '').toString().trim();
+    const lastName = (apiPlayer.last_name || '').toString().trim();
     fullName = `${firstName} ${lastName}`.trim();
   }
   
-  // Fallback if no name is available
-  if (!fullName) {
+  // Clean up any "undefined" strings that might have slipped through
+  fullName = fullName.replace(/undefined/g, '').replace(/\s+/g, ' ').trim();
+  
+  // Fallback if no valid name is available
+  if (!fullName || fullName === '' || fullName === 'undefined undefined') {
+    // Log the full player object to help debug
+    console.warn('No valid name available for player. Raw data:', JSON.stringify(apiPlayer, null, 2));
     fullName = `Player ${apiPlayer.id}`;
-    console.warn('No name available for player:', apiPlayer);
   }
   
   return {
@@ -227,30 +231,29 @@ const convertApiPlayerToPlayer = async (apiPlayer: ApiPlayer, stats: any): Promi
 // Main function to fetch all current players
 export const fetchCurrentPlayers = async (): Promise<Player[]> => {
   try {
+    // First, test with a single team to see the data structure
+    console.log('Testing API with single team first...');
+    try {
+      const testRoster = await fetchTeamRoster('Alabama', 2025);
+      console.log('Test roster sample data:', JSON.stringify(testRoster.slice(0, 2), null, 2));
+      
+      if (testRoster.length > 0) {
+        const samplePlayer = testRoster[0];
+        console.log('Sample player fields:', Object.keys(samplePlayer));
+        console.log('Sample player name fields:', {
+          name: samplePlayer.name,
+          first_name: samplePlayer.first_name,
+          last_name: samplePlayer.last_name
+        });
+      }
+    } catch (testError) {
+      console.warn('Test API call failed:', testError);
+    }
+
     // Get current year (2025) rosters from major programs
     const majorPrograms = [
-      // SEC
-      'Alabama', 'Auburn', 'Florida', 'Georgia', 'LSU', 'Tennessee', 'Texas A&M', 
-      'South Carolina', 'Kentucky', 'Arkansas', 'Missouri', 'Mississippi State', 
-      'Ole Miss', 'Vanderbilt', 'Texas', 'Oklahoma',
-      
-      // Big Ten
-      'Michigan', 'Ohio State', 'Penn State', 'Michigan State', 'Iowa', 'Wisconsin', 
-      'Illinois', 'Indiana', 'Maryland', 'Minnesota', 'Nebraska', 'Northwestern', 
-      'Purdue', 'Rutgers', 'Oregon', 'Washington', 'UCLA', 'USC',
-      
-      // Big 12
-      'Baylor', 'Cincinnati', 'Houston', 'Iowa State', 'Kansas', 'Kansas State', 
-      'Oklahoma State', 'TCU', 'Texas Tech', 'UCF', 'West Virginia', 'BYU',
-      'Arizona', 'Arizona State', 'Colorado', 'Utah',
-      
-      // ACC
-      'Clemson', 'Florida State', 'Miami', 'North Carolina', 'NC State', 'Virginia', 
-      'Virginia Tech', 'Wake Forest', 'Boston College', 'Syracuse', 'Pittsburgh', 
-      'Louisville', 'Georgia Tech', 'Duke', 'SMU', 'California', 'Stanford',
-      
-      // Other major programs
-      'Notre Dame', 'Navy', 'Army'
+      // Start with just a few teams for testing
+      'Alabama', 'Georgia', 'Michigan', 'Ohio State', 'USC', 'Oregon'
     ];
 
     // Fetch 2024 stats to project 2025 performance (most recent complete season)
@@ -321,9 +324,16 @@ export const fetchCurrentPlayers = async (): Promise<Player[]> => {
           try {
             const player = await convertApiPlayerToPlayer(apiPlayer, stats);
             
-            // Validate that player has a proper name
-            if (!player.name || player.name.includes('undefined') || player.name.trim() === '') {
-              console.warn('Skipping player with invalid name:', player);
+            // Validate that player has a proper name (not just "Player XXXX" fallback)
+            if (!player.name || 
+                player.name.includes('undefined') || 
+                player.name.trim() === '' ||
+                player.name.startsWith('Player ')) {
+              console.warn('Skipping player with invalid/fallback name:', {
+                id: apiPlayer.id,
+                name: player.name,
+                rawApiPlayer: apiPlayer
+              });
               continue;
             }
             
@@ -332,7 +342,7 @@ export const fetchCurrentPlayers = async (): Promise<Player[]> => {
               allPlayers.push(player);
             }
           } catch (error) {
-            console.warn(`Failed to convert player ${apiPlayer.first_name} ${apiPlayer.last_name}:`, error);
+            console.warn(`Failed to convert player ${apiPlayer.first_name || 'Unknown'} ${apiPlayer.last_name || 'Player'}:`, error);
           }
         }
         
@@ -344,14 +354,25 @@ export const fetchCurrentPlayers = async (): Promise<Player[]> => {
       }
     }
 
-    // Validate that we got valid players
-    if (allPlayers.length === 0 || allPlayers.every(p => !p.name || p.name.includes('undefined'))) {
-      console.warn('API returned no valid players or all players have invalid names, falling back to sample data');
-      throw new Error('API returned invalid player data');
+    // Validate that we got valid players with proper names
+    const playersWithValidNames = allPlayers.filter(p => 
+      p.name && 
+      !p.name.includes('undefined') && 
+      p.name.trim() !== '' && 
+      !p.name.startsWith('Player ')
+    );
+    
+    if (playersWithValidNames.length === 0) {
+      console.warn('API returned no players with valid names, falling back to sample data');
+      throw new Error('API returned no players with valid names');
+    }
+    
+    if (playersWithValidNames.length < allPlayers.length) {
+      console.warn(`Filtered out ${allPlayers.length - playersWithValidNames.length} players with invalid names`);
     }
 
     // Sort by projected points and return top performers by position
-    const sortedPlayers = allPlayers.sort((a, b) => b.projectedPoints - a.projectedPoints);
+    const sortedPlayers = playersWithValidNames.sort((a, b) => b.projectedPoints - a.projectedPoints);
     
     // Get top players by position to ensure good distribution
     const qbs = sortedPlayers.filter(p => p.position === 'QB').slice(0, 50);

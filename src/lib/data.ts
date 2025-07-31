@@ -27,20 +27,37 @@ export const getPlayers = async (): Promise<Player[]> => {
     }
   }
 
-  // Test sample data first
-  console.log('Sample data test - first player:', SAMPLE_PLAYERS[0]);
-
+  console.log('Attempting to fetch players from API...');
+  
   try {
-    console.log('Fetching current players from API...');
+    // First check if we have an API key
+    const storedApiKey = await spark.kv.get<string>('cfb-api-key');
+    if (!storedApiKey) {
+      console.log('No API key found, using sample data');
+      throw new Error('No API key configured');
+    }
+    
+    console.log('API key found, attempting to fetch current players...');
     playersCache = await fetchCurrentPlayers();
     cacheTimestamp = Date.now();
     console.log('Successfully fetched players from API:', playersCache.length);
     
-    // Validate API data
-    const hasValidNames = playersCache.every(p => p.name && !p.name.includes('undefined') && p.name.trim() !== '');
-    if (!hasValidNames) {
-      console.warn('API data has invalid names, using sample data instead');
-      throw new Error('API returned invalid player names');
+    // Validate API data has proper names
+    const validPlayers = playersCache.filter(p => 
+      p.name && 
+      !p.name.includes('undefined') && 
+      p.name.trim() !== '' &&
+      !p.name.startsWith('Player ')
+    );
+    
+    if (validPlayers.length === 0) {
+      console.warn('API data has no players with valid names, using sample data instead');
+      throw new Error('API returned no players with valid names');
+    }
+    
+    if (validPlayers.length < playersCache.length) {
+      console.warn(`Filtered out ${playersCache.length - validPlayers.length} players with invalid names`);
+      playersCache = validPlayers;
     }
     
     return playersCache;
@@ -51,7 +68,9 @@ export const getPlayers = async (): Promise<Player[]> => {
     
     // Clear bad cache and return sample data
     clearCache();
-    return SAMPLE_PLAYERS;
+    playersCache = [...SAMPLE_PLAYERS]; // Create a copy to avoid mutations
+    cacheTimestamp = Date.now();
+    return playersCache;
   }
 };
 

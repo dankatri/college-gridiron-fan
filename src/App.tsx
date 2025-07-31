@@ -80,11 +80,27 @@ function App() {
             team: p.team 
           })));
           
-          // Check if any players have undefined names
-          const undefinedNames = currentPlayers.filter(p => !p.name || p.name.includes('undefined'));
-          if (undefinedNames.length > 0) {
-            console.error('Players with undefined names:', undefinedNames.slice(0, 5));
+          // Check for various name issues
+          const badNames = currentPlayers.filter(p => 
+            !p.name || 
+            p.name.includes('undefined') || 
+            p.name.trim() === '' ||
+            p.name.startsWith('Player ')
+          );
+          if (badNames.length > 0) {
+            console.error('Players with bad names:', badNames.slice(0, 5).map(p => ({
+              id: p.id,
+              name: p.name,
+              team: p.team,
+              position: p.position
+            })));
           }
+          
+          // Count by position
+          const qbs = currentPlayers.filter(p => p.position === 'QB').length;
+          const rbs = currentPlayers.filter(p => p.position === 'RB').length;
+          const wrs = currentPlayers.filter(p => p.position === 'WR').length;
+          console.log('Player counts by position:', { qbs, rbs, wrs });
         }
       } catch (error) {
         console.error('Failed to load players:', error);
@@ -223,6 +239,25 @@ function App() {
     }
   };
 
+  const handleForceSampleData = async () => {
+    setIsLoadingPlayers(true);
+    try {
+      // Force clear everything and load sample data
+      clearCache();
+      await spark.kv.delete('cfb-api-key'); // Remove API key to force sample data
+      const currentPlayers = await getPlayers();
+      setPlayers(currentPlayers);
+      
+      console.log('Forced sample data load:', currentPlayers.length);
+      toast.success('Loaded sample data for testing!');
+    } catch (error) {
+      console.error('Failed to load sample data:', error);
+      toast.error('Failed to load sample data');
+    } finally {
+      setIsLoadingPlayers(false);
+    }
+  };
+
   const handlePointsUpdate = (week: number, actualPoints: number) => {
     setWeeklyLineups(prev => prev.map(lineup => {
       if (lineup.week === week) {
@@ -279,16 +314,27 @@ function App() {
               <div className="lg:col-span-2 space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-semibold">Available Players</h3>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleRefreshPlayers}
-                    disabled={isLoadingPlayers}
-                    className="flex items-center gap-2"
-                  >
-                    <RefreshCw size={14} className={isLoadingPlayers ? 'animate-spin' : ''} />
-                    Refresh
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRefreshPlayers}
+                      disabled={isLoadingPlayers}
+                      className="flex items-center gap-2"
+                    >
+                      <RefreshCw size={14} className={isLoadingPlayers ? 'animate-spin' : ''} />
+                      Refresh
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleForceSampleData}
+                      disabled={isLoadingPlayers}
+                      className="flex items-center gap-2"
+                    >
+                      Sample Data
+                    </Button>
+                  </div>
                 </div>
                 
                 {isLoadingPlayers ? (
