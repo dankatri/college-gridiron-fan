@@ -17,19 +17,37 @@ import { LineupSlotCard } from '@/components/LineupSlotCard';
 import { LineupSummary } from '@/components/LineupSummary';
 import { WeekNavigation } from '@/components/WeekNavigation';
 import { LiveScoringDashboard } from '@/components/LiveScoringDashboard';
+import { LeagueDashboard } from '@/components/LeagueDashboard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { Trophy, Users, Target, Activity } from '@phosphor-icons/react';
+import { Trophy, Users, Target, Activity, Medal } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
 function App() {
   const [currentWeek, setCurrentWeek] = useState(1);
   const [currentLineup, setCurrentLineup] = useState<LineupSlot[]>(createEmptyLineup());
   const [selectedPosition, setSelectedPosition] = useState<'QB' | 'RB' | 'WR'>('QB');
-  const [activeTab, setActiveTab] = useState<'lineup' | 'scoring'>('lineup');
+  const [activeTab, setActiveTab] = useState<'lineup' | 'scoring' | 'leagues'>('lineup');
   
+  const [currentUserId, setCurrentUserId] = useState<string>('');
+
+  // Load current user
+  useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const user = await spark.user();
+        setCurrentUserId(user.id);
+      } catch (error) {
+        console.error('Failed to load user:', error);
+        // Set a default user ID for demo purposes
+        setCurrentUserId('demo_user_' + Date.now());
+      }
+    };
+    loadUser();
+  }, []);
+
   // Persistent data
   const [weeklyLineups, setWeeklyLineups] = useKV<WeeklyLineup[]>('weekly-lineups', []);
   const [playerUsage, setPlayerUsage] = useKV<PlayerUsage[]>('player-usage', []);
@@ -170,7 +188,7 @@ function App() {
 
         {/* Main Navigation Tabs */}
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)}>
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="lineup" className="flex items-center gap-2">
               <Users size={16} />
               Set Lineup
@@ -178,6 +196,10 @@ function App() {
             <TabsTrigger value="scoring" className="flex items-center gap-2">
               <Activity size={16} />
               Live Scoring
+            </TabsTrigger>
+            <TabsTrigger value="leagues" className="flex items-center gap-2">
+              <Medal size={16} />
+              Leagues
             </TabsTrigger>
           </TabsList>
 
@@ -290,6 +312,15 @@ function App() {
               week={currentWeek}
               weeklyLineups={weeklyLineups}
               onPointsUpdate={handlePointsUpdate}
+            />
+          </TabsContent>
+
+          {/* Leagues Tab */}
+          <TabsContent value="leagues" className="mt-6">
+            <LeagueDashboard
+              currentWeek={currentWeek}
+              weeklyLineups={weeklyLineups}
+              currentUserId={currentUserId}
             />
           </TabsContent>
         </Tabs>

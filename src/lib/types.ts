@@ -105,3 +105,77 @@ export const LINEUP_REQUIREMENTS = {
 
 export const MAX_PLAYER_USES = 3;
 export const TOTAL_WEEKS = 15;
+
+// League and Competition Types
+export interface League {
+  id: string;
+  name: string;
+  description?: string;
+  ownerId: string;
+  ownerName: string;
+  members: LeagueMember[];
+  settings: LeagueSettings;
+  createdAt: Date;
+  season: number;
+}
+
+export interface LeagueMember {
+  userId: string;
+  username: string;
+  avatarUrl?: string;
+  joinedAt: Date;
+  isActive: boolean;
+  totalPoints: number;
+  weeklyPoints: { [week: number]: number };
+  rank: number;
+}
+
+export interface LeagueSettings {
+  maxMembers: number;
+  isPublic: boolean;
+  allowLateJoins: boolean;
+  scoringMultiplier: number;
+}
+
+export interface LeagueInvite {
+  id: string;
+  leagueId: string;
+  leagueName: string;
+  invitedBy: string;
+  invitedByName: string;
+  status: 'pending' | 'accepted' | 'declined';
+  createdAt: Date;
+  expiresAt: Date;
+}
+
+export interface LeaderboardEntry {
+  rank: number;
+  userId: string;
+  username: string;
+  avatarUrl?: string;
+  totalPoints: number;
+  weeklyAverage: number;
+  bestWeek: number;
+  worstWeek: number;
+  weeksPlayed: number;
+  pointsThisWeek?: number;
+  trend: 'up' | 'down' | 'same';
+  trendChange: number;
+}
+
+export interface WeeklyMatchup {
+  week: number;
+  user1: {
+    userId: string;
+    username: string;
+    lineup: LineupSlot[];
+    points: number;
+  };
+  user2: {
+    userId: string;
+    username: string;
+    lineup: LineupSlot[];
+    points: number;
+  };
+  winner?: string;
+}
