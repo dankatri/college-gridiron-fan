@@ -459,14 +459,11 @@ export const getPlayers = async (options?: {
       console.log(`Successfully cached ${validPlayers.length} players for ${cacheKey}`);
       return validPlayers;
     } else {
-      console.warn(`ESPN returned insufficient players (${validPlayers.length} < ${minExpectedPlayers}), combining with sample data`);
-      
-      // Combine ESPN data with sample data to ensure comprehensive coverage
       const combinedPlayers = [...validPlayers];
       
       // Add sample players that match the filter and aren't already included
       const existingPlayerNames = new Set(validPlayers.map(p => p.name.toLowerCase()));
-      const filteredSamplePlayers = SAMPLE_PLAYERS.filter(samplePlayer => {
+      teredSamplePlayers = SAMPLE_PLAYERS.filter(samplePlayer => {
         const matchesFilter = 
           (!options?.specificTeam || options.specificTeam === 'All Teams' || samplePlayer.team === options.specificTeam) &&
           (!options?.specificConference || options.specificConference === 'All Conferences' || samplePlayer.conference === options.specificConference);
@@ -483,20 +480,20 @@ export const getPlayers = async (options?: {
       playersCache.set(cacheKey, {
         players: combinedPlayers,
         timestamp: Date.now()
+      playersCache.set(cacheKey, {
+      
+        timestamp: Date.now()
       });
       
-      return combinedPlayers;
+    console.error('Error fetching players from ESPN:', error);
     }
   } catch (error) {
     console.error('Error fetching players from ESPN:', error);
     console.log('Falling back to sample data');
     
-    // Use sample data as fallback, filtered if needed
-    let samplePlayers = [...SAMPLE_PLAYERS];
-    
     if (options?.specificTeam && options.specificTeam !== 'All Teams') {
       samplePlayers = samplePlayers.filter(p => p.team === options.specificTeam);
-    }
+    
     
     if (options?.specificConference && options.specificConference !== 'All Conferences') {
       samplePlayers = samplePlayers.filter(p => p.conference === options.specificConference);
@@ -505,12 +502,15 @@ export const getPlayers = async (options?: {
     playersCache.set(cacheKey, {
       players: samplePlayers,
       timestamp: Date.now()
+    playersCache.set(cacheKey, {
+      players: samplePlayers,
+      timestamp: Date.now()
     });
     
     console.log(`Using ${samplePlayers.length} filtered sample players as fallback`);
     return samplePlayers;
-  }
-};
+// Default fallback conferences and teams that should always be available
+};nst DEFAULT_CONFERENCES = [
 
 // Default fallback conferences and teams that should always be available
 const DEFAULT_CONFERENCES = [
@@ -527,19 +527,16 @@ const DEFAULT_TEAMS_FROM_SAMPLE = [
   ...Array.from(new Set(SAMPLE_PLAYERS.map(p => p.team))).sort()
 ];
 
-// Get conferences (with caching and robust fallback)
+// Get conferences (with caching)
 export const getConferences = async (): Promise<string[]> => {
-  if (conferencesCache.length > 1 && isCacheValid(cacheTimestamp)) { // Must have more than just "All Conferences"
+  if (conferencesCache.length > 0 && isCacheValid(cacheTimestamp)) {
     return conferencesCache;
   }
 
-  console.log('Loading conferences from ESPN...');
-  
-  try {
     const espnConferences = await getESPNConferences();
     console.log(`ESPN conferences loaded: ${espnConferences.length}`, espnConferences);
     
-    if (espnConferences.length > 2) { // Should have "All Conferences" plus actual conferences
+      conferencesCache = espnConferences;
       conferencesCache = espnConferences;
       cacheTimestamp = Date.now();
       console.log('Successfully loaded ESPN conferences:', espnConferences);
