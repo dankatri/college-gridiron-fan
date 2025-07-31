@@ -48,7 +48,6 @@ export const getPlayers = async (options?: {
     const apiOptions: {
       specificTeam?: string;
       specificConference?: string;
-    } = {};
     
     if (options?.specificTeam && options.specificTeam !== 'All Teams') {
       apiOptions.specificTeam = options.specificTeam;
@@ -58,25 +57,26 @@ export const getPlayers = async (options?: {
       apiOptions.specificConference = options.specificConference;
     }
 
+// Fetch from ESPN API
     // Fetch from ESPN API
     const allPlayers = await fetchESPNCurrentPlayers(apiOptions);
-    
+      p.name && 
     console.log(`ESPN API returned ${allPlayers.length} players`);
-    
+      !p.name.startsWith('Player ')
     // Validate that we have good player data
     const validPlayers = allPlayers.filter(p => 
-      p.name && 
+    console.log(`Filtered to ${validPlayers.length} valid players`);
       p.name.trim() !== '' && 
       !p.name.includes('undefined') &&
-      !p.name.startsWith('Player ')
-    );
-    
-    console.log(`Filtered to ${validPlayers.length} valid players`);
-    
-    if (validPlayers.length > 0) {
       // Cache the successful result
       playersCache.set(cacheKey, {
         players: validPlayers,
+    console.log(`Filtered to ${validPlayers.length} valid players`);
+      return validPlayers;
+    if (validPlayers.length > 0) {
+      // Cache the successful result
+      playersCache.set(cacheKey, {
+        players: validPlayers,MPLE_PLAYERS]; // Create a copy to avoid mutations
         timestamp: Date.now()
       });
       
@@ -90,39 +90,29 @@ export const getPlayers = async (options?: {
       playersCache.set(cacheKey, {
         players: samplePlayers,
         timestamp: Date.now()
-      });
+      });S];
       
       return samplePlayers;
     }
   } catch (error) {
     console.error('Error fetching players from ESPN:', error);
     console.log('Falling back to sample data');
-    
+    return conferencesCache;
     // Use sample data as fallback
     const samplePlayers = [...SAMPLE_PLAYERS];
-    return samplePlayers;
-  }
-};
-
-// Get conferences (with caching)
-export const getConferences = async (): Promise<string[]> => {
-  if (conferencesCache.length > 0 && isCacheValid(cacheTimestamp)) {
-    return conferencesCache;
-  }
-
   try {
     conferencesCache = await getESPNConferences();
     cacheTimestamp = Date.now();
     return conferencesCache;
   } catch (error) {
     console.error('Failed to fetch conferences from ESPN, using default:', error);
-    return CONFERENCES;
+  if (conferencesCache.length > 0 && isCacheValid(cacheTimestamp)) {
   }
 };
 
 // Get teams (with caching)
 export const getTeams = async (): Promise<string[]> => {
-  if (teamsCache.length > 0 && isCacheValid(cacheTimestamp)) {
+    cacheTimestamp = Date.now();
     return teamsCache;
   }
 
@@ -132,13 +122,13 @@ export const getTeams = async (): Promise<string[]> => {
     return teamsCache;
   } catch (error) {
     console.error('Failed to fetch teams from ESPN, using default:', error);
-    return TEAMS;
+  if (teamsCache.length > 0 && isCacheValid(cacheTimestamp)) {
   }
 };
 
 // Clear cache (useful for refreshing data)
 export const clearCache = () => {
-  console.log('Clearing player data cache');
+    cacheTimestamp = Date.now();
   playersCache.clear();
   conferencesCache = [];
   teamsCache = [];
@@ -183,13 +173,23 @@ export const SAMPLE_PLAYERS: Player[] = [
     completions: 359,
     attempts: 520,
     interceptions: 3,
-    rushingYards: 234,
-    rushingTDs: 6,
+    projectedPoints: 21.8,
+    headshotUrl: 'https://a.espncdn.com/i/headshots/college-football/players/full/4431890.png',
   },
   {
     id: 'qb3',
     name: 'Michael Penix Jr.',
     position: 'QB',
+    completions: 359,
+    attempts: 520,
+    projectedPoints: 21.2,
+    rushingYards: 234,adshots/college-football/players/full/4432011.png',
+    rushingTDs: 6,om/i/teamlogos/ncaa/500/264.png',
+    teamColorPrimary: '#4B2E83',
+    teamColorSecondary: '#B7A57A',
+    passingYards: 4903,
+    name: 'Michael Penix Jr.',
+    completions: 420,
     team: 'Washington',
     conference: 'Pac-12',
     projectedPoints: 21.2,
@@ -202,34 +202,34 @@ export const SAMPLE_PLAYERS: Player[] = [
     completions: 420,
     attempts: 586,
     interceptions: 9,
-    rushingYards: -23,
-    rushingTDs: 1,
-  },
-  {
-    id: 'qb4',
+    rushingYards: -23,adshots/college-football/players/full/4429013.png',
+    rushingTDs: 1,com/i/teamlogos/ncaa/500/99.png',
+    teamColorPrimary: '#461D7C',
+    teamColorSecondary: '#FDD023',
+    passingYards: 3812,
     name: 'Jayden Daniels',
-    position: 'QB',
+    completions: 327,
     team: 'LSU',
-    conference: 'SEC',
+    interceptions: 6,
     projectedPoints: 20.8,
     headshotUrl: 'https://a.espncdn.com/i/headshots/college-football/players/full/4429013.png',
     teamLogoUrl: 'https://a.espncdn.com/i/teamlogos/ncaa/500/99.png',
     teamColorPrimary: '#461D7C',
     teamColorSecondary: '#FDD023',
-    passingYards: 3812,
-    passingTDs: 40,
-    completions: 327,
+    teamColorSecondary: '#C5C5C5',
+    receivingYards: 1211,
+    receptions: 67,
     attempts: 475,
-    interceptions: 4,
-    rushingYards: 1134,
-    rushingTDs: 10,
   },
   {
+    id: 'wr2',
+    name: 'Rome Odunze',
+    position: 'WR',
     id: 'qb5',
     name: 'Quinn Ewers',
-    position: 'QB',
-    team: 'Texas',
-    conference: 'Big 12',
+    projectedPoints: 17.8,
+    team: 'Texas',/headshots/college-football/players/full/4432011.png',
+  'ACC',
     projectedPoints: 20.1,
     headshotUrl: 'https://a.espncdn.com/i/headshots/college-football/players/full/4431455.png',
     teamLogoUrl: 'https://a.espncdn.com/i/teamlogos/ncaa/500/251.png',
@@ -239,122 +239,8 @@ export const SAMPLE_PLAYERS: Player[] = [
     passingTDs: 22,
     completions: 264,
     attempts: 398,
-    interceptions: 6,
-    rushingYards: 124,
-    rushingTDs: 4,
-  },
-
-  // Running Backs - Top Tier
-  {
-    id: 'rb1',
-    name: 'Bijan Robinson',
-    position: 'RB',
-    team: 'Texas',
-    conference: 'Big 12',
-    projectedPoints: 16.2,
-    headshotUrl: 'https://a.espncdn.com/i/headshots/college-football/players/full/4431296.png',
-    teamLogoUrl: 'https://a.espncdn.com/i/teamlogos/ncaa/500/251.png',
-    teamColorPrimary: '#BF5700',
-    teamColorSecondary: '#FFFFFF',
-    rushingYards: 1580,
-    rushingTDs: 18,
-    receivingYards: 314,
-    receptions: 25,
-    receivingTDs: 2,
-  },
-  {
-    id: 'rb2',
-    name: 'Blake Corum',
-    position: 'RB',
-    team: 'Michigan',
-    conference: 'Big Ten',
-    projectedPoints: 15.8,
-    headshotUrl: 'https://a.espncdn.com/i/headshots/college-football/players/full/4432165.png',
-    teamLogoUrl: 'https://a.espncdn.com/i/teamlogos/ncaa/500/130.png',
-    teamColorPrimary: '#00274C',
-    teamColorSecondary: '#FFCB05',
-    rushingYards: 1463,
-    rushingTDs: 18,
-    receivingYards: 89,
-    receptions: 8,
-    receivingTDs: 0,
-  },
-
-  // Wide Receivers - Top Tier
-  {
-    id: 'wr1',
-    name: 'Marvin Harrison Jr.',
-    position: 'WR',
-    team: 'Ohio State',
-    conference: 'Big Ten',
-    projectedPoints: 18.3,
-    headshotUrl: 'https://a.espncdn.com/i/headshots/college-football/players/full/4432577.png',
+    rushingYards: 124,    headshotUrl: 'https://a.espncdn.com/i/headshots/college-football/players/full/4431296.png',    teamLogoUrl: 'https://a.espncdn.com/i/teamlogos/ncaa/500/251.png',    teamColorPrimary: '#BF5700',    teamColorSecondary: '#FFFFFF',    id: 'rb2',    name: 'Blake Corum',    projectedPoints: 15.8,    headshotUrl: 'https://a.espncdn.com/i/headshots/college-football/players/full/4432165.png',    teamLogoUrl: 'https://a.espncdn.com/i/teamlogos/ncaa/500/130.png',    teamColorPrimary: '#00274C',    teamColorSecondary: '#FFCB05',    rushingYards: 1463,    receptions: 8,    headshotUrl: 'https://a.espncdn.com/i/headshots/college-football/players/full/4432577.png',
     teamLogoUrl: 'https://a.espncdn.com/i/teamlogos/ncaa/500/194.png',
     teamColorPrimary: '#BB0000',
     teamColorSecondary: '#C5C5C5',
-    receivingYards: 1211,
-    receptions: 67,
-    receivingTDs: 14,
-  },
-  {
-    id: 'wr2',
-    name: 'Rome Odunze',
-    position: 'WR',
-    team: 'Washington',
-    conference: 'Pac-12',
-    projectedPoints: 17.8,
-    headshotUrl: 'https://a.espncdn.com/i/headshots/college-football/players/full/4432011.png',
-    teamLogoUrl: 'https://a.espncdn.com/i/teamlogos/ncaa/500/264.png',
-    teamColorPrimary: '#4B2E83',
-    teamColorSecondary: '#B7A57A',
-    receivingYards: 1640,
-    receptions: 92,
-    receivingTDs: 13,
-  },
-];
-
-// Conference lists for filtering
-export const CONFERENCES = [
-  'All Conferences',
-  'SEC',
-  'Big Ten',
-  'Big 12',
-  'ACC',
-  'Pac-12',
-  'AAC',
-  'Independent',
-  'Mountain West',
-  'Sun Belt',
-  'MAC',
-  'C-USA',
-  'FCS'
-];
-
-// Team lists for filtering
-export const TEAMS = [
-  'All Teams',
-  // SEC
-  'Alabama', 'Auburn', 'Florida', 'Georgia', 'LSU', 'Tennessee', 'Texas A&M', 'South Carolina', 'Kentucky', 'Arkansas',
-  // Big Ten
-  'Michigan', 'Ohio State', 'Michigan State', 'Illinois', 'Maryland', 'Penn State', 'Iowa', 'Wisconsin', 'Purdue',
-  // Big 12
-  'Texas', 'Oklahoma', 'TCU', 'Kansas State', 'UCF', 'Oklahoma State', 'Iowa State', 'Baylor', 'West Virginia',
-  // ACC
-  'Florida State', 'Miami', 'UNC', 'Pittsburgh', 'Syracuse', 'Georgia Tech', 'Louisville', 'Boston College', 'Clemson',
-  // Pac-12
-  'USC', 'Oregon', 'Washington', 'UCLA', 'Colorado', 'Utah', 'Oregon State', 'Stanford', 'Arizona State', 'Washington State',
-  // AAC
-  'Cincinnati', 'Tulane', 'Memphis', 'Tulsa',
-  // Independent
-  'BYU', 'Notre Dame',
-  // Mountain West
-  'Fresno State', 'Colorado State', 'Nevada', 'Boise State',
-  // Sun Belt
-  'Coastal Carolina',
-  // MAC
-  'Western Michigan',
-  // C-USA
-  'UTSA',
-  // FCS
-  'North Dakota State'
-];
+    headshotUrl: 'https://a.espncdn.com/i/headshots/college-football/players/full/4432011.png',    teamLogoUrl: 'https://a.espncdn.com/i/teamlogos/ncaa/500/264.png',    teamColorPrimary: '#4B2E83',    teamColorSecondary: '#B7A57A',    receivingYards: 1640,    receptions: 92,
