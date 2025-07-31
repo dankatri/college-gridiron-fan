@@ -334,9 +334,9 @@ export const fetchESPNCurrentPlayers = async (options?: {
   maxPlayersPerPosition?: { QB: number; RB: number; WR: number };
 }): Promise<Player[]> => {
   try {
-    // Set up player limits
-    const defaultLimits = { QB: 30, RB: 30, WR: 40 };
-    const expandedLimits = { QB: 100, RB: 150, WR: 200 };
+    // Set up player limits - increased for better selection
+    const defaultLimits = { QB: 50, RB: 60, WR: 80 }; // Increased from 30/30/40
+    const expandedLimits = { QB: 150, RB: 200, WR: 250 }; // Increased limits when filtering
     
     const limits = options?.maxPlayersPerPosition || 
       (options?.specificTeam || options?.specificConference ? expandedLimits : defaultLimits);
@@ -364,21 +364,26 @@ export const fetchESPNCurrentPlayers = async (options?: {
       teamsToFetch = allTeams.filter(team => 
         team.conference?.name === options.specificConference ||
         team.conference?.shortName === options.specificConference
-      ).slice(0, 20); // Limit to prevent too many API calls
+      ).slice(0, 40); // Increased limit for conference filtering
     } else {
-      // Get major teams from Power 5 conferences for default view
-      const majorConferences = ['SEC', 'Big Ten', 'Big 12', 'ACC', 'Pac-12'];
+      // Get teams from all major conferences for expanded player selection
+      const majorConferences = [
+        'SEC', 'Big Ten', 'Big 12', 'ACC', 'Pac-12', // Power 5
+        'American Athletic', 'Conference USA', 'Mid-American', 'Mountain West', 'Sun Belt', // Group of 5
+        'Big Sky', 'Big South', 'Colonial Athletic', 'Ivy League', 'Northeast', 
+        'Ohio Valley', 'Patriot League', 'Southern', 'Southland', 'Western Athletic'
+      ];
       teamsToFetch = allTeams.filter(team => 
         team.conference && majorConferences.includes(team.conference.name)
-      ).slice(0, 60); // Reasonable number for default view
+      ).slice(0, 100); // Increased from 60 to 100 teams for more player diversity
     }
 
     if (teamsToFetch.length === 0) {
-      console.warn('No teams found matching filter criteria, using top teams');
-      teamsToFetch = allTeams.slice(0, 30); // Fallback to first 30 teams
+      console.warn('No teams found matching filter criteria, using more teams');
+      teamsToFetch = allTeams.slice(0, 80); // Increased from 30 to 80 teams for better coverage
     }
 
-    console.log(`Fetching rosters from ${teamsToFetch.length} ESPN teams`);
+    console.log(`Fetching rosters from ${teamsToFetch.length} ESPN teams across expanded conferences`);
 
     const allPlayers: Player[] = [];
     

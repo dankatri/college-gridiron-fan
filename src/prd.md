@@ -41,11 +41,12 @@ Using official scoring rules:
 - Returns: 10 yards = 1 pt
 
 ### Data Integration
-- **ESPN Player Data**: Integration with ESPN College Football API for current 2025 season rosters
-- **Live Statistics**: Current player stats and projections based on 2024 performance data  
-- **Dynamic Roster Updates**: Fresh data loading from ESPN's public API
+- **ESPN Player Data**: Integration with ESPN College Football API for current 2025 season rosters across all major conferences
+- **Expanded Conference Coverage**: Power 5 (SEC, Big Ten, Big 12, ACC, Pac-12), Group of 5 (American, C-USA, MAC, Mountain West, Sun Belt), and select FCS conferences
+- **Live Statistics**: Current player stats and projections based on 2024 performance data from 100+ teams  
+- **Dynamic Roster Updates**: Fresh data loading from ESPN's public API with enhanced filtering
 - **No Authentication Required**: ESPN's public API provides reliable data without API keys
-- **Cache Management**: Efficient data caching with refresh capabilities for optimal performance
+- **Cache Management**: Efficient data caching with refresh capabilities for optimal performance across expanded dataset
 
 ### Season Management
 - **Week Navigation**: Easy switching between weeks 1-15
@@ -135,10 +136,10 @@ Using official scoring rules:
 
 ### Technical Architecture
 - **State Management**: React hooks with persistent KV storage for cross-session data including league memberships and social features
-- **Real Data Integration**: College Football Data API integration with secure key management and caching
+- **Expanded Data Integration**: College Football Data API integration covering 100+ teams from major conferences with secure key management and caching
 - **Data Persistence**: All lineup, usage, league data, and API configuration survives browser sessions
-- **Performance**: Efficient re-renders with proper memoization for large player lists and league leaderboards
-- **API Management**: Robust error handling, rate limiting consideration, and fallback data systems
+- **Performance**: Efficient re-renders with proper memoization for large player lists and league leaderboards with expanded dataset
+- **API Management**: Robust error handling, rate limiting consideration, and fallback data systems for comprehensive conference coverage
 - **Social Features**: League management system with real-time leaderboard calculations and member synchronization
 
 ### Scalability Considerations  
