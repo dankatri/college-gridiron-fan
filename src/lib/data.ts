@@ -1,187 +1,6 @@
 import { Player } from './types';
 import { fetchESPNCurrentPlayers, getESPNConferences, getESPNTeams } from './espn-api';
 
-// Cache for API data - now supports multiple cache entries based on filters
-const playersCache = new Map<string, { players: Player[], timestamp: number }>();
-let conferencesCache: string[] = [];
-let teamsCache: string[] = [];
-let cacheTimestamp = 0;
-const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
-
-// Generate cache key based on filter options
-const getCacheKey = (options?: { specificTeam?: string; specificConference?: string }) => {
-  if (!options) return 'default';
-  return `${options.specificTeam || 'all'}_${options.specificConference || 'all'}`;
-};
-
-// Check if cache is valid
-const isCacheValid = (timestamp: number) => {
-  return Date.now() - timestamp < CACHE_DURATION;
-};
-
-// Main function to get players (with caching and smart loading)
-export const getPlayers = async (options?: { 
-  specificTeam?: string; 
-  specificConference?: string;
-}): Promise<Player[]> => {
-  const cacheKey = getCacheKey(options);
-  const cachedData = playersCache.get(cacheKey);
-  
-  // Check if cached data is valid (has proper player names)
-  if (cachedData && isCacheValid(cachedData.timestamp)) {
-    const hasValidNames = cachedData.players.every(p => p.name && !p.name.includes('undefined') && p.name.trim() !== '');
-    if (hasValidNames) {
-      console.log(`Using cached players for ${cacheKey}:`, cachedData.players.length);
-      return cachedData.players;
-    } else {
-      console.warn('Cached data has invalid names, clearing cache for', cacheKey);
-      playersCache.delete(cacheKey);
-    }
-  }
-
-  console.log(`Attempting to fetch players from ESPN with options:`, options);
-  
-  try {
-    console.log('Fetching current players from ESPN...');
-    
-    // Convert filter options to ESPN API parameters
-    const apiOptions: {
-      specificTeam?: string;
-      specificConference?: string;
-    } = {};
-    
-    if (options?.specificTeam && options.specificTeam !== 'All Teams') {
-      apiOptions.specificTeam = options.specificTeam;
-    }
-    
-    if (options?.specificConference && options.specificConference !== 'All Conferences') {
-      apiOptions.specificConference = options.specificConference;
-    }
-
-    // Fetch from ESPN API
-    const allPlayers = await fetchESPNCurrentPlayers(apiOptions);
-    console.log(`ESPN API returned ${allPlayers.length} players`);
-    
-    // Validate that we have good player data
-    const validPlayers = allPlayers.filter(p => 
-      p.name && 
-      p.name.trim() !== '' && 
-      !p.name.includes('undefined') &&
-      !p.name.startsWith('Player ')
-    );
-    
-    console.log(`Filtered to ${validPlayers.length} valid players`);
-    
-    if (validPlayers.length > 0) {
-      // Cache the successful result
-      playersCache.set(cacheKey, {
-        players: validPlayers,
-        timestamp: Date.now()
-      });
-      
-      console.log(`Successfully cached ${validPlayers.length} players for ${cacheKey}`);
-      return validPlayers;
-    } else {
-      console.warn('No valid players returned from ESPN API, falling back to sample data');
-      // Fall back to sample data
-      const samplePlayers = [...SAMPLE_PLAYERS]; // Create a copy to avoid mutations
-      
-      playersCache.set(cacheKey, {
-        players: samplePlayers,
-        timestamp: Date.now()
-      });
-      
-      return samplePlayers;
-    }
-  } catch (error) {
-    console.error('Error fetching players from ESPN:', error);
-    console.log('Falling back to sample data');
-    
-    // Use sample data as fallback
-    const samplePlayers = [...SAMPLE_PLAYERS];
-    
-    playersCache.set(cacheKey, {
-      players: samplePlayers,
-      timestamp: Date.now()
-    });
-    
-    return samplePlayers;
-  }
-};
-
-// Default fallback conferences and teams that should always be available
-const DEFAULT_CONFERENCES = [
-  'All Conferences', 
-  'SEC', 'Big Ten', 'Big 12', 'ACC', 'Pac-12', // Power 5
-  'American Athletic', 'Conference USA', 'Mid-American', 'Mountain West', 'Sun Belt', // Group of 5
-  'Big Sky', 'Big South', 'Colonial Athletic', 'Ivy League', 'Northeast', // FCS
-  'Ohio Valley', 'Patriot League', 'Southern', 'Southland', 'Western Athletic',
-  'Independent' // For Notre Dame, etc.
-];
-
-const DEFAULT_TEAMS_FROM_SAMPLE = [
-  'All Teams',
-  ...Array.from(new Set(SAMPLE_PLAYERS.map(p => p.team))).sort()
-];
-
-// Get conferences (with caching)
-export const getConferences = async (): Promise<string[]> => {
-  if (conferencesCache.length > 0 && isCacheValid(cacheTimestamp)) {
-    return conferencesCache;
-  }
-
-  try {
-    const espnConferences = await getESPNConferences();
-    if (espnConferences.length > 1) { // Should have more than just "All Conferences"
-      conferencesCache = espnConferences;
-      cacheTimestamp = Date.now();
-      console.log('Successfully loaded ESPN conferences:', espnConferences);
-      return conferencesCache;
-    } else {
-      console.warn('ESPN returned insufficient conferences data, using defaults');
-      throw new Error('ESPN returned empty or invalid conferences data');
-    }
-  } catch (error) {
-    console.error('Failed to fetch conferences from ESPN, using expanded default:', error);
-    conferencesCache = DEFAULT_CONFERENCES;
-    cacheTimestamp = Date.now();
-    return DEFAULT_CONFERENCES;
-  }
-};
-
-// Get teams (with caching)
-export const getTeams = async (): Promise<string[]> => {
-  if (teamsCache.length > 0 && isCacheValid(cacheTimestamp)) {
-    return teamsCache;
-  }
-
-  try {
-    const espnTeams = await getESPNTeams();
-    if (espnTeams.length > 1) { // Should have more than just "All Teams"
-      teamsCache = espnTeams;
-      cacheTimestamp = Date.now();
-      console.log('Successfully loaded ESPN teams:', espnTeams.length, 'teams');
-      return teamsCache;
-    } else {
-      console.warn('ESPN returned insufficient teams data, using defaults');
-      throw new Error('ESPN returned empty or invalid teams data');
-    }
-  } catch (error) {
-    console.error('Failed to fetch teams from ESPN, using sample data teams:', error);
-    teamsCache = DEFAULT_TEAMS_FROM_SAMPLE;
-    cacheTimestamp = Date.now();
-    return DEFAULT_TEAMS_FROM_SAMPLE;
-  }
-};
-
-// Clear cache (useful for refreshing data)
-export const clearCache = () => {
-  playersCache.clear();
-  conferencesCache = [];
-  teamsCache = [];
-  cacheTimestamp = 0;
-};
-
 // Fallback sample data for when API is not available - expanded with more conferences and teams
 export const SAMPLE_PLAYERS: Player[] = [
   // Quarterbacks - Expanded to include more conferences
@@ -479,12 +298,12 @@ export const SAMPLE_PLAYERS: Player[] = [
   // Add more WRs from different conferences
   {
     id: 'wr4',
-    name: 'Drake Maye',
+    name: 'Josh Downs',
     position: 'WR',
     team: 'North Carolina',
     conference: 'ACC',
     projectedPoints: 17.2,
-    headshotUrl: 'https://a.espncdn.com/i/headshots/college-football/players/full/4431966.png',
+    headshotUrl: 'https://a.espncdn.com/i/headshots/college-football/players/full/4431967.png',
     teamLogoUrl: 'https://a.espncdn.com/i/teamlogos/ncaa/500/153.png',
     teamColorPrimary: '#13294B',
     teamColorSecondary: '#4B9CD3',
@@ -555,3 +374,184 @@ export const SAMPLE_PLAYERS: Player[] = [
     receivingTDs: 7,
   },
 ];
+
+// Cache for API data - now supports multiple cache entries based on filters
+const playersCache = new Map<string, { players: Player[], timestamp: number }>();
+let conferencesCache: string[] = [];
+let teamsCache: string[] = [];
+let cacheTimestamp = 0;
+const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
+
+// Generate cache key based on filter options
+const getCacheKey = (options?: { specificTeam?: string; specificConference?: string }) => {
+  if (!options) return 'default';
+  return `${options.specificTeam || 'all'}_${options.specificConference || 'all'}`;
+};
+
+// Check if cache is valid
+const isCacheValid = (timestamp: number) => {
+  return Date.now() - timestamp < CACHE_DURATION;
+};
+
+// Main function to get players (with caching and smart loading)
+export const getPlayers = async (options?: { 
+  specificTeam?: string; 
+  specificConference?: string;
+}): Promise<Player[]> => {
+  const cacheKey = getCacheKey(options);
+  const cachedData = playersCache.get(cacheKey);
+  
+  // Check if cached data is valid (has proper player names)
+  if (cachedData && isCacheValid(cachedData.timestamp)) {
+    const hasValidNames = cachedData.players.every(p => p.name && !p.name.includes('undefined') && p.name.trim() !== '');
+    if (hasValidNames) {
+      console.log(`Using cached players for ${cacheKey}:`, cachedData.players.length);
+      return cachedData.players;
+    } else {
+      console.warn('Cached data has invalid names, clearing cache for', cacheKey);
+      playersCache.delete(cacheKey);
+    }
+  }
+
+  console.log(`Attempting to fetch players from ESPN with options:`, options);
+  
+  try {
+    console.log('Fetching current players from ESPN...');
+    
+    // Convert filter options to ESPN API parameters
+    const apiOptions: {
+      specificTeam?: string;
+      specificConference?: string;
+    } = {};
+    
+    if (options?.specificTeam && options.specificTeam !== 'All Teams') {
+      apiOptions.specificTeam = options.specificTeam;
+    }
+    
+    if (options?.specificConference && options.specificConference !== 'All Conferences') {
+      apiOptions.specificConference = options.specificConference;
+    }
+
+    // Fetch from ESPN API
+    const allPlayers = await fetchESPNCurrentPlayers(apiOptions);
+    console.log(`ESPN API returned ${allPlayers.length} players`);
+    
+    // Validate that we have good player data
+    const validPlayers = allPlayers.filter(p => 
+      p.name && 
+      p.name.trim() !== '' && 
+      !p.name.includes('undefined') &&
+      !p.name.startsWith('Player ')
+    );
+    
+    console.log(`Filtered to ${validPlayers.length} valid players`);
+    
+    if (validPlayers.length > 0) {
+      // Cache the successful result
+      playersCache.set(cacheKey, {
+        players: validPlayers,
+        timestamp: Date.now()
+      });
+      
+      console.log(`Successfully cached ${validPlayers.length} players for ${cacheKey}`);
+      return validPlayers;
+    } else {
+      console.warn('No valid players returned from ESPN API, falling back to sample data');
+      // Fall back to sample data
+      const samplePlayers = [...SAMPLE_PLAYERS]; // Create a copy to avoid mutations
+      
+      playersCache.set(cacheKey, {
+        players: samplePlayers,
+        timestamp: Date.now()
+      });
+      
+      return samplePlayers;
+    }
+  } catch (error) {
+    console.error('Error fetching players from ESPN:', error);
+    console.log('Falling back to sample data');
+    
+    // Use sample data as fallback
+    const samplePlayers = [...SAMPLE_PLAYERS];
+    
+    playersCache.set(cacheKey, {
+      players: samplePlayers,
+      timestamp: Date.now()
+    });
+    
+    return samplePlayers;
+  }
+};
+
+// Default fallback conferences and teams that should always be available
+const DEFAULT_CONFERENCES = [
+  'All Conferences', 
+  'SEC', 'Big Ten', 'Big 12', 'ACC', 'Pac-12', // Power 5
+  'American Athletic', 'Conference USA', 'Mid-American', 'Mountain West', 'Sun Belt', // Group of 5
+  'Big Sky', 'Big South', 'Colonial Athletic', 'Ivy League', 'Northeast', // FCS
+  'Ohio Valley', 'Patriot League', 'Southern', 'Southland', 'Western Athletic',
+  'Independent' // For Notre Dame, etc.
+];
+
+const DEFAULT_TEAMS_FROM_SAMPLE = [
+  'All Teams',
+  ...Array.from(new Set(SAMPLE_PLAYERS.map(p => p.team))).sort()
+];
+
+// Get conferences (with caching)
+export const getConferences = async (): Promise<string[]> => {
+  if (conferencesCache.length > 0 && isCacheValid(cacheTimestamp)) {
+    return conferencesCache;
+  }
+
+  try {
+    const espnConferences = await getESPNConferences();
+    if (espnConferences.length > 1) { // Should have more than just "All Conferences"
+      conferencesCache = espnConferences;
+      cacheTimestamp = Date.now();
+      console.log('Successfully loaded ESPN conferences:', espnConferences);
+      return conferencesCache;
+    } else {
+      console.warn('ESPN returned insufficient conferences data, using defaults');
+      throw new Error('ESPN returned empty or invalid conferences data');
+    }
+  } catch (error) {
+    console.error('Failed to fetch conferences from ESPN, using expanded default:', error);
+    conferencesCache = DEFAULT_CONFERENCES;
+    cacheTimestamp = Date.now();
+    return DEFAULT_CONFERENCES;
+  }
+};
+
+// Get teams (with caching)
+export const getTeams = async (): Promise<string[]> => {
+  if (teamsCache.length > 0 && isCacheValid(cacheTimestamp)) {
+    return teamsCache;
+  }
+
+  try {
+    const espnTeams = await getESPNTeams();
+    if (espnTeams.length > 1) { // Should have more than just "All Teams"
+      teamsCache = espnTeams;
+      cacheTimestamp = Date.now();
+      console.log('Successfully loaded ESPN teams:', espnTeams.length, 'teams');
+      return teamsCache;
+    } else {
+      console.warn('ESPN returned insufficient teams data, using defaults');
+      throw new Error('ESPN returned empty or invalid teams data');
+    }
+  } catch (error) {
+    console.error('Failed to fetch teams from ESPN, using sample data teams:', error);
+    teamsCache = DEFAULT_TEAMS_FROM_SAMPLE;
+    cacheTimestamp = Date.now();
+    return DEFAULT_TEAMS_FROM_SAMPLE;
+  }
+};
+
+// Clear cache (useful for refreshing data)
+export const clearCache = () => {
+  playersCache.clear();
+  conferencesCache = [];
+  teamsCache = [];
+  cacheTimestamp = 0;
+};

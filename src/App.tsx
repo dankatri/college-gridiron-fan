@@ -21,6 +21,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
+import { Toaster } from '@/components/ui/sonner';
 import { Trophy, Users, Target, Activity, Medal, RefreshCw } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
@@ -430,6 +431,7 @@ function App() {
           </TabsContent>
         </Tabs>
       </div>
+      <Toaster />
     </div>
   );
 }
