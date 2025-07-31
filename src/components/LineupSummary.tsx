@@ -1,13 +1,16 @@
 import { LineupSlot } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { calculateProjectedPoints } from '@/lib/utils-fantasy';
+import { TrendingUp, TrendingDown } from '@phosphor-icons/react';
 
 interface LineupSummaryProps {
   lineup: LineupSlot[];
+  actualPoints?: number;
 }
 
-export function LineupSummary({ lineup }: LineupSummaryProps) {
-  const totalPoints = calculateProjectedPoints(lineup);
+export function LineupSummary({ lineup, actualPoints }: LineupSummaryProps) {
+  const projectedPoints = calculateProjectedPoints(lineup);
   const filledSlots = lineup.filter(slot => slot.player).length;
   const totalSlots = lineup.length;
   
@@ -18,17 +21,51 @@ export function LineupSummary({ lineup }: LineupSummaryProps) {
     return acc;
   }, {} as Record<string, number>);
 
+  const pointsDifference = actualPoints ? actualPoints - projectedPoints : 0;
+  const hasActualPoints = actualPoints !== undefined;
+
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-lg">Lineup Summary</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex justify-between items-center">
-          <span className="text-sm text-muted-foreground">Total Projected Points</span>
-          <span className="text-2xl font-bold text-accent-foreground">
-            {totalPoints.toFixed(1)}
-          </span>
+        {/* Points Section */}
+        <div className="space-y-3">
+          <div className="flex justify-between items-center">
+            <span className="text-sm text-muted-foreground">Projected Points</span>
+            <span className="text-xl font-bold">
+              {projectedPoints.toFixed(1)}
+            </span>
+          </div>
+          
+          {hasActualPoints && (
+            <>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Actual Points</span>
+                <span className="text-2xl font-bold text-accent">
+                  {actualPoints.toFixed(1)}
+                </span>
+              </div>
+              
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">vs. Projection</span>
+                <div className="flex items-center gap-2">
+                  <Badge 
+                    variant={pointsDifference >= 0 ? "default" : "destructive"}
+                    className="flex items-center gap-1"
+                  >
+                    {pointsDifference >= 0 ? (
+                      <TrendingUp size={12} />
+                    ) : (
+                      <TrendingDown size={12} />
+                    )}
+                    {pointsDifference >= 0 ? '+' : ''}{pointsDifference.toFixed(1)}
+                  </Badge>
+                </div>
+              </div>
+            </>
+          )}
         </div>
         
         <div className="flex justify-between items-center">

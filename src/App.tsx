@@ -16,17 +16,19 @@ import { PlayerCard } from '@/components/PlayerCard';
 import { LineupSlotCard } from '@/components/LineupSlotCard';
 import { LineupSummary } from '@/components/LineupSummary';
 import { WeekNavigation } from '@/components/WeekNavigation';
+import { LiveScoringDashboard } from '@/components/LiveScoringDashboard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { Trophy, Users, Target } from '@phosphor-icons/react';
+import { Trophy, Users, Target, Activity } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
 function App() {
   const [currentWeek, setCurrentWeek] = useState(1);
   const [currentLineup, setCurrentLineup] = useState<LineupSlot[]>(createEmptyLineup());
   const [selectedPosition, setSelectedPosition] = useState<'QB' | 'RB' | 'WR'>('QB');
+  const [activeTab, setActiveTab] = useState<'lineup' | 'scoring'>('lineup');
   
   // Persistent data
   const [weeklyLineups, setWeeklyLineups] = useKV<WeeklyLineup[]>('weekly-lineups', []);
@@ -124,6 +126,7 @@ function App() {
       week: currentWeek,
       lineup: currentLineup,
       totalPoints: calculateProjectedPoints(currentLineup),
+      actualPoints: existingWeekData?.actualPoints, // Preserve existing actual points
       isLocked: false
     };
 
@@ -136,7 +139,17 @@ function App() {
     toast.success(`Week ${currentWeek} lineup saved!`);
   };
 
+  const handlePointsUpdate = (week: number, actualPoints: number) => {
+    setWeeklyLineups(prev => prev.map(lineup => {
+      if (lineup.week === week) {
+        return { ...lineup, actualPoints };
+      }
+      return lineup;
+    }));
+  };
+
   const filteredPlayers = SAMPLE_PLAYERS.filter(p => p.position === selectedPosition);
+  const currentWeekLineup = weeklyLineups.find(w => w.week === currentWeek);
 
   return (
     <div className="min-h-screen bg-background">
@@ -155,105 +168,131 @@ function App() {
         {/* Week Navigation */}
         <WeekNavigation currentWeek={currentWeek} onWeekChange={setCurrentWeek} />
 
-        <div className="grid lg:grid-cols-3 gap-6">
-          {/* Player Selection */}
-          <div className="lg:col-span-2 space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Users size={20} />
-                  Available Players - Week {currentWeek}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Tabs value={selectedPosition} onValueChange={(value) => setSelectedPosition(value as any)}>
-                  <TabsList className="grid w-full grid-cols-3">
-                    <TabsTrigger value="QB">Quarterbacks</TabsTrigger>
-                    <TabsTrigger value="RB">Running Backs</TabsTrigger>
-                    <TabsTrigger value="WR">Wide Receivers</TabsTrigger>
-                  </TabsList>
-                  
-                  <TabsContent value={selectedPosition} className="mt-4">
-                    <div className="grid sm:grid-cols-2 gap-3">
-                      {filteredPlayers.map(player => (
-                        <div
-                          key={player.id}
-                          draggable={isPlayerAvailable(player.id, playerUsage, MAX_PLAYER_USES)}
-                          onDragStart={(e) => {
-                            if (isPlayerAvailable(player.id, playerUsage, MAX_PLAYER_USES)) {
-                              e.dataTransfer.setData('application/json', JSON.stringify(player));
-                            }
-                          }}
-                        >
-                          <PlayerCard
-                            player={player}
-                            playerUsage={playerUsage}
-                            onSelect={handlePlayerSelect}
-                            isSelected={isPlayerInLineup(player.id, currentLineup)}
-                          />
+        {/* Main Navigation Tabs */}
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)}>
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="lineup" className="flex items-center gap-2">
+              <Users size={16} />
+              Set Lineup
+            </TabsTrigger>
+            <TabsTrigger value="scoring" className="flex items-center gap-2">
+              <Activity size={16} />
+              Live Scoring
+            </TabsTrigger>
+          </TabsList>
+
+          {/* Lineup Tab */}
+          <TabsContent value="lineup" className="mt-6">
+            <div className="grid lg:grid-cols-3 gap-6">
+              {/* Player Selection */}
+              <div className="lg:col-span-2 space-y-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Users size={20} />
+                      Available Players - Week {currentWeek}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <Tabs value={selectedPosition} onValueChange={(value) => setSelectedPosition(value as any)}>
+                      <TabsList className="grid w-full grid-cols-3">
+                        <TabsTrigger value="QB">Quarterbacks</TabsTrigger>
+                        <TabsTrigger value="RB">Running Backs</TabsTrigger>
+                        <TabsTrigger value="WR">Wide Receivers</TabsTrigger>
+                      </TabsList>
+                      
+                      <TabsContent value={selectedPosition} className="mt-4">
+                        <div className="grid sm:grid-cols-2 gap-3">
+                          {filteredPlayers.map(player => (
+                            <div
+                              key={player.id}
+                              draggable={isPlayerAvailable(player.id, playerUsage, MAX_PLAYER_USES)}
+                              onDragStart={(e) => {
+                                if (isPlayerAvailable(player.id, playerUsage, MAX_PLAYER_USES)) {
+                                  e.dataTransfer.setData('application/json', JSON.stringify(player));
+                                }
+                              }}
+                            >
+                              <PlayerCard
+                                player={player}
+                                playerUsage={playerUsage}
+                                onSelect={handlePlayerSelect}
+                                isSelected={isPlayerInLineup(player.id, currentLineup)}
+                              />
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      </TabsContent>
+                    </Tabs>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Lineup & Summary */}
+              <div className="space-y-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Target size={20} />
+                      Your Lineup
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {currentLineup.map((slot) => (
+                      <LineupSlotCard
+                        key={slot.slotIndex}
+                        slot={slot}
+                        onRemovePlayer={handleRemovePlayer}
+                        onDropPlayer={handleDropPlayer}
+                        canDrop={!slot.player}
+                      />
+                    ))}
+                    
+                    <Button 
+                      onClick={handleSaveLineup}
+                      className="w-full"
+                      disabled={!isLineupComplete(currentLineup)}
+                    >
+                      Save Week {currentWeek} Lineup
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                <LineupSummary lineup={currentLineup} actualPoints={currentWeekLineup?.actualPoints} />
+
+                {/* Quick Stats */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Season Stats</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Weeks Completed</span>
+                      <Badge variant="outline">
+                        {weeklyLineups.length}/{15}
+                      </Badge>
                     </div>
-                  </TabsContent>
-                </Tabs>
-              </CardContent>
-            </Card>
-          </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Players at Max Uses</span>
+                      <Badge variant="outline">
+                        {playerUsage.filter(u => u.timesUsed >= MAX_PLAYER_USES).length}
+                      </Badge>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          </TabsContent>
 
-          {/* Lineup & Summary */}
-          <div className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Target size={20} />
-                  Your Lineup
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {currentLineup.map((slot) => (
-                  <LineupSlotCard
-                    key={slot.slotIndex}
-                    slot={slot}
-                    onRemovePlayer={handleRemovePlayer}
-                    onDropPlayer={handleDropPlayer}
-                    canDrop={!slot.player}
-                  />
-                ))}
-                
-                <Button 
-                  onClick={handleSaveLineup}
-                  className="w-full"
-                  disabled={!isLineupComplete(currentLineup)}
-                >
-                  Save Week {currentWeek} Lineup
-                </Button>
-              </CardContent>
-            </Card>
-
-            <LineupSummary lineup={currentLineup} />
-
-            {/* Quick Stats */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Season Stats</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Weeks Completed</span>
-                  <Badge variant="outline">
-                    {weeklyLineups.length}/{15}
-                  </Badge>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Players at Max Uses</span>
-                  <Badge variant="outline">
-                    {playerUsage.filter(u => u.timesUsed >= MAX_PLAYER_USES).length}
-                  </Badge>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
+          {/* Live Scoring Tab */}
+          <TabsContent value="scoring" className="mt-6">
+            <LiveScoringDashboard 
+              week={currentWeek}
+              weeklyLineups={weeklyLineups}
+              onPointsUpdate={handlePointsUpdate}
+            />
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );

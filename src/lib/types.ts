@@ -6,6 +6,52 @@ export interface Player {
   projectedPoints: number;
 }
 
+export interface PlayerStats {
+  playerId: string;
+  week: number;
+  // Passing stats
+  passingYards: number;
+  passingTDs: number;
+  completions: number;
+  attempts: number;
+  interceptions: number;
+  // Rushing stats
+  rushingYards: number;
+  rushingTDs: number;
+  // Receiving stats
+  receivingYards: number;
+  receptions: number;
+  receivingTDs: number;
+  // Return stats
+  kickReturnYards: number;
+  puntReturnYards: number;
+  // Calculated
+  fantasyPoints: number;
+  lastUpdated: Date;
+}
+
+export interface GameStatus {
+  week: number;
+  team1: string;
+  team2: string;
+  status: 'scheduled' | 'in-progress' | 'final';
+  quarter?: number;
+  timeRemaining?: string;
+  team1Score: number;
+  team2Score: number;
+  lastUpdated: Date;
+}
+
+export interface LiveUpdate {
+  id: string;
+  playerId: string;
+  week: number;
+  statType: string;
+  statValue: number;
+  description: string;
+  timestamp: Date;
+}
+
 export interface LineupSlot {
   position: 'QB' | 'RB' | 'WR';
   player?: Player;
@@ -16,6 +62,7 @@ export interface WeeklyLineup {
   week: number;
   lineup: LineupSlot[];
   totalPoints: number;
+  actualPoints?: number; // Points from live stats
   isLocked: boolean;
 }
 
