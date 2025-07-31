@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { useKV } from '@github/spark/hooks';
 import { Player, LineupSlot, WeeklyLineup, PlayerUsage, MAX_PLAYER_USES } from '@/lib/types';
 import { getPlayers, clearCache } from '@/lib/data';
-import { setApiKey } from '@/lib/api';
 import {
   createEmptyLineup,
   updatePlayerUsage,
@@ -18,19 +17,18 @@ import { LineupSummary } from '@/components/LineupSummary';
 import { WeekNavigation } from '@/components/WeekNavigation';
 import { LiveScoringDashboard } from '@/components/LiveScoringDashboard';
 import { LeagueDashboard } from '@/components/LeagueDashboard';
-import { ApiConfig } from '@/components/ApiConfig';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { Trophy, Users, Target, Activity, Medal, Settings, RefreshCw } from '@phosphor-icons/react';
+import { Trophy, Users, Target, Activity, Medal, RefreshCw } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
 function App() {
   const [currentWeek, setCurrentWeek] = useState(1);
   const [currentLineup, setCurrentLineup] = useState<LineupSlot[]>(createEmptyLineup());
   const [selectedPosition, setSelectedPosition] = useState<'QB' | 'RB' | 'WR'>('QB');
-  const [activeTab, setActiveTab] = useState<'lineup' | 'scoring' | 'leagues' | 'settings'>('lineup');
+  const [activeTab, setActiveTab] = useState<'lineup' | 'scoring' | 'leagues'>('lineup');
   const [players, setPlayers] = useState<Player[]>([]);
   const [isLoadingPlayers, setIsLoadingPlayers] = useState(true);
   
@@ -56,17 +54,6 @@ function App() {
     const loadPlayers = async () => {
       setIsLoadingPlayers(true);
       try {
-        // First, try to load and set the API key from storage
-        try {
-          const storedApiKey = await spark.kv.get<string>('cfb-api-key');
-          if (storedApiKey) {
-            console.log('Loading stored API key');
-            setApiKey(storedApiKey);
-          }
-        } catch (error) {
-          console.warn('Failed to load stored API key:', error);
-        }
-        
         const currentPlayers = await getPlayers();
         setPlayers(currentPlayers);
         
@@ -249,15 +236,14 @@ function App() {
     try {
       // Force clear everything and load sample data
       clearCache();
-      await spark.kv.delete('cfb-api-key'); // Remove API key to force sample data
       const currentPlayers = await getPlayers();
       setPlayers(currentPlayers);
       
-      console.log('Forced sample data load:', currentPlayers.length);
-      toast.success('Loaded sample data for testing!');
+      console.log('Forced data reload:', currentPlayers.length);
+      toast.success('Player data reloaded!');
     } catch (error) {
-      console.error('Failed to load sample data:', error);
-      toast.error('Failed to load sample data');
+      console.error('Failed to reload data:', error);
+      toast.error('Failed to reload player data');
     } finally {
       setIsLoadingPlayers(false);
     }
@@ -284,7 +270,7 @@ function App() {
             College Fantasy Football
           </h1>
           <p className="text-muted-foreground">
-            Build your weekly lineup - remember, each player can only be used 3 times per season!
+            Build your weekly lineup with current ESPN player data - remember, each player can only be used 3 times per season!
           </p>
         </div>
 
@@ -293,7 +279,7 @@ function App() {
 
         {/* Main Navigation Tabs */}
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)}>
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="lineup" className="flex items-center gap-2">
               <Users size={16} />
               Set Lineup
@@ -305,10 +291,6 @@ function App() {
             <TabsTrigger value="leagues" className="flex items-center gap-2">
               <Medal size={16} />
               Leagues
-            </TabsTrigger>
-            <TabsTrigger value="settings" className="flex items-center gap-2">
-              <Settings size={16} />
-              Settings
             </TabsTrigger>
           </TabsList>
 
@@ -337,7 +319,7 @@ function App() {
                       disabled={isLoadingPlayers}
                       className="flex items-center gap-2"
                     >
-                      Sample Data
+                      Reload Data
                     </Button>
                   </div>
                 </div>
@@ -347,7 +329,7 @@ function App() {
                     <CardContent className="flex items-center justify-center py-12">
                       <div className="flex items-center gap-3 text-muted-foreground">
                         <RefreshCw size={20} className="animate-spin" />
-                        Loading current players...
+                        Loading players from ESPN...
                       </div>
                     </CardContent>
                   </Card>
@@ -445,13 +427,6 @@ function App() {
               weeklyLineups={weeklyLineups}
               currentUserId={currentUserId}
             />
-          </TabsContent>
-
-          {/* Settings Tab */}
-          <TabsContent value="settings" className="mt-6">
-            <div className="max-w-4xl mx-auto space-y-6">
-              <ApiConfig onConfigured={handleRefreshPlayers} />
-            </div>
           </TabsContent>
         </Tabs>
       </div>

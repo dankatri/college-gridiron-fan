@@ -1,5 +1,5 @@
 import { Player } from './types';
-import { fetchCurrentPlayers, getCurrentConferences, getCurrentTeams } from './api';
+import { fetchESPNCurrentPlayers, getESPNConferences, getESPNTeams } from './espn-api';
 
 // Cache for API data - now supports multiple cache entries based on filters
 const playersCache = new Map<string, { players: Player[], timestamp: number }>();
@@ -39,19 +39,12 @@ export const getPlayers = async (options?: {
     }
   }
 
-  console.log(`Attempting to fetch players from API with options:`, options);
+  console.log(`Attempting to fetch players from ESPN with options:`, options);
   
   try {
-    // First check if we have an API key
-    const storedApiKey = await spark.kv.get<string>('cfb-api-key');
-    if (!storedApiKey) {
-      console.log('No API key found, using sample data');
-      throw new Error('No API key configured');
-    }
+    console.log('Fetching current players from ESPN...');
     
-    console.log('API key found, attempting to fetch current players...');
-    
-    // Convert filter options to API parameters
+    // Convert filter options to ESPN API parameters
     const apiOptions: {
       specificTeam?: string;
       specificConference?: string;
@@ -73,10 +66,10 @@ export const getPlayers = async (options?: {
       apiOptions.maxPlayersPerPosition = { QB: 30, RB: 30, WR: 40 };
     }
     
-    const fetchedPlayers = await fetchCurrentPlayers(apiOptions);
-    console.log('Successfully fetched players from API:', fetchedPlayers.length);
+    const fetchedPlayers = await fetchESPNCurrentPlayers(apiOptions);
+    console.log('Successfully fetched players from ESPN:', fetchedPlayers.length);
     
-    // Validate API data has proper names
+    // Validate ESPN data has proper names
     const validPlayers = fetchedPlayers.filter(p => 
       p.name && 
       !p.name.includes('undefined') && 
@@ -85,8 +78,8 @@ export const getPlayers = async (options?: {
     );
     
     if (validPlayers.length === 0) {
-      console.warn('API data has no players with valid names, using sample data instead');
-      throw new Error('API returned no players with valid names');
+      console.warn('ESPN data has no players with valid names, using sample data instead');
+      throw new Error('ESPN returned no players with valid names');
     }
     
     if (validPlayers.length < fetchedPlayers.length) {
@@ -101,7 +94,7 @@ export const getPlayers = async (options?: {
     
     return validPlayers;
   } catch (error) {
-    console.error('Failed to fetch current players, using sample data:', error);
+    console.error('Failed to fetch current players from ESPN, using sample data:', error);
     console.log('Using sample data with', SAMPLE_PLAYERS.length, 'players');
     console.log('Sample data first 3 players:', SAMPLE_PLAYERS.slice(0, 3).map(p => ({ name: p.name, id: p.id })));
     
@@ -126,10 +119,10 @@ export const getConferences = async (): Promise<string[]> => {
   }
 
   try {
-    conferencesCache = await getCurrentConferences();
+    conferencesCache = await getESPNConferences();
     return conferencesCache;
   } catch (error) {
-    console.error('Failed to fetch conferences, using default:', error);
+    console.error('Failed to fetch conferences from ESPN, using default:', error);
     return CONFERENCES;
   }
 };
@@ -141,10 +134,10 @@ export const getTeams = async (): Promise<string[]> => {
   }
 
   try {
-    teamsCache = await getCurrentTeams();
+    teamsCache = await getESPNTeams();
     return teamsCache;
   } catch (error) {
-    console.error('Failed to fetch teams, using default:', error);
+    console.error('Failed to fetch teams from ESPN, using default:', error);
     return TEAMS;
   }
 };

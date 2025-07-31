@@ -41,17 +41,11 @@ Using official scoring rules:
 - Returns: 10 yards = 1 pt
 
 ### Data Integration
-- **Real Player Data**: Integration with College Football Data API for current 2025 season rosters
-- **Live Statistics**: Current player stats and projections based on 2024 performance data
-- **Dynamic Roster Updates**: Fresh data loading with configurable API key authentication
-- **Fallback Data**: Sample players available when API is not configured
+- **ESPN Player Data**: Integration with ESPN College Football API for current 2025 season rosters
+- **Live Statistics**: Current player stats and projections based on 2024 performance data  
+- **Dynamic Roster Updates**: Fresh data loading from ESPN's public API
+- **No Authentication Required**: ESPN's public API provides reliable data without API keys
 - **Cache Management**: Efficient data caching with refresh capabilities for optimal performance
-
-### API Configuration
-- **Secure Key Management**: User-provided API keys stored securely in browser storage
-- **Configuration Interface**: Settings panel for API key setup and validation
-- **Data Refresh Controls**: Manual refresh capability for updated player information
-- **Error Handling**: Graceful fallback to sample data when API is unavailable
 
 ### Season Management
 - **Week Navigation**: Easy switching between weeks 1-15
