@@ -293,6 +293,12 @@ const convertESPNPlayerToPlayer = async (espnPlayer: any, teamData: ESPNTeam, st
   
   const extractedStats = extractPlayerStats(stats);
   
+  // Get media assets
+  const headshotUrl = espnPlayer.headshot?.href || espnPlayer.headshot;
+  const teamLogoUrl = teamData.logo;
+  const teamColorPrimary = teamData.color ? `#${teamData.color}` : undefined;
+  const teamColorSecondary = teamData.alternateColor ? `#${teamData.alternateColor}` : undefined;
+  
   return {
     id: `espn_${espnPlayer.position.abbreviation.toLowerCase()}_${espnPlayer.id}`,
     name: fullName.trim(),
@@ -300,6 +306,11 @@ const convertESPNPlayerToPlayer = async (espnPlayer: any, teamData: ESPNTeam, st
     team: teamData.displayName || teamData.name,
     conference,
     projectedPoints: calculateProjectedPoints(stats, espnPlayer.position.abbreviation),
+    // Media assets
+    headshotUrl,
+    teamLogoUrl,
+    teamColorPrimary,
+    teamColorSecondary,
     // QB stats
     passingYards: extractedStats.passingYards,
     passingTDs: extractedStats.passingTDs,

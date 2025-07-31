@@ -5,6 +5,11 @@ export interface Player {
   team: string;
   conference: string;
   projectedPoints: number;
+  // Media assets
+  headshotUrl?: string;
+  teamLogoUrl?: string;
+  teamColorPrimary?: string;
+  teamColorSecondary?: string;
   // Season stats that affect scoring
   passingYards?: number;
   passingTDs?: number;

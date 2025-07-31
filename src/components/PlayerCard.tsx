@@ -3,6 +3,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { getPlayerUsage, isPlayerAvailable } from '@/lib/utils-fantasy';
 import { cn } from '@/lib/utils';
+import { User } from '@phosphor-icons/react';
 
 interface PlayerCardProps {
   player: Player;
@@ -57,13 +58,49 @@ export function PlayerCard({
           </div>
         </div>
         
-        <div className="space-y-1">
-          <h3 className="font-semibold text-sm leading-tight">
-            {player.name}
-          </h3>
-          <p className="text-xs text-muted-foreground">
-            {player.team}
-          </p>
+        <div className="flex items-start gap-3">
+          {/* Player Headshot */}
+          <div className="relative w-10 h-10 rounded-full overflow-hidden bg-muted flex-shrink-0">
+            {player.headshotUrl ? (
+              <img 
+                src={player.headshotUrl} 
+                alt={`${player.name} headshot`}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                  target.nextElementSibling?.classList.remove('hidden');
+                }}
+              />
+            ) : null}
+            <div className={`absolute inset-0 flex items-center justify-center ${player.headshotUrl ? 'hidden' : ''}`}>
+              <User size={16} className="text-muted-foreground" />
+            </div>
+          </div>
+          
+          {/* Player Info */}
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-sm leading-tight">
+              {player.name}
+            </h3>
+            <div className="flex items-center gap-2 mt-1">
+              {/* Team Logo */}
+              {player.teamLogoUrl && (
+                <img 
+                  src={player.teamLogoUrl} 
+                  alt={`${player.team} logo`}
+                  className="w-4 h-4 object-contain"
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = 'none';
+                  }}
+                />
+              )}
+              <p className="text-xs text-muted-foreground truncate">
+                {player.team}
+              </p>
+            </div>
+          </div>
         </div>
         
         {!available && (

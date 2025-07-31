@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { LineupSlot } from '@/lib/types';
-import { Users, Filter, Trophy, RefreshCw } from '@phosphor-icons/react';
+import { Users, Filter, Trophy, RefreshCw, User } from '@phosphor-icons/react';
 
 interface PlayerTableProps {
   position: 'QB' | 'RB' | 'WR';
@@ -236,7 +236,7 @@ export function PlayerTable({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[200px]">Player</TableHead>
+                <TableHead className="w-[240px]">Player</TableHead>
                 <TableHead>Team</TableHead>
                 <TableHead>Conf</TableHead>
                 <TableHead className="text-center">
@@ -263,12 +263,50 @@ export function PlayerTable({
                     className={playerStatus.status === 'in-lineup' ? 'bg-secondary/20' : ''}
                   >
                     <TableCell className="font-medium">
-                      <div>
-                        <div className="font-semibold">{player.name}</div>
-                        <div className="text-xs text-muted-foreground">{player.position}</div>
+                      <div className="flex items-center gap-3">
+                        {/* Player Headshot */}
+                        <div className="relative w-10 h-10 rounded-full overflow-hidden bg-muted flex-shrink-0">
+                          {player.headshotUrl ? (
+                            <img 
+                              src={player.headshotUrl} 
+                              alt={`${player.name} headshot`}
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                const target = e.target as HTMLImageElement;
+                                target.style.display = 'none';
+                                target.nextElementSibling?.classList.remove('hidden');
+                              }}
+                            />
+                          ) : null}
+                          <div className={`absolute inset-0 flex items-center justify-center ${player.headshotUrl ? 'hidden' : ''}`}>
+                            <User size={20} className="text-muted-foreground" />
+                          </div>
+                        </div>
+                        
+                        {/* Player Info */}
+                        <div className="min-w-0 flex-1">
+                          <div className="font-semibold truncate">{player.name}</div>
+                          <div className="text-xs text-muted-foreground">{player.position}</div>
+                        </div>
                       </div>
                     </TableCell>
-                    <TableCell className="font-medium">{player.team}</TableCell>
+                    <TableCell className="font-medium">
+                      <div className="flex items-center gap-2">
+                        {/* Team Logo */}
+                        {player.teamLogoUrl && (
+                          <img 
+                            src={player.teamLogoUrl} 
+                            alt={`${player.team} logo`}
+                            className="w-6 h-6 object-contain"
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.style.display = 'none';
+                            }}
+                          />
+                        )}
+                        <span className="truncate">{player.team}</span>
+                      </div>
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground">{player.conference}</TableCell>
                     <TableCell className="text-center font-medium">{player.projectedPoints}</TableCell>
                     {statsColumns.map(col => (

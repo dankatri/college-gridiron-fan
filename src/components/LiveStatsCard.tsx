@@ -2,7 +2,7 @@ import { PlayerStats, Player } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Activity, TrendingUp, Clock } from '@phosphor-icons/react';
+import { Activity, TrendingUp, Clock, User } from '@phosphor-icons/react';
 
 interface LiveStatsCardProps {
   player: Player;
@@ -35,13 +35,50 @@ export function LiveStatsCard({ player, stats, isInLineup = false }: LiveStatsCa
     return (
       <Card className={`${isInLineup ? 'border-accent' : ''}`}>
         <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-sm font-medium">{player.name}</CardTitle>
-            <Badge variant="outline" className="text-xs">
-              {player.position}
-            </Badge>
+          <div className="flex items-center gap-3">
+            {/* Player Headshot */}
+            <div className="relative w-8 h-8 rounded-full overflow-hidden bg-muted flex-shrink-0">
+              {player.headshotUrl ? (
+                <img 
+                  src={player.headshotUrl} 
+                  alt={`${player.name} headshot`}
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = 'none';
+                    target.nextElementSibling?.classList.remove('hidden');
+                  }}
+                />
+              ) : null}
+              <div className={`absolute inset-0 flex items-center justify-center ${player.headshotUrl ? 'hidden' : ''}`}>
+                <User size={12} className="text-muted-foreground" />
+              </div>
+            </div>
+            
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-medium truncate">{player.name}</CardTitle>
+                <Badge variant="outline" className="text-xs">
+                  {player.position}
+                </Badge>
+              </div>
+              <div className="flex items-center gap-2 mt-1">
+                {/* Team Logo */}
+                {player.teamLogoUrl && (
+                  <img 
+                    src={player.teamLogoUrl} 
+                    alt={`${player.team} logo`}
+                    className="w-3 h-3 object-contain"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.style.display = 'none';
+                    }}
+                  />
+                )}
+                <p className="text-xs text-muted-foreground truncate">{player.team}</p>
+              </div>
+            </div>
           </div>
-          <p className="text-xs text-muted-foreground">{player.team}</p>
         </CardHeader>
         <CardContent>
           <div className="text-center py-4 text-muted-foreground text-sm">
@@ -84,21 +121,56 @@ export function LiveStatsCard({ player, stats, isInLineup = false }: LiveStatsCa
   return (
     <Card className={`${isInLineup ? 'border-accent bg-accent/5' : ''} transition-all duration-200`}>
       <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              {player.name}
-              {isInLineup && <Activity size={14} className="text-accent" />}
-            </CardTitle>
-            <p className="text-xs text-muted-foreground">{player.team}</p>
+        <div className="flex items-center gap-3">
+          {/* Player Headshot */}
+          <div className="relative w-10 h-10 rounded-full overflow-hidden bg-muted flex-shrink-0">
+            {player.headshotUrl ? (
+              <img 
+                src={player.headshotUrl} 
+                alt={`${player.name} headshot`}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                  target.nextElementSibling?.classList.remove('hidden');
+                }}
+              />
+            ) : null}
+            <div className={`absolute inset-0 flex items-center justify-center ${player.headshotUrl ? 'hidden' : ''}`}>
+              <User size={16} className="text-muted-foreground" />
+            </div>
           </div>
-          <div className="text-right">
-            <Badge variant="outline" className="text-xs mb-1">
-              {player.position}
-            </Badge>
-            <div className="text-xs text-muted-foreground flex items-center gap-1">
-              <Clock size={10} />
-              {formatTimeAgo(stats.lastUpdated)}
+          
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <span className="truncate">{player.name}</span>
+                {isInLineup && <Activity size={14} className="text-accent" />}
+              </CardTitle>
+              <div className="flex flex-col items-end gap-1">
+                <Badge variant="outline" className="text-xs">
+                  {player.position}
+                </Badge>
+                <div className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Clock size={10} />
+                  {formatTimeAgo(stats.lastUpdated)}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 mt-1">
+              {/* Team Logo */}
+              {player.teamLogoUrl && (
+                <img 
+                  src={player.teamLogoUrl} 
+                  alt={`${player.team} logo`}
+                  className="w-4 h-4 object-contain"
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = 'none';
+                  }}
+                />
+              )}
+              <p className="text-xs text-muted-foreground truncate">{player.team}</p>
             </div>
           </div>
         </div>

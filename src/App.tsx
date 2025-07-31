@@ -270,7 +270,7 @@ function App() {
             College Fantasy Football
           </h1>
           <p className="text-muted-foreground">
-            Build your weekly lineup with current ESPN player data - remember, each player can only be used 3 times per season!
+            Build your weekly lineup with current ESPN player data featuring player headshots and team logos - remember, each player can only be used 3 times per season!
           </p>
         </div>
 
