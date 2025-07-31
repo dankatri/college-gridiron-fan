@@ -480,20 +480,17 @@ export const getPlayers = async (options?: {
       playersCache.set(cacheKey, {
         players: combinedPlayers,
         timestamp: Date.now()
-      playersCache.set(cacheKey, {
-      
-        timestamp: Date.now()
       });
       
-    console.error('Error fetching players from ESPN:', error);
-    }
-  } catch (error) {
+      return combinedPlayers;
+      
+    } catch (error) {
     console.error('Error fetching players from ESPN:', error);
     console.log('Falling back to sample data');
     
     if (options?.specificTeam && options.specificTeam !== 'All Teams') {
       samplePlayers = samplePlayers.filter(p => p.team === options.specificTeam);
-    
+    }
     
     if (options?.specificConference && options.specificConference !== 'All Conferences') {
       samplePlayers = samplePlayers.filter(p => p.conference === options.specificConference);
@@ -502,15 +499,12 @@ export const getPlayers = async (options?: {
     playersCache.set(cacheKey, {
       players: samplePlayers,
       timestamp: Date.now()
-    playersCache.set(cacheKey, {
-      players: samplePlayers,
-      timestamp: Date.now()
     });
     
     console.log(`Using ${samplePlayers.length} filtered sample players as fallback`);
     return samplePlayers;
-// Default fallback conferences and teams that should always be available
-};nst DEFAULT_CONFERENCES = [
+  }
+}
 
 // Default fallback conferences and teams that should always be available
 const DEFAULT_CONFERENCES = [
