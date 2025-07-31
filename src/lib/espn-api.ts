@@ -128,17 +128,55 @@ const isCacheValid = () => {
 // Fetch teams from ESPN
 export const fetchESPNTeams = async (): Promise<ESPNTeam[]> => {
   if (espnTeamsCache.length > 0 && isCacheValid()) {
+    console.log(`Using cached ESPN teams: ${espnTeamsCache.length}`);
     return espnTeamsCache;
   }
   
   try {
+    console.log('Fetching teams from ESPN API...');
     const data = await espnRequest('/teams');
-    const teams: ESPNTeam[] = data.sports?.[0]?.leagues?.[0]?.teams?.map((teamData: any) => teamData.team) || [];
     
-    espnTeamsCache = teams;
-    cacheTimestamp = Date.now();
+    console.log('ESPN teams API response structure:', {
+      hasSports: !!data.sports,
+      sportsLength: data.sports?.length,
+      hasLeagues: !!data.sports?.[0]?.leagues,
+      leaguesLength: data.sports?.[0]?.leagues?.length,
+      hasTeams: !!data.sports?.[0]?.leagues?.[0]?.teams,
+      teamsLength: data.sports?.[0]?.leagues?.[0]?.teams?.length
+    });
     
-    console.log(`Fetched ${teams.length} teams from ESPN`);
+    let teams: ESPNTeam[] = [];
+    
+    // Try the expected structure first
+    if (data.sports?.[0]?.leagues?.[0]?.teams) {
+      teams = data.sports[0].leagues[0].teams.map((teamData: any) => teamData.team || teamData);
+    } 
+    // Try alternative structure if teams are at a different level
+    else if (data.teams) {
+      teams = data.teams.map((teamData: any) => teamData.team || teamData);
+    }
+    // Try if teams are directly in the response
+    else if (Array.isArray(data)) {
+      teams = data.map((teamData: any) => teamData.team || teamData);
+    }
+    
+    // Filter out invalid teams
+    teams = teams.filter(team => team && (team.displayName || team.name));
+    
+    console.log(`Processed ${teams.length} valid teams from ESPN`);
+    
+    if (teams.length > 0) {
+      espnTeamsCache = teams;
+      cacheTimestamp = Date.now();
+      
+      // Log a few sample teams for debugging
+      console.log('Sample ESPN teams:', teams.slice(0, 3).map(t => ({
+        name: t.displayName || t.name,
+        conference: t.conference?.name,
+        id: t.id
+      })));
+    }
+    
     return teams;
   } catch (error) {
     console.error('Failed to fetch ESPN teams:', error);
@@ -478,20 +516,57 @@ export const fetchESPNCurrentPlayers = async (options?: {
 
 // Get unique conferences from ESPN teams
 export const getESPNConferences = async (): Promise<string[]> => {
-  const teams = await fetchESPNTeams();
-  const conferences = Array.from(new Set(
-    teams
-      .map(team => team.conference?.name)
-      .filter(conf => conf && conf !== 'Unknown')
-  )).sort();
-  
-  return ['All Conferences', ...conferences];
+  try {
+    const teams = await fetchESPNTeams();
+    console.log(`Got ${teams.length} teams for conference extraction`);
+    
+    if (teams.length === 0) {
+      throw new Error('No teams returned from ESPN API');
+    }
+    
+    const conferences = Array.from(new Set(
+      teams
+        .map(team => team.conference?.name)
+        .filter(conf => conf && conf !== 'Unknown')
+    )).sort();
+    
+    console.log('Extracted conferences from ESPN:', conferences);
+    
+    if (conferences.length === 0) {
+      throw new Error('No valid conferences found in team data');
+    }
+    
+    return ['All Conferences', ...conferences];
+  } catch (error) {
+    console.error('Error in getESPNConferences:', error);
+    throw error;
+  }
 };
 
 // Get unique team names from ESPN
 export const getESPNTeams = async (): Promise<string[]> => {
-  const teams = await fetchESPNTeams();
-  const teamNames = teams.map(team => team.displayName || team.name).sort();
-  
-  return ['All Teams', ...teamNames];
+  try {
+    const teams = await fetchESPNTeams();
+    console.log(`Got ${teams.length} teams for team name extraction`);
+    
+    if (teams.length === 0) {
+      throw new Error('No teams returned from ESPN API');
+    }
+    
+    const teamNames = teams
+      .map(team => team.displayName || team.name)
+      .filter(name => name && name.trim() !== '')
+      .sort();
+    
+    console.log('Extracted team names from ESPN:', teamNames.slice(0, 10), '...');
+    
+    if (teamNames.length === 0) {
+      throw new Error('No valid team names found in team data');
+    }
+    
+    return ['All Teams', ...teamNames];
+  } catch (error) {
+    console.error('Error in getESPNTeams:', error);
+    throw error;
+  }
 };

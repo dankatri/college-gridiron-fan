@@ -36,25 +36,89 @@ export function PlayerTable({
   const [isLoadingPlayers, setIsLoadingPlayers] = useState(false);
   const [enhancedPlayers, setEnhancedPlayers] = useState<Player[]>(players);
 
+  // Immediately set initial conference data from players if available
+  useEffect(() => {
+    if (players.length > 0 && conferences.length <= 1) {
+      const playerConferences = Array.from(new Set(
+        players.map(p => p.conference).filter(conf => conf)
+      )).sort();
+      
+      const playerTeams = Array.from(new Set(
+        players.map(p => p.team).filter(team => team)
+      )).sort();
+      
+      if (playerConferences.length > 0) {
+        setConferences(['All Conferences', ...playerConferences]);
+      }
+      
+      if (playerTeams.length > 0) {
+        setTeams(['All Teams', ...playerTeams]);
+      }
+      
+      console.log('PlayerTable: Set initial filter data from players:', {
+        conferences: playerConferences.length,
+        teams: playerTeams.length
+      });
+    }
+  }, [players, conferences.length]);
+
   // Load filter options
   useEffect(() => {
     const loadFilters = async () => {
+      console.log('PlayerTable: Starting to load filters...');
       try {
         const [confs, tms] = await Promise.all([
           getConferences(),
           getTeams()
         ]);
-        setConferences(confs);
-        setTeams(tms);
+        
+        console.log('PlayerTable: Loaded conferences:', confs);
+        console.log('PlayerTable: Loaded teams:', tms);
+        
+        // Ensure we always have at least the default values
+        if (confs.length === 0) {
+          console.warn('PlayerTable: No conferences loaded, using defaults');
+          setConferences(['All Conferences']);
+        } else {
+          setConferences(confs);
+        }
+        
+        if (tms.length === 0) {
+          console.warn('PlayerTable: No teams loaded, using defaults');
+          setTeams(['All Teams']);
+        } else {
+          setTeams(tms);
+        }
       } catch (error) {
-        console.error('Failed to load filter options:', error);
+        console.error('PlayerTable: Failed to load filter options:', error);
+        
+        // Fallback: extract conferences and teams from current players data
+        if (players.length > 0) {
+          const playerConferences = Array.from(new Set(
+            players.map(p => p.conference).filter(conf => conf)
+          )).sort();
+          
+          const playerTeams = Array.from(new Set(
+            players.map(p => p.team).filter(team => team)
+          )).sort();
+          
+          setConferences(['All Conferences', ...playerConferences]);
+          setTeams(['All Teams', ...playerTeams]);
+          
+          console.log('PlayerTable: Using fallback data - conferences:', playerConferences);
+          console.log('PlayerTable: Using fallback data - teams:', playerTeams);
+        } else {
+          // Ultimate fallback
+          setConferences(['All Conferences']);
+          setTeams(['All Teams']);
+        }
       } finally {
         setIsLoadingFilters(false);
       }
     };
     
     loadFilters();
-  }, []);
+  }, [players]);
 
   // Update enhanced players when base players change
   useEffect(() => {
@@ -104,6 +168,22 @@ export function PlayerTable({
 
     loadFilteredPlayers();
   }, [conferenceFilter, teamFilter, players, onPlayersUpdate]);
+
+  // Get teams filtered by conference for dropdown
+  const filteredTeams = useMemo(() => {
+    if (conferenceFilter === 'All Conferences') {
+      return teams;
+    }
+    
+    // Get teams from players that match the selected conference
+    const teamsInConference = Array.from(new Set(
+      enhancedPlayers
+        .filter(p => p.conference === conferenceFilter)
+        .map(p => p.team)
+    )).sort();
+    
+    return ['All Teams', ...teamsInConference];
+  }, [enhancedPlayers, conferenceFilter, teams]);
 
   // Filter players based on position and filters
   const filteredPlayers = useMemo(() => {
@@ -202,9 +282,13 @@ export function PlayerTable({
         <div className="flex gap-4 items-center flex-wrap">
           <div className="flex items-center gap-2">
             <Filter size={16} className="text-muted-foreground" />
-            <Select value={conferenceFilter} onValueChange={setConferenceFilter} disabled={isLoadingFilters}>
+            <Select 
+              value={conferenceFilter} 
+              onValueChange={setConferenceFilter} 
+              disabled={isLoadingFilters && conferences.length <= 1}
+            >
               <SelectTrigger className="w-[140px]">
-                <SelectValue />
+                <SelectValue placeholder={isLoadingFilters && conferences.length <= 1 ? "Loading..." : "All Conferences"} />
               </SelectTrigger>
               <SelectContent>
                 {conferences.map(conf => (
@@ -213,19 +297,35 @@ export function PlayerTable({
               </SelectContent>
             </Select>
             
-            <Select value={teamFilter} onValueChange={setTeamFilter} disabled={isLoadingFilters}>
+            <Select 
+              value={teamFilter} 
+              onValueChange={setTeamFilter} 
+              disabled={isLoadingFilters && filteredTeams.length <= 1}
+            >
               <SelectTrigger className="w-[120px]">
-                <SelectValue />
+                <SelectValue placeholder={isLoadingFilters && filteredTeams.length <= 1 ? "Loading..." : "All Teams"} />
               </SelectTrigger>
               <SelectContent>
-                {teams.map(team => (
+                {filteredTeams.map(team => (
                   <SelectItem key={team} value={team}>{team}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
             
-            {isLoadingPlayers && (
+            {(isLoadingPlayers || (isLoadingFilters && conferences.length <= 1)) && (
               <RefreshCw size={16} className="animate-spin text-muted-foreground" />
+            )}
+            
+            {/* Status badges - only show if we have useful data */}
+            {conferences.length > 1 && (
+              <Badge variant="outline" className="text-xs">
+                {conferences.length - 1} conferences
+              </Badge>
+            )}
+            {filteredTeams.length > 1 && conferenceFilter !== 'All Conferences' && (
+              <Badge variant="outline" className="text-xs">
+                {filteredTeams.length - 1} teams
+              </Badge>
             )}
           </div>
         </div>

@@ -109,6 +109,21 @@ export const getPlayers = async (options?: {
   }
 };
 
+// Default fallback conferences and teams that should always be available
+const DEFAULT_CONFERENCES = [
+  'All Conferences', 
+  'SEC', 'Big Ten', 'Big 12', 'ACC', 'Pac-12', // Power 5
+  'American Athletic', 'Conference USA', 'Mid-American', 'Mountain West', 'Sun Belt', // Group of 5
+  'Big Sky', 'Big South', 'Colonial Athletic', 'Ivy League', 'Northeast', // FCS
+  'Ohio Valley', 'Patriot League', 'Southern', 'Southland', 'Western Athletic',
+  'Independent' // For Notre Dame, etc.
+];
+
+const DEFAULT_TEAMS_FROM_SAMPLE = [
+  'All Teams',
+  ...Array.from(new Set(SAMPLE_PLAYERS.map(p => p.team))).sort()
+];
+
 // Get conferences (with caching)
 export const getConferences = async (): Promise<string[]> => {
   if (conferencesCache.length > 0 && isCacheValid(cacheTimestamp)) {
@@ -116,12 +131,21 @@ export const getConferences = async (): Promise<string[]> => {
   }
 
   try {
-    conferencesCache = await getESPNConferences();
-    cacheTimestamp = Date.now();
-    return conferencesCache;
+    const espnConferences = await getESPNConferences();
+    if (espnConferences.length > 1) { // Should have more than just "All Conferences"
+      conferencesCache = espnConferences;
+      cacheTimestamp = Date.now();
+      console.log('Successfully loaded ESPN conferences:', espnConferences);
+      return conferencesCache;
+    } else {
+      console.warn('ESPN returned insufficient conferences data, using defaults');
+      throw new Error('ESPN returned empty or invalid conferences data');
+    }
   } catch (error) {
-    console.error('Failed to fetch conferences from ESPN, using default:', error);
-    return ['All Conferences', 'SEC', 'Big Ten', 'Big 12', 'ACC', 'Pac-12', 'American Athletic', 'Conference USA', 'Mid-American', 'Mountain West', 'Sun Belt'];
+    console.error('Failed to fetch conferences from ESPN, using expanded default:', error);
+    conferencesCache = DEFAULT_CONFERENCES;
+    cacheTimestamp = Date.now();
+    return DEFAULT_CONFERENCES;
   }
 };
 
@@ -132,12 +156,21 @@ export const getTeams = async (): Promise<string[]> => {
   }
 
   try {
-    teamsCache = await getESPNTeams();
-    cacheTimestamp = Date.now();
-    return teamsCache;
+    const espnTeams = await getESPNTeams();
+    if (espnTeams.length > 1) { // Should have more than just "All Teams"
+      teamsCache = espnTeams;
+      cacheTimestamp = Date.now();
+      console.log('Successfully loaded ESPN teams:', espnTeams.length, 'teams');
+      return teamsCache;
+    } else {
+      console.warn('ESPN returned insufficient teams data, using defaults');
+      throw new Error('ESPN returned empty or invalid teams data');
+    }
   } catch (error) {
-    console.error('Failed to fetch teams from ESPN, using default:', error);
-    return ['All Teams'];
+    console.error('Failed to fetch teams from ESPN, using sample data teams:', error);
+    teamsCache = DEFAULT_TEAMS_FROM_SAMPLE;
+    cacheTimestamp = Date.now();
+    return DEFAULT_TEAMS_FROM_SAMPLE;
   }
 };
 
