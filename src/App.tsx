@@ -393,6 +393,7 @@ function App() {
                       />
                     ))}
                     
+                    <Button
                       onClick={handleSaveLineup}
                       className="w-full"
                       disabled={!isLineupComplete(currentLineup)}
