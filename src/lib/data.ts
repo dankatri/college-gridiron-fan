@@ -1,33 +1,45 @@
 import { Player } from './types';
 import { fetchCurrentPlayers, getCurrentConferences, getCurrentTeams } from './api';
 
-// Cache for API data
-let playersCache: Player[] = [];
+// Cache for API data - now supports multiple cache entries based on filters
+const playersCache = new Map<string, { players: Player[], timestamp: number }>();
 let conferencesCache: string[] = [];
 let teamsCache: string[] = [];
 let cacheTimestamp = 0;
 const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
 
-// Check if cache is valid
-const isCacheValid = () => {
-  return Date.now() - cacheTimestamp < CACHE_DURATION;
+// Generate cache key based on filter options
+const getCacheKey = (options?: { specificTeam?: string; specificConference?: string }) => {
+  if (!options) return 'default';
+  return `${options.specificTeam || 'all'}_${options.specificConference || 'all'}`;
 };
 
-// Main function to get players (with caching)
-export const getPlayers = async (): Promise<Player[]> => {
+// Check if cache is valid
+const isCacheValid = (timestamp: number) => {
+  return Date.now() - timestamp < CACHE_DURATION;
+};
+
+// Main function to get players (with caching and smart loading)
+export const getPlayers = async (options?: { 
+  specificTeam?: string; 
+  specificConference?: string;
+}): Promise<Player[]> => {
+  const cacheKey = getCacheKey(options);
+  const cachedData = playersCache.get(cacheKey);
+  
   // Check if cached data is valid (has proper player names)
-  if (playersCache.length > 0 && isCacheValid()) {
-    const hasValidNames = playersCache.every(p => p.name && !p.name.includes('undefined') && p.name.trim() !== '');
+  if (cachedData && isCacheValid(cachedData.timestamp)) {
+    const hasValidNames = cachedData.players.every(p => p.name && !p.name.includes('undefined') && p.name.trim() !== '');
     if (hasValidNames) {
-      console.log('Using cached players:', playersCache.length);
-      return playersCache;
+      console.log(`Using cached players for ${cacheKey}:`, cachedData.players.length);
+      return cachedData.players;
     } else {
-      console.warn('Cached data has invalid names, clearing cache');
-      clearCache();
+      console.warn('Cached data has invalid names, clearing cache for', cacheKey);
+      playersCache.delete(cacheKey);
     }
   }
 
-  console.log('Attempting to fetch players from API...');
+  console.log(`Attempting to fetch players from API with options:`, options);
   
   try {
     // First check if we have an API key
@@ -38,12 +50,34 @@ export const getPlayers = async (): Promise<Player[]> => {
     }
     
     console.log('API key found, attempting to fetch current players...');
-    playersCache = await fetchCurrentPlayers();
-    cacheTimestamp = Date.now();
-    console.log('Successfully fetched players from API:', playersCache.length);
+    
+    // Convert filter options to API parameters
+    const apiOptions: {
+      specificTeam?: string;
+      specificConference?: string;
+      maxPlayersPerPosition?: { QB: number; RB: number; WR: number };
+    } = {};
+    
+    if (options?.specificTeam && options.specificTeam !== 'All Teams') {
+      apiOptions.specificTeam = options.specificTeam;
+    }
+    
+    if (options?.specificConference && options.specificConference !== 'All Conferences') {
+      apiOptions.specificConference = options.specificConference;
+    }
+    
+    // Set player limits based on filtering
+    if (apiOptions.specificTeam || apiOptions.specificConference) {
+      apiOptions.maxPlayersPerPosition = { QB: 100, RB: 150, WR: 200 };
+    } else {
+      apiOptions.maxPlayersPerPosition = { QB: 30, RB: 30, WR: 40 };
+    }
+    
+    const fetchedPlayers = await fetchCurrentPlayers(apiOptions);
+    console.log('Successfully fetched players from API:', fetchedPlayers.length);
     
     // Validate API data has proper names
-    const validPlayers = playersCache.filter(p => 
+    const validPlayers = fetchedPlayers.filter(p => 
       p.name && 
       !p.name.includes('undefined') && 
       p.name.trim() !== '' &&
@@ -55,22 +89,33 @@ export const getPlayers = async (): Promise<Player[]> => {
       throw new Error('API returned no players with valid names');
     }
     
-    if (validPlayers.length < playersCache.length) {
-      console.warn(`Filtered out ${playersCache.length - validPlayers.length} players with invalid names`);
-      playersCache = validPlayers;
+    if (validPlayers.length < fetchedPlayers.length) {
+      console.warn(`Filtered out ${fetchedPlayers.length - validPlayers.length} players with invalid names`);
     }
     
-    return playersCache;
+    // Cache the results
+    playersCache.set(cacheKey, {
+      players: validPlayers,
+      timestamp: Date.now()
+    });
+    
+    return validPlayers;
   } catch (error) {
     console.error('Failed to fetch current players, using sample data:', error);
     console.log('Using sample data with', SAMPLE_PLAYERS.length, 'players');
     console.log('Sample data first 3 players:', SAMPLE_PLAYERS.slice(0, 3).map(p => ({ name: p.name, id: p.id })));
     
     // Clear bad cache and return sample data
-    clearCache();
-    playersCache = [...SAMPLE_PLAYERS]; // Create a copy to avoid mutations
-    cacheTimestamp = Date.now();
-    return playersCache;
+    playersCache.delete(cacheKey);
+    const samplePlayers = [...SAMPLE_PLAYERS]; // Create a copy to avoid mutations
+    
+    // Cache sample data too
+    playersCache.set(cacheKey, {
+      players: samplePlayers,
+      timestamp: Date.now()
+    });
+    
+    return samplePlayers;
   }
 };
 
@@ -107,7 +152,7 @@ export const getTeams = async (): Promise<string[]> => {
 // Clear cache (useful for refreshing data)
 export const clearCache = () => {
   console.log('Clearing player data cache');
-  playersCache = [];
+  playersCache.clear();
   conferencesCache = [];
   teamsCache = [];
   cacheTimestamp = 0;

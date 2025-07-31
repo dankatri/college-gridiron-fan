@@ -239,6 +239,11 @@ function App() {
     }
   };
 
+  const handlePlayersUpdate = (newPlayers: Player[]) => {
+    // Update the main players list when PlayerTable loads filtered players
+    setPlayers(newPlayers);
+  };
+
   const handleForceSampleData = async () => {
     setIsLoadingPlayers(true);
     try {
@@ -361,6 +366,7 @@ function App() {
                         playerUsage={playerUsage}
                         currentLineup={currentLineup}
                         onPlayerSelect={handlePlayerSelect}
+                        onPlayersUpdate={handlePlayersUpdate}
                       />
                     </TabsContent>
                   </Tabs>

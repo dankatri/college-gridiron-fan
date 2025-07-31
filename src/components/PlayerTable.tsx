@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Player, PlayerUsage } from '@/lib/types';
-import { getConferences, getTeams } from '@/lib/data';
+import { getConferences, getTeams, getPlayers } from '@/lib/data';
 import { isPlayerAvailable, isPlayerInLineup } from '@/lib/utils-fantasy';
 import { MAX_PLAYER_USES } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { LineupSlot } from '@/lib/types';
-import { Users, Filter, Trophy } from '@phosphor-icons/react';
+import { Users, Filter, Trophy, RefreshCw } from '@phosphor-icons/react';
 
 interface PlayerTableProps {
   position: 'QB' | 'RB' | 'WR';
@@ -17,14 +17,24 @@ interface PlayerTableProps {
   playerUsage: PlayerUsage[];
   currentLineup: LineupSlot[];
   onPlayerSelect: (player: Player) => void;
+  onPlayersUpdate?: (players: Player[]) => void; // New callback to update parent's player list
 }
 
-export function PlayerTable({ position, players, playerUsage, currentLineup, onPlayerSelect }: PlayerTableProps) {
+export function PlayerTable({ 
+  position, 
+  players, 
+  playerUsage, 
+  currentLineup, 
+  onPlayerSelect,
+  onPlayersUpdate 
+}: PlayerTableProps) {
   const [conferenceFilter, setConferenceFilter] = useState('All Conferences');
   const [teamFilter, setTeamFilter] = useState('All Teams');
   const [conferences, setConferences] = useState<string[]>(['All Conferences']);
   const [teams, setTeams] = useState<string[]>(['All Teams']);
   const [isLoadingFilters, setIsLoadingFilters] = useState(true);
+  const [isLoadingPlayers, setIsLoadingPlayers] = useState(false);
+  const [enhancedPlayers, setEnhancedPlayers] = useState<Player[]>(players);
 
   // Load filter options
   useEffect(() => {
@@ -46,9 +56,58 @@ export function PlayerTable({ position, players, playerUsage, currentLineup, onP
     loadFilters();
   }, []);
 
+  // Update enhanced players when base players change
+  useEffect(() => {
+    setEnhancedPlayers(players);
+  }, [players]);
+
+  // Load additional players when filters change
+  useEffect(() => {
+    const loadFilteredPlayers = async () => {
+      // Only load more players if a specific filter is applied
+      if (conferenceFilter === 'All Conferences' && teamFilter === 'All Teams') {
+        setEnhancedPlayers(players);
+        return;
+      }
+
+      setIsLoadingPlayers(true);
+      try {
+        const filterOptions: { specificTeam?: string; specificConference?: string } = {};
+        
+        if (teamFilter !== 'All Teams') {
+          filterOptions.specificTeam = teamFilter;
+        }
+        
+        if (conferenceFilter !== 'All Conferences') {
+          filterOptions.specificConference = conferenceFilter;
+        }
+
+        console.log('Loading filtered players with options:', filterOptions);
+        const newPlayers = await getPlayers(filterOptions);
+        setEnhancedPlayers(newPlayers);
+        
+        // Optionally notify parent component about the new players
+        if (onPlayersUpdate) {
+          onPlayersUpdate(newPlayers);
+        }
+        
+        console.log(`Loaded ${newPlayers.length} players for filtered view`);
+        
+      } catch (error) {
+        console.error('Failed to load filtered players:', error);
+        // Fall back to original players
+        setEnhancedPlayers(players);
+      } finally {
+        setIsLoadingPlayers(false);
+      }
+    };
+
+    loadFilteredPlayers();
+  }, [conferenceFilter, teamFilter, players, onPlayersUpdate]);
+
   // Filter players based on position and filters
   const filteredPlayers = useMemo(() => {
-    let filtered = players.filter(p => p.position === position);
+    let filtered = enhancedPlayers.filter(p => p.position === position);
     
     if (conferenceFilter !== 'All Conferences') {
       filtered = filtered.filter(p => p.conference === conferenceFilter);
@@ -60,7 +119,14 @@ export function PlayerTable({ position, players, playerUsage, currentLineup, onP
     
     // Sort by projected points descending
     return filtered.sort((a, b) => b.projectedPoints - a.projectedPoints);
-  }, [players, position, conferenceFilter, teamFilter]);
+  }, [enhancedPlayers, position, conferenceFilter, teamFilter]);
+
+  // Reset team filter when conference changes
+  useEffect(() => {
+    if (conferenceFilter !== 'All Conferences') {
+      setTeamFilter('All Teams');
+    }
+  }, [conferenceFilter]);
 
   // Get relevant stats columns based on position
   const getStatsColumns = (position: 'QB' | 'RB' | 'WR') => {
@@ -113,12 +179,23 @@ export function PlayerTable({ position, players, playerUsage, currentLineup, onP
     return { status: 'available', label: 'Available', variant: 'default' as const };
   };
 
+  const getPlayerCountDisplay = () => {
+    const baseCount = `${filteredPlayers.length}`;
+    const isFiltered = conferenceFilter !== 'All Conferences' || teamFilter !== 'All Teams';
+    
+    if (isLoadingPlayers && isFiltered) {
+      return `${baseCount} (loading more...)`;
+    }
+    
+    return baseCount;
+  };
+
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Users size={20} />
-          {positionName} ({filteredPlayers.length})
+          {positionName} ({getPlayerCountDisplay()})
         </CardTitle>
         
         {/* Filters */}
@@ -146,6 +223,10 @@ export function PlayerTable({ position, players, playerUsage, currentLineup, onP
                 ))}
               </SelectContent>
             </Select>
+            
+            {isLoadingPlayers && (
+              <RefreshCw size={16} className="animate-spin text-muted-foreground" />
+            )}
           </div>
         </div>
       </CardHeader>
@@ -218,9 +299,18 @@ export function PlayerTable({ position, players, playerUsage, currentLineup, onP
           </Table>
         </div>
         
-        {filteredPlayers.length === 0 && (
+        {filteredPlayers.length === 0 && !isLoadingPlayers && (
           <div className="text-center py-8 text-muted-foreground">
             No players found matching your filters.
+          </div>
+        )}
+        
+        {isLoadingPlayers && (
+          <div className="text-center py-8 text-muted-foreground">
+            <div className="flex items-center justify-center gap-2">
+              <RefreshCw size={20} className="animate-spin" />
+              Loading more players...
+            </div>
           </div>
         )}
       </CardContent>

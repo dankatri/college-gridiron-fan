@@ -229,32 +229,52 @@ const convertApiPlayerToPlayer = async (apiPlayer: ApiPlayer, stats: any): Promi
 };
 
 // Main function to fetch all current players
-export const fetchCurrentPlayers = async (): Promise<Player[]> => {
+export const fetchCurrentPlayers = async (options?: {
+  specificTeam?: string;
+  specificConference?: string;
+  maxPlayersPerPosition?: { QB: number; RB: number; WR: number };
+}): Promise<Player[]> => {
   try {
-    // First, test with a single team to see the data structure
-    console.log('Testing API with single team first...');
-    try {
-      const testRoster = await fetchTeamRoster('Alabama', 2025);
-      console.log('Test roster sample data:', JSON.stringify(testRoster.slice(0, 2), null, 2));
-      
-      if (testRoster.length > 0) {
-        const samplePlayer = testRoster[0];
-        console.log('Sample player fields:', Object.keys(samplePlayer));
-        console.log('Sample player name fields:', {
-          name: samplePlayer.name,
-          first_name: samplePlayer.first_name,
-          last_name: samplePlayer.last_name
-        });
-      }
-    } catch (testError) {
-      console.warn('Test API call failed:', testError);
+    // Set up player limits based on filtering
+    const defaultLimits = { QB: 30, RB: 30, WR: 40 }; // Conservative defaults for "All" view
+    const expandedLimits = { QB: 100, RB: 150, WR: 200 }; // More players when filtering
+    
+    const limits = options?.maxPlayersPerPosition || 
+      (options?.specificTeam || options?.specificConference ? expandedLimits : defaultLimits);
+
+    console.log('Fetching players with limits:', limits);
+    console.log('Filter options:', { 
+      specificTeam: options?.specificTeam, 
+      specificConference: options?.specificConference 
+    });
+
+    // Get teams to fetch from
+    let teamsToFetch: string[] = [];
+    
+    if (options?.specificTeam && options.specificTeam !== 'All Teams') {
+      // Fetch only specific team
+      teamsToFetch = [options.specificTeam];
+    } else if (options?.specificConference && options.specificConference !== 'All Conferences') {
+      // Fetch all teams from specific conference
+      const allTeams = await fetchTeams();
+      teamsToFetch = allTeams
+        .filter(team => team.conference === options.specificConference)
+        .map(team => team.school)
+        .slice(0, 20); // Limit to prevent too many API calls
+    } else {
+      // Default set of major programs for "All" view
+      teamsToFetch = [
+        // Major programs across all conferences
+        'Alabama', 'Georgia', 'Tennessee', 'LSU', 'Auburn', 'Florida', 'Texas A&M', 'Arkansas', 'Kentucky', 'South Carolina', // SEC
+        'Michigan', 'Ohio State', 'Penn State', 'Michigan State', 'Wisconsin', 'Iowa', 'Illinois', 'Maryland', 'Purdue', 'Indiana', // Big Ten
+        'Texas', 'Oklahoma', 'Oklahoma State', 'Kansas State', 'Texas Tech', 'TCU', 'Baylor', 'West Virginia', 'Cincinnati', 'UCF', // Big 12
+        'USC', 'Oregon', 'Washington', 'UCLA', 'Utah', 'Oregon State', 'Washington State', 'Colorado', 'Stanford', 'California', // Pac-12
+        'Florida State', 'Clemson', 'Miami', 'North Carolina', 'NC State', 'Virginia Tech', 'Pittsburgh', 'Louisville', 'Wake Forest', 'Syracuse', // ACC
+        'Notre Dame' // Independent
+      ];
     }
 
-    // Get current year (2025) rosters from major programs
-    const majorPrograms = [
-      // Start with just a few teams for testing
-      'Alabama', 'Georgia', 'Michigan', 'Ohio State', 'USC', 'Oregon'
-    ];
+    console.log(`Fetching rosters from ${teamsToFetch.length} teams`);
 
     // Fetch 2024 stats to project 2025 performance (most recent complete season)
     const statsData = await fetchPlayerStats(2024);
@@ -307,7 +327,7 @@ export const fetchCurrentPlayers = async (): Promise<Player[]> => {
     // Fetch current rosters
     const allPlayers: Player[] = [];
     
-    for (const team of majorPrograms) {
+    for (const team of teamsToFetch) {
       try {
         const roster = await fetchTeamRoster(team, 2025);
         
@@ -337,8 +357,9 @@ export const fetchCurrentPlayers = async (): Promise<Player[]> => {
               continue;
             }
             
-            // Only include players with some statistical production or high potential
-            if (player.projectedPoints > 2 || !stats.passingYards) {
+            // Include more players when filtering, be more selective for "All" view
+            const minPoints = (options?.specificTeam || options?.specificConference) ? 0 : 2;
+            if (player.projectedPoints >= minPoints) {
               allPlayers.push(player);
             }
           } catch (error) {
@@ -347,7 +368,7 @@ export const fetchCurrentPlayers = async (): Promise<Player[]> => {
         }
         
         // Add small delay to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise(resolve => setTimeout(resolve, 50));
         
       } catch (error) {
         console.warn(`Failed to fetch roster for ${team}:`, error);
@@ -374,12 +395,15 @@ export const fetchCurrentPlayers = async (): Promise<Player[]> => {
     // Sort by projected points and return top performers by position
     const sortedPlayers = playersWithValidNames.sort((a, b) => b.projectedPoints - a.projectedPoints);
     
-    // Get top players by position to ensure good distribution
-    const qbs = sortedPlayers.filter(p => p.position === 'QB').slice(0, 50);
-    const rbs = sortedPlayers.filter(p => p.position === 'RB').slice(0, 60);
-    const wrs = sortedPlayers.filter(p => p.position === 'WR').slice(0, 80);
+    // Get players by position based on limits
+    const qbs = sortedPlayers.filter(p => p.position === 'QB').slice(0, limits.QB);
+    const rbs = sortedPlayers.filter(p => p.position === 'RB').slice(0, limits.RB);
+    const wrs = sortedPlayers.filter(p => p.position === 'WR').slice(0, limits.WR);
     
-    return [...qbs, ...rbs, ...wrs];
+    const finalPlayers = [...qbs, ...rbs, ...wrs];
+    console.log(`Returning ${finalPlayers.length} players (QB: ${qbs.length}, RB: ${rbs.length}, WR: ${wrs.length})`);
+    
+    return finalPlayers;
     
   } catch (error) {
     console.error('Error fetching current players:', error);
