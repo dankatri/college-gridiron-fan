@@ -160,8 +160,17 @@ export const fetchESPNTeams = async (): Promise<ESPNTeam[]> => {
       teams = data.map((teamData: any) => teamData.team || teamData);
     }
     
-    // Filter out invalid teams
-    teams = teams.filter(team => team && (team.displayName || team.name));
+    // Filter out invalid teams and ensure they have conference information
+    teams = teams.filter(team => {
+      const hasBasicInfo = team && (team.displayName || team.name);
+      const hasConferenceInfo = team.conference?.name || team.conference?.shortName;
+      
+      if (hasBasicInfo && !hasConferenceInfo) {
+        console.warn(`Team ${team.displayName || team.name} missing conference info`);
+      }
+      
+      return hasBasicInfo; // Include teams even without conference info for now
+    });
     
     console.log(`Processed ${teams.length} valid teams from ESPN`);
     
@@ -169,10 +178,23 @@ export const fetchESPNTeams = async (): Promise<ESPNTeam[]> => {
       espnTeamsCache = teams;
       cacheTimestamp = Date.now();
       
+      // Log conference distribution for debugging
+      const conferenceCount = new Map<string, number>();
+      teams.forEach(team => {
+        const conf = team.conference?.name || 'Unknown';
+        conferenceCount.set(conf, (conferenceCount.get(conf) || 0) + 1);
+      });
+      
+      console.log('Teams by conference:', Array.from(conferenceCount.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10) // Top 10 conferences
+        .map(([conf, count]) => `${conf}: ${count}`)
+      );
+      
       // Log a few sample teams for debugging
-      console.log('Sample ESPN teams:', teams.slice(0, 3).map(t => ({
+      console.log('Sample ESPN teams:', teams.slice(0, 5).map(t => ({
         name: t.displayName || t.name,
-        conference: t.conference?.name,
+        conference: t.conference?.name || 'Unknown',
         id: t.id
       })));
     }
@@ -372,9 +394,9 @@ export const fetchESPNCurrentPlayers = async (options?: {
   maxPlayersPerPosition?: { QB: number; RB: number; WR: number };
 }): Promise<Player[]> => {
   try {
-    // Set up player limits - increased for better selection
-    const defaultLimits = { QB: 50, RB: 60, WR: 80 }; // Increased from 30/30/40
-    const expandedLimits = { QB: 150, RB: 200, WR: 250 }; // Increased limits when filtering
+    // Set up player limits - significantly increased for comprehensive coverage
+    const defaultLimits = { QB: 80, RB: 100, WR: 120 }; // Increased from 50/60/80
+    const expandedLimits = { QB: 300, RB: 400, WR: 500 }; // Much larger limits when filtering
     
     const limits = options?.maxPlayersPerPosition || 
       (options?.specificTeam || options?.specificConference ? expandedLimits : defaultLimits);
@@ -387,6 +409,7 @@ export const fetchESPNCurrentPlayers = async (options?: {
 
     // Get all teams
     const allTeams = await fetchESPNTeams();
+    console.log(`ESPN API returned ${allTeams.length} total teams`);
     
     // Filter teams based on options
     let teamsToFetch: ESPNTeam[] = [];
@@ -398,11 +421,15 @@ export const fetchESPNCurrentPlayers = async (options?: {
         team.shortDisplayName === options.specificTeam ||
         team.location === options.specificTeam
       );
+      console.log(`Filtered to ${teamsToFetch.length} teams matching "${options.specificTeam}"`);
     } else if (options?.specificConference && options.specificConference !== 'All Conferences') {
       teamsToFetch = allTeams.filter(team => 
         team.conference?.name === options.specificConference ||
         team.conference?.shortName === options.specificConference
-      ).slice(0, 40); // Increased limit for conference filtering
+      );
+      console.log(`Filtered to ${teamsToFetch.length} teams in "${options.specificConference}"`);
+      
+      // No arbitrary slice limit for conference filtering - get ALL teams in the conference
     } else {
       // Get teams from all major conferences for expanded player selection
       const majorConferences = [
@@ -413,15 +440,15 @@ export const fetchESPNCurrentPlayers = async (options?: {
       ];
       teamsToFetch = allTeams.filter(team => 
         team.conference && majorConferences.includes(team.conference.name)
-      ).slice(0, 100); // Increased from 60 to 100 teams for more player diversity
+      ).slice(0, 120); // Increased from 100 to 120 teams for more player diversity
     }
 
     if (teamsToFetch.length === 0) {
-      console.warn('No teams found matching filter criteria, using more teams');
-      teamsToFetch = allTeams.slice(0, 80); // Increased from 30 to 80 teams for better coverage
+      console.warn('No teams found matching filter criteria, using fallback teams');
+      teamsToFetch = allTeams.slice(0, 100); // Increased fallback to 100 teams
     }
 
-    console.log(`Fetching rosters from ${teamsToFetch.length} ESPN teams across expanded conferences`);
+    console.log(`Fetching rosters from ${teamsToFetch.length} ESPN teams`);
 
     const allPlayers: Player[] = [];
     
@@ -463,7 +490,7 @@ export const fetchESPNCurrentPlayers = async (options?: {
             }
             
             // Include more players when filtering, be more selective for "All" view
-            const minPoints = (options?.specificTeam || options?.specificConference) ? 0 : 1;
+            const minPoints = (options?.specificTeam || options?.specificConference) ? 0 : 0.5;
             if (player.projectedPoints >= minPoints) {
               allPlayers.push(player);
             }
@@ -472,8 +499,8 @@ export const fetchESPNCurrentPlayers = async (options?: {
           }
         }
         
-        // Add delay to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // Reduced delay to speed up loading but still avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 50));
         
       } catch (error) {
         console.warn(`Failed to fetch roster for ESPN team ${team.displayName}:`, error);

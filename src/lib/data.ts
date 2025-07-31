@@ -404,11 +404,11 @@ export const getPlayers = async (options?: {
   // Check if cached data is valid (has proper player names)
   if (cachedData && isCacheValid(cachedData.timestamp)) {
     const hasValidNames = cachedData.players.every(p => p.name && !p.name.includes('undefined') && p.name.trim() !== '');
-    if (hasValidNames) {
+    if (hasValidNames && cachedData.players.length > 0) {
       console.log(`Using cached players for ${cacheKey}:`, cachedData.players.length);
       return cachedData.players;
     } else {
-      console.warn('Cached data has invalid names, clearing cache for', cacheKey);
+      console.warn('Cached data has invalid names or is empty, clearing cache for', cacheKey);
       playersCache.delete(cacheKey);
     }
   }
@@ -446,7 +446,10 @@ export const getPlayers = async (options?: {
     
     console.log(`Filtered to ${validPlayers.length} valid players`);
     
-    if (validPlayers.length > 0) {
+    // Set minimum player count based on filter type
+    const minExpectedPlayers = options?.specificTeam ? 10 : options?.specificConference ? 50 : 100;
+    
+    if (validPlayers.length >= minExpectedPlayers) {
       // Cache the successful result
       playersCache.set(cacheKey, {
         players: validPlayers,
@@ -456,29 +459,55 @@ export const getPlayers = async (options?: {
       console.log(`Successfully cached ${validPlayers.length} players for ${cacheKey}`);
       return validPlayers;
     } else {
-      console.warn('No valid players returned from ESPN API, falling back to sample data');
-      // Fall back to sample data
-      const samplePlayers = [...SAMPLE_PLAYERS]; // Create a copy to avoid mutations
+      console.warn(`ESPN returned insufficient players (${validPlayers.length} < ${minExpectedPlayers}), combining with sample data`);
+      
+      // Combine ESPN data with sample data to ensure comprehensive coverage
+      const combinedPlayers = [...validPlayers];
+      
+      // Add sample players that match the filter and aren't already included
+      const existingPlayerNames = new Set(validPlayers.map(p => p.name.toLowerCase()));
+      const filteredSamplePlayers = SAMPLE_PLAYERS.filter(samplePlayer => {
+        const matchesFilter = 
+          (!options?.specificTeam || options.specificTeam === 'All Teams' || samplePlayer.team === options.specificTeam) &&
+          (!options?.specificConference || options.specificConference === 'All Conferences' || samplePlayer.conference === options.specificConference);
+        
+        const notDuplicate = !existingPlayerNames.has(samplePlayer.name.toLowerCase());
+        
+        return matchesFilter && notDuplicate;
+      });
+      
+      combinedPlayers.push(...filteredSamplePlayers);
+      
+      console.log(`Combined result: ${combinedPlayers.length} players (${validPlayers.length} ESPN + ${filteredSamplePlayers.length} sample)`);
       
       playersCache.set(cacheKey, {
-        players: samplePlayers,
+        players: combinedPlayers,
         timestamp: Date.now()
       });
       
-      return samplePlayers;
+      return combinedPlayers;
     }
   } catch (error) {
     console.error('Error fetching players from ESPN:', error);
     console.log('Falling back to sample data');
     
-    // Use sample data as fallback
-    const samplePlayers = [...SAMPLE_PLAYERS];
+    // Use sample data as fallback, filtered if needed
+    let samplePlayers = [...SAMPLE_PLAYERS];
+    
+    if (options?.specificTeam && options.specificTeam !== 'All Teams') {
+      samplePlayers = samplePlayers.filter(p => p.team === options.specificTeam);
+    }
+    
+    if (options?.specificConference && options.specificConference !== 'All Conferences') {
+      samplePlayers = samplePlayers.filter(p => p.conference === options.specificConference);
+    }
     
     playersCache.set(cacheKey, {
       players: samplePlayers,
       timestamp: Date.now()
     });
     
+    console.log(`Using ${samplePlayers.length} filtered sample players as fallback`);
     return samplePlayers;
   }
 };
@@ -498,53 +527,105 @@ const DEFAULT_TEAMS_FROM_SAMPLE = [
   ...Array.from(new Set(SAMPLE_PLAYERS.map(p => p.team))).sort()
 ];
 
-// Get conferences (with caching)
+// Get conferences (with caching and robust fallback)
 export const getConferences = async (): Promise<string[]> => {
-  if (conferencesCache.length > 0 && isCacheValid(cacheTimestamp)) {
+  if (conferencesCache.length > 1 && isCacheValid(cacheTimestamp)) { // Must have more than just "All Conferences"
     return conferencesCache;
   }
 
+  console.log('Loading conferences from ESPN...');
+  
   try {
     const espnConferences = await getESPNConferences();
-    if (espnConferences.length > 1) { // Should have more than just "All Conferences"
+    console.log(`ESPN conferences loaded: ${espnConferences.length}`, espnConferences);
+    
+    if (espnConferences.length > 2) { // Should have "All Conferences" plus actual conferences
       conferencesCache = espnConferences;
       cacheTimestamp = Date.now();
       console.log('Successfully loaded ESPN conferences:', espnConferences);
       return conferencesCache;
     } else {
-      console.warn('ESPN returned insufficient conferences data, using defaults');
-      throw new Error('ESPN returned empty or invalid conferences data');
+      console.warn('ESPN returned insufficient conferences data, using enhanced defaults');
+      throw new Error('ESPN returned insufficient conferences data');
     }
   } catch (error) {
-    console.error('Failed to fetch conferences from ESPN, using expanded default:', error);
-    conferencesCache = DEFAULT_CONFERENCES;
+    console.error('Failed to fetch conferences from ESPN, using comprehensive default list:', error);
+    
+    // Enhanced fallback with more comprehensive conference list
+    const enhancedConferences = [
+      'All Conferences',
+      // Power 5
+      'SEC', 'Big Ten', 'Big 12', 'ACC', 'Pac-12',
+      // Group of 5
+      'American Athletic', 'Conference USA', 'Mid-American', 'Mountain West', 'Sun Belt',
+      // FCS Conferences  
+      'Big Sky', 'Big South', 'Colonial Athletic', 'Ivy League', 'Northeast',
+      'Ohio Valley', 'Patriot League', 'Southern', 'Southland', 'Western Athletic',
+      // Additional conferences
+      'ASUN', 'MEAC', 'SWAC', 'Pioneer League', 'NEC',
+      // Independent
+      'Independent'
+    ];
+    
+    conferencesCache = enhancedConferences;
     cacheTimestamp = Date.now();
-    return DEFAULT_CONFERENCES;
+    return enhancedConferences;
   }
 };
 
-// Get teams (with caching)
+// Get teams (with caching and comprehensive fallback)
 export const getTeams = async (): Promise<string[]> => {
-  if (teamsCache.length > 0 && isCacheValid(cacheTimestamp)) {
+  if (teamsCache.length > 1 && isCacheValid(cacheTimestamp)) { // Must have more than just "All Teams"
     return teamsCache;
   }
 
+  console.log('Loading teams from ESPN...');
+  
   try {
     const espnTeams = await getESPNTeams();
-    if (espnTeams.length > 1) { // Should have more than just "All Teams"
+    console.log(`ESPN teams loaded: ${espnTeams.length}`);
+    
+    if (espnTeams.length > 50) { // Should have many teams for comprehensive coverage
       teamsCache = espnTeams;
       cacheTimestamp = Date.now();
       console.log('Successfully loaded ESPN teams:', espnTeams.length, 'teams');
       return teamsCache;
     } else {
-      console.warn('ESPN returned insufficient teams data, using defaults');
-      throw new Error('ESPN returned empty or invalid teams data');
+      console.warn('ESPN returned insufficient teams data, combining with sample data');
+      
+      // Combine what we got from ESPN with sample data
+      const sampleTeamNames = Array.from(new Set(SAMPLE_PLAYERS.map(p => p.team))).sort();
+      const combinedTeams = ['All Teams', ...new Set([...espnTeams.slice(1), ...sampleTeamNames])].sort();
+      
+      teamsCache = combinedTeams;
+      cacheTimestamp = Date.now();
+      console.log(`Using combined team list: ${combinedTeams.length} teams`);
+      return combinedTeams;
     }
   } catch (error) {
     console.error('Failed to fetch teams from ESPN, using sample data teams:', error);
-    teamsCache = DEFAULT_TEAMS_FROM_SAMPLE;
+    
+    // Enhanced fallback with teams from sample data plus common major teams
+    const sampleTeamNames = Array.from(new Set(SAMPLE_PLAYERS.map(p => p.team))).sort();
+    const commonMajorTeams = [
+      // SEC
+      'Alabama', 'Georgia', 'LSU', 'Texas', 'Tennessee', 'Florida', 'Auburn', 'Arkansas', 'Kentucky', 'Mississippi State', 'Missouri', 'Ole Miss', 'South Carolina', 'Texas A&M', 'Vanderbilt',
+      // Big Ten
+      'Ohio State', 'Michigan', 'Penn State', 'Wisconsin', 'Iowa', 'Minnesota', 'Nebraska', 'Northwestern', 'Illinois', 'Indiana', 'Maryland', 'Michigan State', 'Purdue', 'Rutgers', 'Oregon', 'UCLA', 'USC', 'Washington',
+      // Big 12
+      'Oklahoma', 'Oklahoma State', 'Texas Tech', 'Baylor', 'TCU', 'Kansas', 'Kansas State', 'Iowa State', 'West Virginia', 'Cincinnati', 'Houston', 'UCF', 'BYU',
+      // ACC
+      'Clemson', 'Florida State', 'Miami', 'North Carolina', 'NC State', 'Duke', 'Virginia', 'Virginia Tech', 'Wake Forest', 'Georgia Tech', 'Louisville', 'Pittsburgh', 'Syracuse', 'Boston College',
+      // Pac-12 (remaining)
+      'Stanford', 'Cal', 'Arizona', 'Arizona State', 'Colorado', 'Utah', 'Washington State', 'Oregon State'
+    ];
+    
+    const enhancedTeams = ['All Teams', ...new Set([...sampleTeamNames, ...commonMajorTeams])].sort();
+    
+    teamsCache = enhancedTeams;
     cacheTimestamp = Date.now();
-    return DEFAULT_TEAMS_FROM_SAMPLE;
+    console.log(`Using enhanced team fallback: ${enhancedTeams.length} teams`);
+    return enhancedTeams;
   }
 };
 

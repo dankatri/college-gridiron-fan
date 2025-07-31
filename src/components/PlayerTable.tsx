@@ -148,14 +148,22 @@ export function PlayerTable({
 
         console.log('Loading filtered players with options:', filterOptions);
         const newPlayers = await getPlayers(filterOptions);
-        setEnhancedPlayers(newPlayers);
         
-        // Optionally notify parent component about the new players
-        if (onPlayersUpdate) {
-          onPlayersUpdate(newPlayers);
+        // Ensure we have a good mix of players for the filtered view
+        if (newPlayers.length > 0) {
+          setEnhancedPlayers(newPlayers);
+          
+          // Optionally notify parent component about the new players
+          if (onPlayersUpdate) {
+            onPlayersUpdate(newPlayers);
+          }
+          
+          console.log(`Loaded ${newPlayers.length} players for filtered view`);
+        } else {
+          console.warn('No players found for filter, keeping existing players');
+          // Keep existing players rather than showing empty results
+          setEnhancedPlayers(players);
         }
-        
-        console.log(`Loaded ${newPlayers.length} players for filtered view`);
         
       } catch (error) {
         console.error('Failed to load filtered players:', error);
@@ -180,9 +188,20 @@ export function PlayerTable({
       enhancedPlayers
         .filter(p => p.conference === conferenceFilter)
         .map(p => p.team)
+        .filter(team => team) // Remove empty/undefined team names
     )).sort();
     
-    return ['All Teams', ...teamsInConference];
+    console.log(`Teams in ${conferenceFilter}:`, teamsInConference);
+    
+    // Always include "All Teams" as first option
+    const result = ['All Teams', ...teamsInConference];
+    
+    // If no teams found for this conference, log a warning but still return the structure
+    if (teamsInConference.length === 0) {
+      console.warn(`No teams found for conference: ${conferenceFilter}`);
+    }
+    
+    return result;
   }, [enhancedPlayers, conferenceFilter, teams]);
 
   // Filter players based on position and filters
@@ -287,7 +306,7 @@ export function PlayerTable({
               onValueChange={setConferenceFilter} 
               disabled={isLoadingFilters && conferences.length <= 1}
             >
-              <SelectTrigger className="w-[140px]">
+              <SelectTrigger className="w-[160px]">
                 <SelectValue placeholder={isLoadingFilters && conferences.length <= 1 ? "Loading..." : "All Conferences"} />
               </SelectTrigger>
               <SelectContent>
@@ -302,7 +321,7 @@ export function PlayerTable({
               onValueChange={setTeamFilter} 
               disabled={isLoadingFilters && filteredTeams.length <= 1}
             >
-              <SelectTrigger className="w-[120px]">
+              <SelectTrigger className="w-[140px]">
                 <SelectValue placeholder={isLoadingFilters && filteredTeams.length <= 1 ? "Loading..." : "All Teams"} />
               </SelectTrigger>
               <SelectContent>
@@ -324,7 +343,7 @@ export function PlayerTable({
             )}
             {filteredTeams.length > 1 && conferenceFilter !== 'All Conferences' && (
               <Badge variant="outline" className="text-xs">
-                {filteredTeams.length - 1} teams
+                {filteredTeams.length - 1} teams in {conferenceFilter}
               </Badge>
             )}
           </div>
