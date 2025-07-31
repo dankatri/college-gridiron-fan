@@ -3,7 +3,20 @@ export interface Player {
   name: string;
   position: 'QB' | 'RB' | 'WR';
   team: string;
+  conference: string;
   projectedPoints: number;
+  // Season stats that affect scoring
+  passingYards?: number;
+  passingTDs?: number;
+  completions?: number;
+  attempts?: number;
+  interceptions?: number;
+  rushingYards?: number;
+  rushingTDs?: number;
+  receivingYards?: number;
+  receptions?: number;
+  receivingTDs?: number;
+  returnYards?: number;
 }
 
 export interface PlayerStats {

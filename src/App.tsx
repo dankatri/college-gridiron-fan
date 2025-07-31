@@ -4,7 +4,6 @@ import { Player, LineupSlot, WeeklyLineup, PlayerUsage, MAX_PLAYER_USES } from '
 import { SAMPLE_PLAYERS } from '@/lib/data';
 import {
   createEmptyLineup,
-  isPlayerAvailable,
   updatePlayerUsage,
   isLineupComplete,
   removePlayerFromLineup,
@@ -12,7 +11,7 @@ import {
   isPlayerInLineup,
   calculateProjectedPoints
 } from '@/lib/utils-fantasy';
-import { PlayerCard } from '@/components/PlayerCard';
+import { PlayerTable } from '@/components/PlayerTable';
 import { LineupSlotCard } from '@/components/LineupSlotCard';
 import { LineupSummary } from '@/components/LineupSummary';
 import { WeekNavigation } from '@/components/WeekNavigation';
@@ -63,11 +62,6 @@ function App() {
   }, [currentWeek, weeklyLineups]);
 
   const handlePlayerSelect = (player: Player) => {
-    if (!isPlayerAvailable(player.id, playerUsage, MAX_PLAYER_USES)) {
-      toast.error(`${player.name} has reached maximum uses (${MAX_PLAYER_USES})`);
-      return;
-    }
-
     if (isPlayerInLineup(player.id, currentLineup)) {
       toast.error(`${player.name} is already in your lineup`);
       return;
@@ -98,11 +92,6 @@ function App() {
   };
 
   const handleDropPlayer = (player: Player, slotIndex: number) => {
-    if (!isPlayerAvailable(player.id, playerUsage, MAX_PLAYER_USES)) {
-      toast.error(`${player.name} has reached maximum uses`);
-      return;
-    }
-
     if (isPlayerInLineup(player.id, currentLineup)) {
       toast.error(`${player.name} is already in your lineup`);
       return;
@@ -166,7 +155,6 @@ function App() {
     }));
   };
 
-  const filteredPlayers = SAMPLE_PLAYERS.filter(p => p.position === selectedPosition);
   const currentWeekLineup = weeklyLineups.find(w => w.week === currentWeek);
 
   return (
@@ -208,46 +196,23 @@ function App() {
             <div className="grid lg:grid-cols-3 gap-6">
               {/* Player Selection */}
               <div className="lg:col-span-2 space-y-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Users size={20} />
-                      Available Players - Week {currentWeek}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <Tabs value={selectedPosition} onValueChange={(value) => setSelectedPosition(value as any)}>
-                      <TabsList className="grid w-full grid-cols-3">
-                        <TabsTrigger value="QB">Quarterbacks</TabsTrigger>
-                        <TabsTrigger value="RB">Running Backs</TabsTrigger>
-                        <TabsTrigger value="WR">Wide Receivers</TabsTrigger>
-                      </TabsList>
-                      
-                      <TabsContent value={selectedPosition} className="mt-4">
-                        <div className="grid sm:grid-cols-2 gap-3">
-                          {filteredPlayers.map(player => (
-                            <div
-                              key={player.id}
-                              draggable={isPlayerAvailable(player.id, playerUsage, MAX_PLAYER_USES)}
-                              onDragStart={(e) => {
-                                if (isPlayerAvailable(player.id, playerUsage, MAX_PLAYER_USES)) {
-                                  e.dataTransfer.setData('application/json', JSON.stringify(player));
-                                }
-                              }}
-                            >
-                              <PlayerCard
-                                player={player}
-                                playerUsage={playerUsage}
-                                onSelect={handlePlayerSelect}
-                                isSelected={isPlayerInLineup(player.id, currentLineup)}
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      </TabsContent>
-                    </Tabs>
-                  </CardContent>
-                </Card>
+                <Tabs value={selectedPosition} onValueChange={(value) => setSelectedPosition(value as any)}>
+                  <TabsList className="grid w-full grid-cols-3">
+                    <TabsTrigger value="QB">Quarterbacks</TabsTrigger>
+                    <TabsTrigger value="RB">Running Backs</TabsTrigger>
+                    <TabsTrigger value="WR">Wide Receivers</TabsTrigger>
+                  </TabsList>
+                  
+                  <TabsContent value={selectedPosition} className="mt-4">
+                    <PlayerTable
+                      position={selectedPosition}
+                      players={SAMPLE_PLAYERS}
+                      playerUsage={playerUsage}
+                      currentLineup={currentLineup}
+                      onPlayerSelect={handlePlayerSelect}
+                    />
+                  </TabsContent>
+                </Tabs>
               </div>
 
               {/* Lineup & Summary */}
