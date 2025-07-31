@@ -281,7 +281,7 @@ function App() {
         <div className="text-center space-y-2">
           <h1 className="text-3xl font-bold flex items-center justify-center gap-2">
             <Trophy size={32} className="text-accent" />
-            College Football Fantasy
+            College Fantasy Football
           </h1>
           <p className="text-muted-foreground">
             Build your weekly lineup - remember, each player can only be used 3 times per season!
@@ -393,7 +393,6 @@ function App() {
                       />
                     ))}
                     
-                    <Button 
                       onClick={handleSaveLineup}
                       className="w-full"
                       disabled={!isLineupComplete(currentLineup)}
