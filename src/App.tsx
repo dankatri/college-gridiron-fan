@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useKV } from '@github/spark/hooks';
 import { Player, LineupSlot, WeeklyLineup, PlayerUsage, MAX_PLAYER_USES } from '@/lib/types';
-import { getPlayers } from '@/lib/data';
+import { getPlayers, clearCache } from '@/lib/data';
+import { setApiKey } from '@/lib/api';
 import {
   createEmptyLineup,
   updatePlayerUsage,
@@ -55,8 +56,36 @@ function App() {
     const loadPlayers = async () => {
       setIsLoadingPlayers(true);
       try {
+        // First, try to load and set the API key from storage
+        try {
+          const storedApiKey = await spark.kv.get<string>('cfb-api-key');
+          if (storedApiKey) {
+            console.log('Loading stored API key');
+            setApiKey(storedApiKey);
+          }
+        } catch (error) {
+          console.warn('Failed to load stored API key:', error);
+        }
+        
         const currentPlayers = await getPlayers();
         setPlayers(currentPlayers);
+        
+        // Debug logging
+        console.log('Players loaded:', currentPlayers.length);
+        if (currentPlayers.length > 0) {
+          console.log('First 3 players:', currentPlayers.slice(0, 3).map(p => ({ 
+            id: p.id, 
+            name: p.name, 
+            position: p.position, 
+            team: p.team 
+          })));
+          
+          // Check if any players have undefined names
+          const undefinedNames = currentPlayers.filter(p => !p.name || p.name.includes('undefined'));
+          if (undefinedNames.length > 0) {
+            console.error('Players with undefined names:', undefinedNames.slice(0, 5));
+          }
+        }
       } catch (error) {
         console.error('Failed to load players:', error);
       } finally {
@@ -169,8 +198,22 @@ function App() {
   const handleRefreshPlayers = async () => {
     setIsLoadingPlayers(true);
     try {
+      // Clear cache to force fresh data
+      clearCache();
       const currentPlayers = await getPlayers();
       setPlayers(currentPlayers);
+      
+      // Debug logging
+      console.log('Refreshed players:', currentPlayers.length);
+      if (currentPlayers.length > 0) {
+        console.log('First 3 refreshed players:', currentPlayers.slice(0, 3).map(p => ({ 
+          id: p.id, 
+          name: p.name, 
+          position: p.position, 
+          team: p.team 
+        })));
+      }
+      
       toast.success('Player data refreshed!');
     } catch (error) {
       console.error('Failed to refresh players:', error);

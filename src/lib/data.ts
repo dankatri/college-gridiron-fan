@@ -15,16 +15,42 @@ const isCacheValid = () => {
 
 // Main function to get players (with caching)
 export const getPlayers = async (): Promise<Player[]> => {
+  // Check if cached data is valid (has proper player names)
   if (playersCache.length > 0 && isCacheValid()) {
-    return playersCache;
+    const hasValidNames = playersCache.every(p => p.name && !p.name.includes('undefined') && p.name.trim() !== '');
+    if (hasValidNames) {
+      console.log('Using cached players:', playersCache.length);
+      return playersCache;
+    } else {
+      console.warn('Cached data has invalid names, clearing cache');
+      clearCache();
+    }
   }
 
+  // Test sample data first
+  console.log('Sample data test - first player:', SAMPLE_PLAYERS[0]);
+
   try {
+    console.log('Fetching current players from API...');
     playersCache = await fetchCurrentPlayers();
     cacheTimestamp = Date.now();
+    console.log('Successfully fetched players from API:', playersCache.length);
+    
+    // Validate API data
+    const hasValidNames = playersCache.every(p => p.name && !p.name.includes('undefined') && p.name.trim() !== '');
+    if (!hasValidNames) {
+      console.warn('API data has invalid names, using sample data instead');
+      throw new Error('API returned invalid player names');
+    }
+    
     return playersCache;
   } catch (error) {
     console.error('Failed to fetch current players, using sample data:', error);
+    console.log('Using sample data with', SAMPLE_PLAYERS.length, 'players');
+    console.log('Sample data first 3 players:', SAMPLE_PLAYERS.slice(0, 3).map(p => ({ name: p.name, id: p.id })));
+    
+    // Clear bad cache and return sample data
+    clearCache();
     return SAMPLE_PLAYERS;
   }
 };
@@ -61,6 +87,7 @@ export const getTeams = async (): Promise<string[]> => {
 
 // Clear cache (useful for refreshing data)
 export const clearCache = () => {
+  console.log('Clearing player data cache');
   playersCache = [];
   conferencesCache = [];
   teamsCache = [];

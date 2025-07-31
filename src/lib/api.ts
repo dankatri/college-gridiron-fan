@@ -13,9 +13,11 @@ export const setApiKey = (key: string) => {
 // API request helper
 const apiRequest = async (endpoint: string): Promise<any> => {
   if (!API_KEY) {
+    console.log('No API key provided, will fall back to sample data');
     throw new Error('API key not provided. Please call setApiKey() first.');
   }
 
+  console.log(`Making API request to: ${API_BASE_URL}${endpoint}`);
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     headers: {
       'Authorization': `Bearer ${API_KEY}`,
@@ -24,6 +26,7 @@ const apiRequest = async (endpoint: string): Promise<any> => {
   });
 
   if (!response.ok) {
+    console.error(`API request failed: ${response.status} ${response.statusText}`);
     throw new Error(`API request failed: ${response.status} ${response.statusText}`);
   }
 
@@ -33,8 +36,9 @@ const apiRequest = async (endpoint: string): Promise<any> => {
 // Interface for raw API responses
 interface ApiPlayer {
   id: string;
-  first_name: string;
-  last_name: string;
+  first_name?: string;
+  last_name?: string;
+  name?: string; // Some endpoints return full name
   team: string;
   position: string;
   jersey?: number;
@@ -178,9 +182,28 @@ const calculateProjectedPoints = (stats: any, position: string): number => {
 const convertApiPlayerToPlayer = async (apiPlayer: ApiPlayer, stats: any): Promise<Player> => {
   const conference = await getTeamConference(apiPlayer.team);
   
+  // Handle different name field possibilities
+  let fullName = '';
+  
+  if (apiPlayer.name) {
+    // Some endpoints return full name
+    fullName = apiPlayer.name.trim();
+  } else if (apiPlayer.first_name || apiPlayer.last_name) {
+    // Other endpoints return separate first/last names
+    const firstName = apiPlayer.first_name || '';
+    const lastName = apiPlayer.last_name || '';
+    fullName = `${firstName} ${lastName}`.trim();
+  }
+  
+  // Fallback if no name is available
+  if (!fullName) {
+    fullName = `Player ${apiPlayer.id}`;
+    console.warn('No name available for player:', apiPlayer);
+  }
+  
   return {
     id: `${apiPlayer.position.toLowerCase()}_${apiPlayer.id}`,
-    name: `${apiPlayer.first_name} ${apiPlayer.last_name}`,
+    name: fullName,
     position: apiPlayer.position as 'QB' | 'RB' | 'WR',
     team: apiPlayer.team,
     conference,
@@ -298,6 +321,12 @@ export const fetchCurrentPlayers = async (): Promise<Player[]> => {
           try {
             const player = await convertApiPlayerToPlayer(apiPlayer, stats);
             
+            // Validate that player has a proper name
+            if (!player.name || player.name.includes('undefined') || player.name.trim() === '') {
+              console.warn('Skipping player with invalid name:', player);
+              continue;
+            }
+            
             // Only include players with some statistical production or high potential
             if (player.projectedPoints > 2 || !stats.passingYards) {
               allPlayers.push(player);
@@ -313,6 +342,12 @@ export const fetchCurrentPlayers = async (): Promise<Player[]> => {
       } catch (error) {
         console.warn(`Failed to fetch roster for ${team}:`, error);
       }
+    }
+
+    // Validate that we got valid players
+    if (allPlayers.length === 0 || allPlayers.every(p => !p.name || p.name.includes('undefined'))) {
+      console.warn('API returned no valid players or all players have invalid names, falling back to sample data');
+      throw new Error('API returned invalid player data');
     }
 
     // Sort by projected points and return top performers by position
