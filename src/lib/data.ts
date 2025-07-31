@@ -485,24 +485,28 @@ export const getPlayers = async (options?: {
       return combinedPlayers;
       
     } catch (error) {
-    console.error('Error fetching players from ESPN:', error);
-    console.log('Falling back to sample data');
-    
-    if (options?.specificTeam && options.specificTeam !== 'All Teams') {
-      samplePlayers = samplePlayers.filter(p => p.team === options.specificTeam);
+      console.error('Error fetching players from ESPN:', error);
+      console.log('Falling back to sample data');
+      
+      if (options?.specificTeam && options.specificTeam !== 'All Teams') {
+        samplePlayers = samplePlayers.filter(p => p.team === options.specificTeam);
+      }
+      
+      if (options?.specificConference && options.specificConference !== 'All Conferences') {
+        samplePlayers = samplePlayers.filter(p => p.conference === options.specificConference);
+      }
+      
+      playersCache.set(cacheKey, {
+        players: samplePlayers,
+        timestamp: Date.now()
+      });
+      
+      console.log(`Using ${samplePlayers.length} filtered sample players as fallback`);
+      return samplePlayers;
     }
-    
-    if (options?.specificConference && options.specificConference !== 'All Conferences') {
-      samplePlayers = samplePlayers.filter(p => p.conference === options.specificConference);
-    }
-    
-    playersCache.set(cacheKey, {
-      players: samplePlayers,
-      timestamp: Date.now()
-    });
-    
-    console.log(`Using ${samplePlayers.length} filtered sample players as fallback`);
-    return samplePlayers;
+  } catch (error) {
+    console.error('Critical error in getPlayers:', error);
+    return [];
   }
 }
 
@@ -527,10 +531,11 @@ export const getConferences = async (): Promise<string[]> => {
     return conferencesCache;
   }
 
+  try {
     const espnConferences = await getESPNConferences();
     console.log(`ESPN conferences loaded: ${espnConferences.length}`, espnConferences);
     
-      conferencesCache = espnConferences;
+    if (espnConferences.length > 10) {
       conferencesCache = espnConferences;
       cacheTimestamp = Date.now();
       console.log('Successfully loaded ESPN conferences:', espnConferences);
