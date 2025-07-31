@@ -1,5 +1,73 @@
 import { Player } from './types';
+import { fetchCurrentPlayers, getCurrentConferences, getCurrentTeams } from './api';
 
+// Cache for API data
+let playersCache: Player[] = [];
+let conferencesCache: string[] = [];
+let teamsCache: string[] = [];
+let cacheTimestamp = 0;
+const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
+
+// Check if cache is valid
+const isCacheValid = () => {
+  return Date.now() - cacheTimestamp < CACHE_DURATION;
+};
+
+// Main function to get players (with caching)
+export const getPlayers = async (): Promise<Player[]> => {
+  if (playersCache.length > 0 && isCacheValid()) {
+    return playersCache;
+  }
+
+  try {
+    playersCache = await fetchCurrentPlayers();
+    cacheTimestamp = Date.now();
+    return playersCache;
+  } catch (error) {
+    console.error('Failed to fetch current players, using sample data:', error);
+    return SAMPLE_PLAYERS;
+  }
+};
+
+// Get conferences (with caching)
+export const getConferences = async (): Promise<string[]> => {
+  if (conferencesCache.length > 0 && isCacheValid()) {
+    return conferencesCache;
+  }
+
+  try {
+    conferencesCache = await getCurrentConferences();
+    return conferencesCache;
+  } catch (error) {
+    console.error('Failed to fetch conferences, using default:', error);
+    return CONFERENCES;
+  }
+};
+
+// Get teams (with caching)
+export const getTeams = async (): Promise<string[]> => {
+  if (teamsCache.length > 0 && isCacheValid()) {
+    return teamsCache;
+  }
+
+  try {
+    teamsCache = await getCurrentTeams();
+    return teamsCache;
+  } catch (error) {
+    console.error('Failed to fetch teams, using default:', error);
+    return TEAMS;
+  }
+};
+
+// Clear cache (useful for refreshing data)
+export const clearCache = () => {
+  playersCache = [];
+  conferencesCache = [];
+  teamsCache = [];
+  cacheTimestamp = 0;
+};
+
+// Fallback sample data for when API is not available
 export const SAMPLE_PLAYERS: Player[] = [
   // Quarterbacks - Top Tier
   {

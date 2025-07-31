@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Player, PlayerUsage } from '@/lib/types';
-import { CONFERENCES, TEAMS } from '@/lib/data';
+import { getConferences, getTeams } from '@/lib/data';
 import { isPlayerAvailable, isPlayerInLineup } from '@/lib/utils-fantasy';
 import { MAX_PLAYER_USES } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -22,6 +22,29 @@ interface PlayerTableProps {
 export function PlayerTable({ position, players, playerUsage, currentLineup, onPlayerSelect }: PlayerTableProps) {
   const [conferenceFilter, setConferenceFilter] = useState('All Conferences');
   const [teamFilter, setTeamFilter] = useState('All Teams');
+  const [conferences, setConferences] = useState<string[]>(['All Conferences']);
+  const [teams, setTeams] = useState<string[]>(['All Teams']);
+  const [isLoadingFilters, setIsLoadingFilters] = useState(true);
+
+  // Load filter options
+  useEffect(() => {
+    const loadFilters = async () => {
+      try {
+        const [confs, tms] = await Promise.all([
+          getConferences(),
+          getTeams()
+        ]);
+        setConferences(confs);
+        setTeams(tms);
+      } catch (error) {
+        console.error('Failed to load filter options:', error);
+      } finally {
+        setIsLoadingFilters(false);
+      }
+    };
+    
+    loadFilters();
+  }, []);
 
   // Filter players based on position and filters
   const filteredPlayers = useMemo(() => {
@@ -102,23 +125,23 @@ export function PlayerTable({ position, players, playerUsage, currentLineup, onP
         <div className="flex gap-4 items-center flex-wrap">
           <div className="flex items-center gap-2">
             <Filter size={16} className="text-muted-foreground" />
-            <Select value={conferenceFilter} onValueChange={setConferenceFilter}>
+            <Select value={conferenceFilter} onValueChange={setConferenceFilter} disabled={isLoadingFilters}>
               <SelectTrigger className="w-[140px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {CONFERENCES.map(conf => (
+                {conferences.map(conf => (
                   <SelectItem key={conf} value={conf}>{conf}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
             
-            <Select value={teamFilter} onValueChange={setTeamFilter}>
+            <Select value={teamFilter} onValueChange={setTeamFilter} disabled={isLoadingFilters}>
               <SelectTrigger className="w-[120px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {TEAMS.map(team => (
+                {teams.map(team => (
                   <SelectItem key={team} value={team}>{team}</SelectItem>
                 ))}
               </SelectContent>

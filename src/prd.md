@@ -40,6 +40,19 @@ Using official scoring rules:
 - Rushing/Receiving: 10 yards = 1 pt, TD = 6 pts
 - Returns: 10 yards = 1 pt
 
+### Data Integration
+- **Real Player Data**: Integration with College Football Data API for current 2025 season rosters
+- **Live Statistics**: Current player stats and projections based on 2024 performance data
+- **Dynamic Roster Updates**: Fresh data loading with configurable API key authentication
+- **Fallback Data**: Sample players available when API is not configured
+- **Cache Management**: Efficient data caching with refresh capabilities for optimal performance
+
+### API Configuration
+- **Secure Key Management**: User-provided API keys stored securely in browser storage
+- **Configuration Interface**: Settings panel for API key setup and validation
+- **Data Refresh Controls**: Manual refresh capability for updated player information
+- **Error Handling**: Graceful fallback to sample data when API is unavailable
+
 ### Season Management
 - **Week Navigation**: Easy switching between weeks 1-15
 - **Usage Analytics**: Track which players are approaching usage limits
@@ -128,32 +141,38 @@ Using official scoring rules:
 
 ### Technical Architecture
 - **State Management**: React hooks with persistent KV storage for cross-session data including league memberships and social features
-- **Live Data Simulation**: Realistic stat generation with timed updates and league-wide score distribution
+- **Real Data Integration**: College Football Data API integration with secure key management and caching
+- **Data Persistence**: All lineup, usage, league data, and API configuration survives browser sessions
 - **Performance**: Efficient re-renders with proper memoization for large player lists and league leaderboards
-- **Data Persistence**: All lineup, usage, and league data survives browser sessions
+- **API Management**: Robust error handling, rate limiting consideration, and fallback data systems
 - **Social Features**: League management system with real-time leaderboard calculations and member synchronization
 
 ### Scalability Considerations  
 - Component architecture supports easy addition of new positions, scoring rules, and league features
 - Modular stat calculation system for rule changes and league-specific scoring
-- Extensible live update system for real data integration
+- API integration designed for real-time data updates and multiple data sources
 - League system designed for expansion to tournaments and advanced competition formats
 - Social features built to support larger user bases and complex league hierarchies
+- Caching and data management optimized for scale
 
 ### Edge Cases Addressed
 - Players at usage limits clearly indicated and prevented from selection
 - Incomplete lineups blocked from saving with clear messaging
-- Live update pausing/resuming for user control
+- API failures handled gracefully with fallback to sample data
+- Invalid or expired API keys detected and reported to users
 - Historical data integrity when modifying past lineups
 - League capacity management and join restrictions
 - Member removal and ownership transfer scenarios
 - Multi-league participation without conflicts
 - Invite system edge cases (expired invites, duplicate memberships)
+- Rate limiting and API quota management
 
 ## Reflection
 
-This fantasy football application uniquely combines strategic depth through usage constraints with engaging live scoring feedback and meaningful social competition. The 3-use limit creates meaningful decisions about when to deploy top players, while live scoring maintains engagement throughout game days. The addition of league features transforms individual gameplay into social competition, creating lasting engagement through friend rivalry and leaderboard climbing.
+This fantasy football application uniquely combines strategic depth through usage constraints with real current player data and meaningful social competition. The integration with the College Football Data API ensures users are working with actual 2025 season rosters and performance projections based on 2024 statistics, making lineup decisions more engaging and realistic.
 
-The three-tab interface cleanly separates lineup management, performance tracking, and social competition, allowing users to focus on the appropriate task at each stage of their fantasy experience. League functionality adds viral growth potential through friend invitations while maintaining the core strategic gameplay that defines the platform.
+The 3-use limit creates meaningful decisions about when to deploy top players, while real player data adds authenticity to the strategic planning process. The addition of league features transforms individual gameplay into social competition, creating lasting engagement through friend rivalry and leaderboard climbing.
 
-The technical approach balances simulation (for demo purposes) with realistic data patterns that would support real API integration, creating a production-ready foundation for a comprehensive fantasy sports platform with robust social features.
+The four-tab interface cleanly separates lineup management, performance tracking, social competition, and system configuration, allowing users to focus on the appropriate task at each stage of their fantasy experience. The API configuration system provides flexibility for users while maintaining robust fallback options.
+
+The technical approach balances real data integration with reliable fallback systems, creating a production-ready foundation for a comprehensive fantasy sports platform with robust social features and authentic player information.

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useKV } from '@github/spark/hooks';
 import { Player, LineupSlot, WeeklyLineup, PlayerUsage, MAX_PLAYER_USES } from '@/lib/types';
-import { SAMPLE_PLAYERS } from '@/lib/data';
+import { getPlayers } from '@/lib/data';
 import {
   createEmptyLineup,
   updatePlayerUsage,
@@ -17,18 +17,21 @@ import { LineupSummary } from '@/components/LineupSummary';
 import { WeekNavigation } from '@/components/WeekNavigation';
 import { LiveScoringDashboard } from '@/components/LiveScoringDashboard';
 import { LeagueDashboard } from '@/components/LeagueDashboard';
+import { ApiConfig } from '@/components/ApiConfig';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { Trophy, Users, Target, Activity, Medal } from '@phosphor-icons/react';
+import { Trophy, Users, Target, Activity, Medal, Settings, RefreshCw } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
 function App() {
   const [currentWeek, setCurrentWeek] = useState(1);
   const [currentLineup, setCurrentLineup] = useState<LineupSlot[]>(createEmptyLineup());
   const [selectedPosition, setSelectedPosition] = useState<'QB' | 'RB' | 'WR'>('QB');
-  const [activeTab, setActiveTab] = useState<'lineup' | 'scoring' | 'leagues'>('lineup');
+  const [activeTab, setActiveTab] = useState<'lineup' | 'scoring' | 'leagues' | 'settings'>('lineup');
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [isLoadingPlayers, setIsLoadingPlayers] = useState(true);
   
   const [currentUserId, setCurrentUserId] = useState<string>('');
 
@@ -45,6 +48,23 @@ function App() {
       }
     };
     loadUser();
+  }, []);
+
+  // Load players
+  useEffect(() => {
+    const loadPlayers = async () => {
+      setIsLoadingPlayers(true);
+      try {
+        const currentPlayers = await getPlayers();
+        setPlayers(currentPlayers);
+      } catch (error) {
+        console.error('Failed to load players:', error);
+      } finally {
+        setIsLoadingPlayers(false);
+      }
+    };
+    
+    loadPlayers();
   }, []);
 
   // Persistent data
@@ -146,6 +166,20 @@ function App() {
     toast.success(`Week ${currentWeek} lineup saved!`);
   };
 
+  const handleRefreshPlayers = async () => {
+    setIsLoadingPlayers(true);
+    try {
+      const currentPlayers = await getPlayers();
+      setPlayers(currentPlayers);
+      toast.success('Player data refreshed!');
+    } catch (error) {
+      console.error('Failed to refresh players:', error);
+      toast.error('Failed to refresh player data');
+    } finally {
+      setIsLoadingPlayers(false);
+    }
+  };
+
   const handlePointsUpdate = (week: number, actualPoints: number) => {
     setWeeklyLineups(prev => prev.map(lineup => {
       if (lineup.week === week) {
@@ -176,7 +210,7 @@ function App() {
 
         {/* Main Navigation Tabs */}
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)}>
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="lineup" className="flex items-center gap-2">
               <Users size={16} />
               Set Lineup
@@ -189,6 +223,10 @@ function App() {
               <Medal size={16} />
               Leagues
             </TabsTrigger>
+            <TabsTrigger value="settings" className="flex items-center gap-2">
+              <Settings size={16} />
+              Settings
+            </TabsTrigger>
           </TabsList>
 
           {/* Lineup Tab */}
@@ -196,23 +234,48 @@ function App() {
             <div className="grid lg:grid-cols-3 gap-6">
               {/* Player Selection */}
               <div className="lg:col-span-2 space-y-4">
-                <Tabs value={selectedPosition} onValueChange={(value) => setSelectedPosition(value as any)}>
-                  <TabsList className="grid w-full grid-cols-3">
-                    <TabsTrigger value="QB">Quarterbacks</TabsTrigger>
-                    <TabsTrigger value="RB">Running Backs</TabsTrigger>
-                    <TabsTrigger value="WR">Wide Receivers</TabsTrigger>
-                  </TabsList>
-                  
-                  <TabsContent value={selectedPosition} className="mt-4">
-                    <PlayerTable
-                      position={selectedPosition}
-                      players={SAMPLE_PLAYERS}
-                      playerUsage={playerUsage}
-                      currentLineup={currentLineup}
-                      onPlayerSelect={handlePlayerSelect}
-                    />
-                  </TabsContent>
-                </Tabs>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold">Available Players</h3>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRefreshPlayers}
+                    disabled={isLoadingPlayers}
+                    className="flex items-center gap-2"
+                  >
+                    <RefreshCw size={14} className={isLoadingPlayers ? 'animate-spin' : ''} />
+                    Refresh
+                  </Button>
+                </div>
+                
+                {isLoadingPlayers ? (
+                  <Card>
+                    <CardContent className="flex items-center justify-center py-12">
+                      <div className="flex items-center gap-3 text-muted-foreground">
+                        <RefreshCw size={20} className="animate-spin" />
+                        Loading current players...
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <Tabs value={selectedPosition} onValueChange={(value) => setSelectedPosition(value as any)}>
+                    <TabsList className="grid w-full grid-cols-3">
+                      <TabsTrigger value="QB">Quarterbacks</TabsTrigger>
+                      <TabsTrigger value="RB">Running Backs</TabsTrigger>
+                      <TabsTrigger value="WR">Wide Receivers</TabsTrigger>
+                    </TabsList>
+                    
+                    <TabsContent value={selectedPosition} className="mt-4">
+                      <PlayerTable
+                        position={selectedPosition}
+                        players={players}
+                        playerUsage={playerUsage}
+                        currentLineup={currentLineup}
+                        onPlayerSelect={handlePlayerSelect}
+                      />
+                    </TabsContent>
+                  </Tabs>
+                )}
               </div>
 
               {/* Lineup & Summary */}
@@ -287,6 +350,13 @@ function App() {
               weeklyLineups={weeklyLineups}
               currentUserId={currentUserId}
             />
+          </TabsContent>
+
+          {/* Settings Tab */}
+          <TabsContent value="settings" className="mt-6">
+            <div className="max-w-4xl mx-auto space-y-6">
+              <ApiConfig onConfigured={handleRefreshPlayers} />
+            </div>
           </TabsContent>
         </Tabs>
       </div>
