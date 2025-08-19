@@ -270,8 +270,7 @@ export const fetchESPNTeamRoster = async (teamId: string): Promise<ESPNRoster | 
         const hasConfirmed2025Eligibility = athlete.eligibility && (
           athlete.eligibility.toUpperCase().includes('2025') ||
           athlete.eligibility.toUpperCase().includes('RETURNING') ||
-          athlete.eligibility.toUpperCase().includes('RETURNING') ||
-          athlete.eligibility.toUpperCase().includes('REDSHIRT') ||
+          athlete.eligibility.toUpperCase().includes('REDSHIRT')
         );
         
         if (!hasConfirmed2025Eligibility) {
