@@ -248,34 +248,28 @@ export const fetchESPNTeamRoster = async (teamId: string): Promise<ESPNRoster | 
         athlete.status.toUpperCase().includes('SUSPENDED') ||
         athlete.status.toUpperCase().includes('INJURED_RESERVE') ||
         athlete.status.toUpperCase().includes('MEDICAL') ||
-        athlete.status.toUpperCase().includes('RETIRED') ||
-        athlete.status.toUpperCase().includes('PORTAL') ||
-        athlete.status.toUpperCase().includes('DEPARTED') ||
-        athlete.status.toUpperCase().includes('FORMER') ||
         athlete.status.toUpperCase().includes('EX-')
       )) {
         console.log(`Excluding player ${playerName} due to status: ${athlete.status}`);
         return false;
       }
-      
+      )) {
+      // Exclude players who have exhausted eligibility or graduated
+        athlete.eligibility.toUpperCase().includes('GRADUATED') ||
+        athlete.eligibility.toUpperCase().includes('COMPLETED') ||
+        athlete.eligibility.toUpperCase().includes('FINISHED') ||
       // Exclude players who have exhausted eligibility or graduated
       if (athlete.eligibility && (
         athlete.eligibility.toUpperCase().includes('EXHAUSTED') ||
         athlete.eligibility.toUpperCase().includes('GRADUATED') ||
-        athlete.eligibility.toUpperCase().includes('COMPLETED') ||
-        athlete.eligibility.toUpperCase().includes('FINISHED') ||
-        athlete.eligibility.toUpperCase().includes('EXPIRED')
-      )) {
-        console.log(`Excluding player ${playerName} due to eligibility: ${athlete.eligibility}`);
-        return false;
       }
       
       // More strict checking for year/class - exclude all seniors by default for 2025 season
-      // Only include if they explicitly have remaining eligibility
+      )) {
       if (athlete.class === 'SR' || athlete.class === 'Senior' || athlete.class === 'Grad' || athlete.class === 'Graduate') {
-        // Be more restrictive - exclude seniors unless they explicitly show as returning for 2025
-        const hasConfirmed2025Eligibility = athlete.eligibility && (
-          athlete.eligibility.toUpperCase().includes('2025') ||
+        return false;urning for 2025
+      }Confirmed2025Eligibility = athlete.eligibility && (
+      ete.eligibility.toUpperCase().includes('2025') ||
           athlete.eligibility.toUpperCase().includes('RETURNING') ||
           athlete.eligibility.toUpperCase().includes('REDSHIRT') ||
           athlete.eligibility.toUpperCase().includes('MEDICAL REDSHIRT')
@@ -285,19 +279,19 @@ export const fetchESPNTeamRoster = async (teamId: string): Promise<ESPNRoster | 
           console.log(`Excluding senior/graduate ${playerName} without confirmed 2025 eligibility (class: ${athlete.class})`);
           return false;
         }
-      }
-      
+        );
+        
       // Check if they've transferred, entered portal, or declared for draft
+      if (athlete.notes && (
+          return false;
+        }ase().includes('PORTAL') ||
+        athlete.notes.toUpperCase().includes('ENTERED DRAFT') ||
+        athlete.notes.toUpperCase().includes('DECLARED FOR DRAFT') ||
+        athlete.notes.toUpperCase().includes('NFL DRAFT') ||
       if (athlete.notes && (
         athlete.notes.toUpperCase().includes('TRANSFER') ||
         athlete.notes.toUpperCase().includes('PORTAL') ||
         athlete.notes.toUpperCase().includes('ENTERED DRAFT') ||
-        athlete.notes.toUpperCase().includes('DECLARED FOR DRAFT') ||
-        athlete.notes.toUpperCase().includes('NFL DRAFT') ||
-        athlete.notes.toUpperCase().includes('PROFESSIONAL') ||
-        athlete.notes.toUpperCase().includes('GRADUATED') ||
-        athlete.notes.toUpperCase().includes('FORMER') ||
-        athlete.notes.toUpperCase().includes('NO LONGER') ||
         athlete.notes.toUpperCase().includes('LEFT TEAM')
       )) {
         console.log(`Excluding player ${playerName} due to notes: ${athlete.notes}`);
@@ -305,11 +299,11 @@ export const fetchESPNTeamRoster = async (teamId: string): Promise<ESPNRoster | 
       }
       
       // Exclude players whose names indicate they're no longer active
-      if (playerName && (
-        playerName.toUpperCase().includes('FORMER') ||
-        playerName.toUpperCase().includes('EX-') ||
-        playerName.toUpperCase().includes('TRANSFERRED')
       )) {
+        playerName.toUpperCase().includes('FORMER') ||
+        return false;Case().includes('EX-') ||
+      } playerName.toUpperCase().includes('TRANSFERRED')
+      
         console.log(`Excluding player ${playerName} due to name indicating former player`);
         return false;
       }
@@ -331,6 +325,12 @@ export const fetchESPNTeamRoster = async (teamId: string): Promise<ESPNRoster | 
                              athlete.status.toUpperCase() === 'ELIGIBLE' ||
                              athlete.status.toUpperCase() === 'ROSTER' ||
                              athlete.status.toUpperCase() === 'CURRENT';
+      
+      const isActiveFor2025 = !athlete.status || 
+                             athlete.status.toUpperCase() === 'ACTIVE' || 
+                             athlete.status.toUpperCase() === 'ELIGIBLE' ||
+    console.log(`Filtered ${data.athletes.length} roster players to ${eligibleAthletes.length} eligible for 2025 season`);
+    
       
       return isActiveFor2025;
     });
@@ -370,12 +370,6 @@ export const fetchESPNPlayerStats = async (playerId: string, season: number = 20
 
 // Calculate projected points based on ESPN stats
 const calculateProjectedPoints = (stats: any, position: string): number => {
-  let points = 0;
-
-  if (!stats || !stats.statistics) return 0;
-
-  // Convert ESPN stats format to values we can use
-  const statMap: { [key: string]: number } = {};
   stats.statistics.forEach((stat: any) => {
     const name = stat.shortDisplayName || stat.name;
     const value = typeof stat.value === 'number' ? stat.value : parseFloat(stat.displayValue) || 0;
