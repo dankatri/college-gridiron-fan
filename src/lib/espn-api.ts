@@ -213,9 +213,10 @@ const getTeamConference = async (teamId: string): Promise<string> => {
   return team?.conference?.name || 'Unknown';
 };
 
-// Fetch team roster from ESPN
+// Fetch team roster from ESPN (current active roster)
 export const fetchESPNTeamRoster = async (teamId: string): Promise<ESPNRoster | null> => {
   try {
+    // Try to get current roster data (this should include 2025 season players)
     const data = await espnRequest(`/teams/${teamId}/roster`);
     
     if (!data || !data.athletes) {
@@ -223,12 +224,36 @@ export const fetchESPNTeamRoster = async (teamId: string): Promise<ESPNRoster | 
       return null;
     }
 
+    // Filter out players who might not be active for 2025
+    // ESPN roster endpoint should return current active players by default
+    const activeAthletes = data.athletes.filter((athlete: any) => {
+      // Basic validation that this is an active player entry
+      const hasName = athlete.fullName || athlete.displayName;
+      const hasPosition = athlete.position && athlete.position.abbreviation;
+      
+      // Skip players with obviously inactive indicators
+      const isActive = !athlete.status || 
+                      athlete.status === 'ACTIVE' || 
+                      athlete.status === 'ELIGIBLE' ||
+                      athlete.status === 'ROSTER' ||
+                      !athlete.status.includes('INACTIVE') &&
+                      !athlete.status.includes('TRANSFERRED') &&
+                      !athlete.status.includes('GRADUATED');
+      
+      // Additional check: if athlete has year/class info, prefer underclassmen for 2025
+      const eligibleForNextSeason = !athlete.class || 
+                                   athlete.class !== 'SR' || 
+                                   athlete.eligibility !== 'EXHAUSTED';
+      
+      return hasName && hasPosition && isActive && eligibleForNextSeason;
+    });
+
     const roster: ESPNRoster = {
       team: data.team,
-      athletes: data.athletes
+      athletes: activeAthletes
     };
 
-    console.log(`Fetched roster for ${data.team?.displayName || teamId}: ${data.athletes?.length || 0} players`);
+    console.log(`Fetched roster for ${data.team?.displayName || teamId}: ${activeAthletes.length}/${data.athletes.length} active players`);
     return roster;
   } catch (error) {
     console.error(`Failed to fetch ESPN roster for team ${teamId}:`, error);
@@ -236,10 +261,18 @@ export const fetchESPNTeamRoster = async (teamId: string): Promise<ESPNRoster | 
   }
 };
 
-// Fetch player statistics from ESPN (2024 season)
-export const fetchESPNPlayerStats = async (playerId: string, season: number = 2024): Promise<any> => {
+// Fetch player statistics from ESPN (current/2025 season)
+export const fetchESPNPlayerStats = async (playerId: string, season: number = 2025): Promise<any> => {
   try {
-    const data = await espnRequest(`/athletes/${playerId}/statistics?season=${season}`);
+    // First try 2025 season data
+    let data = await espnRequest(`/athletes/${playerId}/statistics?season=${season}`);
+    
+    // If no 2025 data available, try current season without specifying year (gets latest available)
+    if (!data || !data.statistics || data.statistics.length === 0) {
+      console.log(`No 2025 stats for player ${playerId}, trying current season...`);
+      data = await espnRequest(`/athletes/${playerId}/statistics`);
+    }
+    
     return data;
   } catch (error) {
     console.warn(`Failed to fetch stats for player ${playerId}:`, error);
@@ -469,10 +502,20 @@ export const fetchESPNCurrentPlayers = async (options?: {
         
         console.log(`Processing ${relevantPlayers.length} players from ${team.displayName}`);
         
+        if (relevantPlayers.length > 0) {
+          console.log(`Sample players from ${team.displayName}:`, relevantPlayers.slice(0, 2).map(p => ({
+            name: p.fullName || p.displayName,
+            position: p.position.abbreviation,
+            status: p.status,
+            class: p.class,
+            eligibility: p.eligibility
+          })));
+        }
+        
         for (const espnPlayer of relevantPlayers) {
           try {
-            // Fetch 2024 stats for the player
-            const stats = await fetchESPNPlayerStats(espnPlayer.id, 2024);
+            // Fetch current/2025 stats for the player
+            const stats = await fetchESPNPlayerStats(espnPlayer.id, 2025);
             
             const player = await convertESPNPlayerToPlayer(espnPlayer, team, stats);
             
@@ -489,9 +532,9 @@ export const fetchESPNCurrentPlayers = async (options?: {
               continue;
             }
             
-            // Include more players when filtering, be more selective for "All" view
-            const minPoints = (options?.specificTeam || options?.specificConference) ? 0 : 0.5;
-            if (player.projectedPoints >= minPoints) {
+            // For current season players, we want active players regardless of past stats
+            // Only filter out players with obviously incorrect data
+            if (player.name && player.team && player.position) {
               allPlayers.push(player);
             }
           } catch (error) {

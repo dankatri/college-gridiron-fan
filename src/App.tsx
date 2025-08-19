@@ -55,6 +55,9 @@ function App() {
     const loadPlayers = async () => {
       setIsLoadingPlayers(true);
       try {
+        // Clear cache on component mount to ensure fresh 2025 season data
+        clearCache();
+        
         const currentPlayers = await getPlayers();
         setPlayers(currentPlayers);
         
@@ -271,7 +274,7 @@ function App() {
             College Fantasy Football
           </h1>
           <p className="text-muted-foreground">
-            Build your weekly lineup with current ESPN player data from major conferences including Power 5, Group of 5, and FCS - remember, each player can only be used 3 times per season!
+            Build your weekly lineup with current 2025 season players from ESPN data across major conferences - remember, each player can only be used 3 times per season!
           </p>
         </div>
 
@@ -330,7 +333,7 @@ function App() {
                     <CardContent className="flex items-center justify-center py-12">
                       <div className="flex items-center gap-3 text-muted-foreground">
                         <RefreshCw size={20} className="animate-spin" />
-                        Loading players from ESPN...
+                        Loading 2025 season players from ESPN...
                       </div>
                     </CardContent>
                   </Card>
