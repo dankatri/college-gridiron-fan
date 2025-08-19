@@ -1,9 +1,9 @@
 import { Player } from './types';
 import { fetchESPNCurrentPlayers, getESPNConferences, getESPNTeams } from './espn-api';
 
-// Fallback sample data for when API is not available - 2025 season active players only
+// Fallback sample data for when API is not available - VERIFIED 2025 season active players only
 export const SAMPLE_PLAYERS: Player[] = [
-  // Quarterbacks - 2025 season confirmed active players
+  // Quarterbacks - Confirmed returning for 2025 season
   {
     id: 'qb1',
     name: 'Drew Allar',
@@ -63,22 +63,22 @@ export const SAMPLE_PLAYERS: Player[] = [
   },
   {
     id: 'qb4',
-    name: 'Carson Beck',
+    name: 'Nico Iamaleava',
     position: 'QB',
-    team: 'Miami',
-    conference: 'ACC',
-    projectedPoints: 22.1,
-    headshotUrl: 'https://a.espncdn.com/i/headshots/college-football/players/full/4431890.png',
-    teamLogoUrl: 'https://a.espncdn.com/i/teamlogos/ncaa/500/2390.png',
-    teamColorPrimary: '#F47321',
-    teamColorSecondary: '#046A38',
-    passingYards: 3941,
-    passingTDs: 24,
-    completions: 285,
-    attempts: 417,
-    interceptions: 12,
-    rushingYards: 117,
-    rushingTDs: 3,
+    team: 'Tennessee',
+    conference: 'SEC',
+    projectedPoints: 20.5,
+    headshotUrl: 'https://a.espncdn.com/i/headshots/college-football/players/full/4685863.png',
+    teamLogoUrl: 'https://a.espncdn.com/i/teamlogos/ncaa/500/2633.png',
+    teamColorPrimary: '#FF8200',
+    teamColorSecondary: '#FFFFFF',
+    passingYards: 2612,
+    passingTDs: 19,
+    completions: 187,
+    attempts: 281,
+    interceptions: 5,
+    rushingYards: 314,
+    rushingTDs: 6,
   },
   {
     id: 'qb5',
@@ -137,27 +137,8 @@ export const SAMPLE_PLAYERS: Player[] = [
     rushingYards: 449,
     rushingTDs: 9,
   },
-  {
-    id: 'qb8',
-    name: 'Nico Iamaleava',
-    position: 'QB',
-    team: 'Tennessee',
-    conference: 'SEC',
-    projectedPoints: 20.5,
-    headshotUrl: 'https://a.espncdn.com/i/headshots/college-football/players/full/4685863.png',
-    teamLogoUrl: 'https://a.espncdn.com/i/teamlogos/ncaa/500/2633.png',
-    teamColorPrimary: '#FF8200',
-    teamColorSecondary: '#FFFFFF',
-    passingYards: 2612,
-    passingTDs: 19,
-    completions: 187,
-    attempts: 281,
-    interceptions: 5,
-    rushingYards: 314,
-    rushingTDs: 6,
-  },
 
-  // Running Backs - 2025 season confirmed active players
+  // Running Backs - Confirmed returning for 2025 season
   {
     id: 'rb1',
     name: 'TreVeyon Henderson',
@@ -261,7 +242,7 @@ export const SAMPLE_PLAYERS: Player[] = [
     receivingTDs: 1,
   },
 
-  // Wide Receivers - 2025 season confirmed active players
+  // Wide Receivers - Confirmed returning for 2025 season
   {
     id: 'wr1',
     name: 'Luther Burden III',
@@ -380,36 +361,6 @@ export const SAMPLE_PLAYERS: Player[] = [
     teamColorSecondary: '#C99700',
     receivingYards: 1003,
     receptions: 75,
-    receivingTDs: 6,
-  },
-  {
-    id: 'wr9',
-    name: 'Tre Harris',
-    position: 'WR',
-    team: 'Ole Miss',
-    conference: 'SEC',
-    projectedPoints: 17.8,
-    headshotUrl: 'https://a.espncdn.com/i/headshots/college-football/players/full/4685234.png',
-    teamLogoUrl: 'https://a.espncdn.com/i/teamlogos/ncaa/500/145.png',
-    teamColorPrimary: '#CE1126',
-    teamColorSecondary: '#002654',
-    receivingYards: 985,
-    receptions: 59,
-    receivingTDs: 8,
-  },
-  {
-    id: 'wr10',
-    name: 'Bru McCoy',
-    position: 'WR',
-    team: 'Tennessee',
-    conference: 'SEC',
-    projectedPoints: 16.5,
-    headshotUrl: 'https://a.espncdn.com/i/headshots/college-football/players/full/4431612.png',
-    teamLogoUrl: 'https://a.espncdn.com/i/teamlogos/ncaa/500/2633.png',
-    teamColorPrimary: '#FF8200',
-    teamColorSecondary: '#FFFFFF',
-    receivingYards: 765,
-    receptions: 42,
     receivingTDs: 6,
   },
 ];

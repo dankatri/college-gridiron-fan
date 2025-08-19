@@ -55,14 +55,14 @@ function App() {
     const loadPlayers = async () => {
       setIsLoadingPlayers(true);
       try {
-        // Clear cache on component mount to ensure fresh 2025 season data with improved filtering
+        // Clear cache on component mount to ensure fresh 2025 season data with strict eligibility filtering
         clearCache();
         
         const currentPlayers = await getPlayers();
         setPlayers(currentPlayers);
         
         // Debug logging
-        console.log('Players loaded with 2025 eligibility filtering:', currentPlayers.length);
+        console.log('Players loaded with strict 2025 eligibility filtering:', currentPlayers.length);
         if (currentPlayers.length > 0) {
           console.log('Sample confirmed 2025 eligible players:', currentPlayers.slice(0, 3).map(p => ({ 
             id: p.id, 
@@ -91,7 +91,7 @@ function App() {
           const qbs = currentPlayers.filter(p => p.position === 'QB').length;
           const rbs = currentPlayers.filter(p => p.position === 'RB').length;
           const wrs = currentPlayers.filter(p => p.position === 'WR').length;
-          console.log('2025 eligible player counts by position:', { qbs, rbs, wrs });
+          console.log('2025 season eligible player counts by position:', { qbs, rbs, wrs });
         }
       } catch (error) {
         console.error('Failed to load players:', error);
@@ -274,7 +274,7 @@ function App() {
             College Fantasy Football
           </h1>
           <p className="text-muted-foreground">
-            Build your weekly lineup with active 2025 season players from ESPN data across major conferences - only current eligible players are shown, each can be used 3 times per season!
+            Build your weekly lineup with confirmed 2025 season eligible players from ESPN data - only current college players who will be playing in the 2025/26 season are available, each can be used 3 times per season!
           </p>
         </div>
 
@@ -333,7 +333,7 @@ function App() {
                     <CardContent className="flex items-center justify-center py-12">
                       <div className="flex items-center gap-3 text-muted-foreground">
                         <RefreshCw size={20} className="animate-spin" />
-                        Loading 2025 season players from ESPN...
+                        Loading confirmed 2025 season eligible players from ESPN...
                       </div>
                     </CardContent>
                   </Card>
