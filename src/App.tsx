@@ -55,16 +55,16 @@ function App() {
     const loadPlayers = async () => {
       setIsLoadingPlayers(true);
       try {
-        // Clear cache on component mount to ensure fresh 2025 season data
+        // Clear cache on component mount to ensure fresh 2025 season data with improved filtering
         clearCache();
         
         const currentPlayers = await getPlayers();
         setPlayers(currentPlayers);
         
         // Debug logging
-        console.log('Players loaded:', currentPlayers.length);
+        console.log('Players loaded with 2025 eligibility filtering:', currentPlayers.length);
         if (currentPlayers.length > 0) {
-          console.log('First 3 players:', currentPlayers.slice(0, 3).map(p => ({ 
+          console.log('Sample confirmed 2025 eligible players:', currentPlayers.slice(0, 3).map(p => ({ 
             id: p.id, 
             name: p.name, 
             position: p.position, 
@@ -91,7 +91,7 @@ function App() {
           const qbs = currentPlayers.filter(p => p.position === 'QB').length;
           const rbs = currentPlayers.filter(p => p.position === 'RB').length;
           const wrs = currentPlayers.filter(p => p.position === 'WR').length;
-          console.log('Player counts by position:', { qbs, rbs, wrs });
+          console.log('2025 eligible player counts by position:', { qbs, rbs, wrs });
         }
       } catch (error) {
         console.error('Failed to load players:', error);
@@ -274,7 +274,7 @@ function App() {
             College Fantasy Football
           </h1>
           <p className="text-muted-foreground">
-            Build your weekly lineup with current 2025 season players from ESPN data across major conferences - remember, each player can only be used 3 times per season!
+            Build your weekly lineup with active 2025 season players from ESPN data across major conferences - only current eligible players are shown, each can be used 3 times per season!
           </p>
         </div>
 
