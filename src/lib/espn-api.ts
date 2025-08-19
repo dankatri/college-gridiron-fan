@@ -278,27 +278,29 @@ export const fetchESPNTeamRoster = async (teamId: string): Promise<ESPNRoster | 
           return false;
         }
       }
-      }
-       if they've transferred, entered portal, or declared for draft
+      
       // Check if they've transferred, entered portal, or declared for draft
-      if (athlete.notes && (ANSFER') ||
+      if (athlete.notes && (
+        athlete.notes.toUpperCase().includes('TRANSFER') ||
         athlete.notes.toUpperCase().includes('DECLARED FOR DRAFT') ||
         athlete.notes.toUpperCase().includes('NFL DRAFT') ||
         athlete.notes.toUpperCase().includes('ENTERED DRAFT') ||
-        athlete.notes.toUpperCase().includes('DECLARED FOR DRAFT') ||
-        console.log(`Excluding player ${playerName} due to notes: ${athlete.notes}`);
         athlete.notes.toUpperCase().includes('LEFT TEAM')
       )) {
+        console.log(`Excluding player ${playerName} due to notes: ${athlete.notes}`);
+        return false;
+      }
       
       // Exclude players whose names indicate they're no longer active
       if (playerName.toUpperCase().includes('FORMER') ||
           playerName.toUpperCase().includes('EX-') ||
           playerName.toUpperCase().includes('TRANSFERRED')) {
+        console.log(`Excluding player ${playerName} due to name indicating former player`);
+        return false;
       }
       
       // Check for additional fields that might indicate 2025 ineligibility
-        console.log(`Excluding player ${playerName} due to name indicating former player`);
-        return false;
+      if (athlete.experience && (
         athlete.experience.toUpperCase().includes('FORMER') ||
         athlete.experience.toUpperCase().includes('TRANSFERRED')
       )) {
@@ -318,11 +320,6 @@ export const fetchESPNTeamRoster = async (teamId: string): Promise<ESPNRoster | 
     });
 
     console.log(`Filtered ${data.athletes.length} roster players to ${eligibleAthletes.length} eligible for 2025 season`);
-    
-      return isActiveFor2025;
-    });
-      console.log(`Excluded ${excluded} players who are not eligible for 2025 season`);
-    }
 
     return { ...data, athletes: eligibleAthletes };
   } catch (error) {
