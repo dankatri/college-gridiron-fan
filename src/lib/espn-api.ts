@@ -248,14 +248,14 @@ export const fetchESPNTeamRoster = async (teamId: string): Promise<ESPNRoster | 
       return hasName && hasPosition && isActive && eligibleForNextSeason;
     });
 
-    const roster: ESPNRoster = {
-      team: data.team,
-      athletes: activeAthletes
-    };
-
-    console.log(`Fetched roster for ${data.team?.displayName || teamId}: ${activeAthletes.length}/${data.athletes.length} active players`);
-    return roster;
+    return data;
   } catch (error) {
+    console.warn(`Failed to fetch stats for player ${playerId}:`, error);
+    return null;
+  }
+};
+
+// Calculate projected points based on ESPN stats
     console.error(`Failed to fetch ESPN roster for team ${teamId}:`, error);
     return null;
   }
