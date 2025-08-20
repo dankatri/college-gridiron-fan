@@ -40,6 +40,13 @@ Using official scoring rules:
 - Rushing/Receiving: 10 yards = 1 pt, TD = 6 pts
 - Returns: 10 yards = 1 pt
 
+### Team Schedule Features
+- **Schedule Overview**: Comprehensive weekly schedule display showing all games and bye teams
+- **Bye Week Indicators**: Visual badges and alerts for players whose teams are on bye
+- **Current Week Highlighting**: Clear indication of which players are unavailable in the current week
+- **Multi-Week Schedule View**: Navigation through weeks 1-15 to plan ahead for bye weeks
+- **Strategic Planning Aid**: Help users identify and replace players before bye weeks affect scoring
+
 ### Data Integration
 - **ESPN Player Data**: Integration with ESPN College Football API for current 2025 season rosters across all major conferences
 - **Expanded Conference Coverage**: Power 5 (SEC, Big Ten, Big 12, ACC, Pac-12), Group of 5 (American, C-USA, MAC, Mountain West, Sun Belt), and select FCS conferences
@@ -47,6 +54,8 @@ Using official scoring rules:
 - **Dynamic Roster Updates**: Fresh data loading from ESPN's public API with enhanced filtering
 - **No Authentication Required**: ESPN's public API provides reliable data without API keys
 - **Cache Management**: Efficient data caching with refresh capabilities for optimal performance across expanded dataset
+- **Team Schedule Integration**: Real-time schedule data including bye weeks, opponents, and game dates
+- **Bye Week Tracking**: Automatic identification and display of team bye weeks to help users make informed lineup decisions
 
 ### Season Management
 - **Week Navigation**: Easy switching between weeks 1-15

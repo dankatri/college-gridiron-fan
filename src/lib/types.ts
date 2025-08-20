@@ -5,6 +5,9 @@ export interface Player {
   team: string;
   conference: string;
   projectedPoints: number;
+  // Bye week information
+  hasByeWeek?: boolean;
+  byeWeek?: number;
   // Media assets
   headshotUrl?: string;
   teamLogoUrl?: string;
@@ -58,6 +61,24 @@ export interface GameStatus {
   team1Score: number;
   team2Score: number;
   lastUpdated: Date;
+}
+
+export interface TeamSchedule {
+  teamId: string;
+  teamName: string;
+  conference: string;
+  weeklyGames: WeeklyGame[];
+  byeWeeks: number[];
+}
+
+export interface WeeklyGame {
+  week: number;
+  opponent?: string;
+  isHomeGame: boolean;
+  gameDate?: Date;
+  gameTime?: string;
+  isByeWeek: boolean;
+  gameId?: string;
 }
 
 export interface LiveUpdate {

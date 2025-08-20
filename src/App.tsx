@@ -17,19 +17,21 @@ import { LineupSummary } from '@/components/LineupSummary';
 import { WeekNavigation } from '@/components/WeekNavigation';
 import { LiveScoringDashboard } from '@/components/LiveScoringDashboard';
 import { LeagueDashboard } from '@/components/LeagueDashboard';
+import { ScheduleOverview } from '@/components/ScheduleOverview';
+import { ByeWeekAlert } from '@/components/ByeWeekAlert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Toaster } from '@/components/ui/sonner';
-import { Trophy, Users, Target, Activity, Medal, RefreshCw } from '@phosphor-icons/react';
+import { Trophy, Users, Target, Activity, Medal, RefreshCw, Calendar } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
 function App() {
   const [currentWeek, setCurrentWeek] = useState(1);
   const [currentLineup, setCurrentLineup] = useState<LineupSlot[]>(createEmptyLineup());
   const [selectedPosition, setSelectedPosition] = useState<'QB' | 'RB' | 'WR'>('QB');
-  const [activeTab, setActiveTab] = useState<'lineup' | 'scoring' | 'leagues'>('lineup');
+  const [activeTab, setActiveTab] = useState<'lineup' | 'schedule' | 'scoring' | 'leagues'>('lineup');
   const [players, setPlayers] = useState<Player[]>([]);
   const [isLoadingPlayers, setIsLoadingPlayers] = useState(true);
   
@@ -283,10 +285,14 @@ function App() {
 
         {/* Main Navigation Tabs */}
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)}>
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="lineup" className="flex items-center gap-2">
               <Users size={16} />
               Set Lineup
+            </TabsTrigger>
+            <TabsTrigger value="schedule" className="flex items-center gap-2">
+              <Calendar size={16} />
+              Schedule
             </TabsTrigger>
             <TabsTrigger value="scoring" className="flex items-center gap-2">
               <Activity size={16} />
@@ -351,6 +357,7 @@ function App() {
                         players={players}
                         playerUsage={playerUsage}
                         currentLineup={currentLineup}
+                        currentWeek={currentWeek}
                         onPlayerSelect={handlePlayerSelect}
                         onPlayersUpdate={handlePlayersUpdate}
                       />
@@ -361,6 +368,9 @@ function App() {
 
               {/* Lineup & Summary */}
               <div className="space-y-4">
+                {/* Bye Week Alert */}
+                <ByeWeekAlert lineup={currentLineup} currentWeek={currentWeek} />
+                
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
@@ -413,6 +423,11 @@ function App() {
                 </Card>
               </div>
             </div>
+          </TabsContent>
+
+          {/* Schedule Tab */}
+          <TabsContent value="schedule" className="mt-6">
+            <ScheduleOverview currentWeek={currentWeek} />
           </TabsContent>
 
           {/* Live Scoring Tab */}

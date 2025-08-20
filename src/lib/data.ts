@@ -1,5 +1,6 @@
 import { Player } from './types';
 import { fetchESPNCurrentPlayers, getESPNConferences, getESPNTeams } from './espn-api';
+import { getTeamSchedules, isTeamOnBye } from './schedule-data';
 
 // Fallback sample data for when API is not available - VERIFIED 2025 season active players only
 export const SAMPLE_PLAYERS: Player[] = [
@@ -11,6 +12,8 @@ export const SAMPLE_PLAYERS: Player[] = [
     team: 'Penn State',
     conference: 'Big Ten',
     projectedPoints: 21.0,
+    hasByeWeek: true,
+    byeWeek: 9,
     headshotUrl: 'https://a.espncdn.com/i/headshots/college-football/players/full/4431722.png',
     teamLogoUrl: 'https://a.espncdn.com/i/teamlogos/ncaa/500/213.png',
     teamColorPrimary: '#041E42',
@@ -30,6 +33,8 @@ export const SAMPLE_PLAYERS: Player[] = [
     team: 'Texas',
     conference: 'SEC',
     projectedPoints: 20.8,
+    hasByeWeek: true,
+    byeWeek: 5,
     headshotUrl: 'https://a.espncdn.com/i/headshots/college-football/players/full/4685529.png',
     teamLogoUrl: 'https://a.espncdn.com/i/teamlogos/ncaa/500/251.png',
     teamColorPrimary: '#BF5700',
@@ -146,6 +151,8 @@ export const SAMPLE_PLAYERS: Player[] = [
     team: 'Ohio State',
     conference: 'Big Ten',
     projectedPoints: 19.5,
+    hasByeWeek: true,
+    byeWeek: 3,
     headshotUrl: 'https://a.espncdn.com/i/headshots/college-football/players/full/4431734.png',
     teamLogoUrl: 'https://a.espncdn.com/i/teamlogos/ncaa/500/194.png',
     teamColorPrimary: '#CC0000',
@@ -426,13 +433,39 @@ export const getPlayers = async (options?: {
     const allPlayers = await fetchESPNCurrentPlayers(apiOptions);
     console.log(`ESPN API returned ${allPlayers.length} players`);
     
-    // Validate that we have good player data
+    // Fetch team schedules for bye week information
+    console.log('Fetching team schedules for bye week data...');
+    const teamSchedules = await getTeamSchedules();
+    const scheduleMap = new Map(teamSchedules.map(s => [s.teamName.toLowerCase(), s]));
+    
+    // Validate that we have good player data and add bye week information
     const validPlayers = allPlayers.filter(p => 
       p.name && 
       p.name.trim() !== '' && 
       !p.name.includes('undefined') &&
       !p.name.startsWith('Player ')
-    );
+    ).map(player => {
+      // Try to find the team schedule
+      const teamKey = player.team.toLowerCase();
+      const schedule = scheduleMap.get(teamKey) || 
+                     Array.from(scheduleMap.values()).find(s => 
+                       s.teamName.toLowerCase().includes(teamKey) ||
+                       teamKey.includes(s.teamName.toLowerCase())
+                     );
+      
+      if (schedule && schedule.byeWeeks.length > 0) {
+        return {
+          ...player,
+          hasByeWeek: true,
+          byeWeek: schedule.byeWeeks[0] // Use first bye week if multiple
+        };
+      }
+      
+      return {
+        ...player,
+        hasByeWeek: false
+      };
+    });
     
     console.log(`Filtered to ${validPlayers.length} valid players`);
     
@@ -461,7 +494,10 @@ export const getPlayers = async (options?: {
         const notDuplicate = !existingPlayerNames.has(samplePlayer.name.toLowerCase());
         
         return matchesFilter && notDuplicate;
-      });
+      }).map(player => ({
+        ...player,
+        hasByeWeek: player.byeWeek ? true : false
+      }));
       
       combinedPlayers.push(...filteredSamplePlayers);
       
@@ -488,6 +524,12 @@ export const getPlayers = async (options?: {
     if (options?.specificConference && options.specificConference !== 'All Conferences') {
       samplePlayers = samplePlayers.filter(p => p.conference === options.specificConference);
     }
+    
+    // Ensure sample players have bye week information
+    samplePlayers = samplePlayers.map(player => ({
+      ...player,
+      hasByeWeek: player.byeWeek ? true : false
+    }));
     
     playersCache.set(cacheKey, {
       players: samplePlayers,
@@ -620,4 +662,7 @@ export const clearCache = () => {
   conferencesCache = [];
   teamsCache = [];
   cacheTimestamp = 0;
+  // Also clear schedule cache when clearing all data
+  const { clearScheduleCache } = require('./schedule-data');
+  clearScheduleCache();
 };

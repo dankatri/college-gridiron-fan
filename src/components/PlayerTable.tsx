@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { LineupSlot } from '@/lib/types';
+import { ByeWeekIndicator } from '@/components/ByeWeekIndicator';
 import { Users, Filter, Trophy, RefreshCw, User } from '@phosphor-icons/react';
 
 interface PlayerTableProps {
@@ -16,6 +17,7 @@ interface PlayerTableProps {
   players: Player[];
   playerUsage: PlayerUsage[];
   currentLineup: LineupSlot[];
+  currentWeek?: number;
   onPlayerSelect: (player: Player) => void;
   onPlayersUpdate?: (players: Player[]) => void; // New callback to update parent's player list
 }
@@ -25,6 +27,7 @@ export function PlayerTable({
   players, 
   playerUsage, 
   currentLineup, 
+  currentWeek,
   onPlayerSelect,
   onPlayersUpdate 
 }: PlayerTableProps) {
@@ -358,6 +361,7 @@ export function PlayerTable({
                 <TableHead className="w-[240px]">Player</TableHead>
                 <TableHead>Team</TableHead>
                 <TableHead>Conf</TableHead>
+                <TableHead className="text-center">Schedule</TableHead>
                 <TableHead className="text-center">
                   <div className="flex items-center justify-center gap-1">
                     <Trophy size={14} />
@@ -427,6 +431,9 @@ export function PlayerTable({
                       </div>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">{player.conference}</TableCell>
+                    <TableCell className="text-center">
+                      <ByeWeekIndicator player={player} currentWeek={currentWeek} />
+                    </TableCell>
                     <TableCell className="text-center font-medium">{player.projectedPoints}</TableCell>
                     {statsColumns.map(col => (
                       <TableCell key={col.key} className="text-center">
