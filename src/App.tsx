@@ -19,12 +19,13 @@ import { LiveScoringDashboard } from '@/components/LiveScoringDashboard';
 import { LeagueDashboard } from '@/components/LeagueDashboard';
 import { ScheduleOverview } from '@/components/ScheduleOverview';
 import { ByeWeekAlert } from '@/components/ByeWeekAlert';
+import { LoginScreen } from '@/components/LoginScreen';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Toaster } from '@/components/ui/sonner';
-import { Trophy, Users, Target, Activity, Medal, RefreshCw, Calendar } from '@phosphor-icons/react';
+import { Trophy, Users, Target, Activity, Medal, RefreshCw, Calendar, SignOut } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
 function App() {
@@ -35,25 +36,38 @@ function App() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [isLoadingPlayers, setIsLoadingPlayers] = useState(true);
   
-  const [currentUserId, setCurrentUserId] = useState<string>('');
+  // Authentication state
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
-  // Load current user
+  // Check authentication status on app load
   useEffect(() => {
-    const loadUser = async () => {
+    const checkAuthentication = async () => {
+      setIsCheckingAuth(true);
       try {
         const user = await spark.user();
-        setCurrentUserId(user.id);
+        if (user && user.id) {
+          setCurrentUser(user);
+          setIsAuthenticated(true);
+        } else {
+          setIsAuthenticated(false);
+        }
       } catch (error) {
-        console.error('Failed to load user:', error);
-        // Set a default user ID for demo purposes
-        setCurrentUserId('demo_user_' + Date.now());
+        console.log('User not authenticated');
+        setIsAuthenticated(false);
+      } finally {
+        setIsCheckingAuth(false);
       }
     };
-    loadUser();
+    
+    checkAuthentication();
   }, []);
 
-  // Load players
+  // Load players only when authenticated
   useEffect(() => {
+    if (!isAuthenticated) return;
+    
     const loadPlayers = async () => {
       setIsLoadingPlayers(true);
       try {
@@ -103,11 +117,11 @@ function App() {
     };
     
     loadPlayers();
-  }, []);
+  }, [isAuthenticated]);
 
-  // Persistent data
-  const [weeklyLineups, setWeeklyLineups] = useKV<WeeklyLineup[]>('weekly-lineups', []);
-  const [playerUsage, setPlayerUsage] = useKV<PlayerUsage[]>('player-usage', []);
+  // Persistent data - scoped to authenticated user
+  const [weeklyLineups, setWeeklyLineups] = useKV<WeeklyLineup[]>(`weekly-lineups-${currentUser?.id || 'unknown'}`, []);
+  const [playerUsage, setPlayerUsage] = useKV<PlayerUsage[]>(`player-usage-${currentUser?.id || 'unknown'}`, []);
 
   // Load lineup for current week
   useEffect(() => {
@@ -255,6 +269,31 @@ function App() {
     }
   };
 
+  const handleLoginSuccess = (user: any) => {
+    setCurrentUser(user);
+    setIsAuthenticated(true);
+    toast.success(`Welcome, ${user.login}!`);
+  };
+
+  const handleLogout = async () => {
+    try {
+      // Clear local state
+      setIsAuthenticated(false);
+      setCurrentUser(null);
+      setPlayers([]);
+      setCurrentLineup(createEmptyLineup());
+      setCurrentWeek(1);
+      setActiveTab('lineup');
+      
+      // Clear cache
+      clearCache();
+      
+      toast.success('Logged out successfully');
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  };
+
   const handlePointsUpdate = (week: number, actualPoints: number) => {
     setWeeklyLineups(prev => prev.map(lineup => {
       if (lineup.week === week) {
@@ -266,18 +305,65 @@ function App() {
 
   const currentWeekLineup = weeklyLineups.find(w => w.week === currentWeek);
 
+  // Show loading spinner while checking authentication
+  if (isCheckingAuth) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="flex items-center gap-3 text-muted-foreground">
+          <RefreshCw size={20} className="animate-spin" />
+          Checking authentication...
+        </div>
+      </div>
+    );
+  }
+
+  // Show login screen if not authenticated
+  if (!isAuthenticated) {
+    return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto p-4 space-y-6">
         {/* Header */}
-        <div className="text-center space-y-2">
-          <h1 className="text-3xl font-bold flex items-center justify-center gap-2">
-            <Trophy size={32} className="text-accent" />
-            College Fantasy Football
-          </h1>
-          <p className="text-muted-foreground">
-            Build your weekly lineup with confirmed 2025 season eligible players from ESPN data - only current college players who will be playing in the 2025/26 season are available, each can be used 3 times per season!
-          </p>
+        <div className="flex items-center justify-between">
+          <div className="text-center space-y-2 flex-1">
+            <h1 className="text-3xl font-bold flex items-center justify-center gap-2">
+              <Trophy size={32} className="text-accent" />
+              College Fantasy Football
+            </h1>
+            <p className="text-muted-foreground">
+              Build your weekly lineup with confirmed 2025 season eligible players from ESPN data - only current college players who will be playing in the 2025/26 season are available, each can be used 3 times per season!
+            </p>
+          </div>
+          
+          {/* User Profile & Logout */}
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                {currentUser.avatarUrl && (
+                  <img 
+                    src={currentUser.avatarUrl} 
+                    alt={currentUser.login}
+                    className="w-6 h-6 rounded-full"
+                  />
+                )}
+                {currentUser.login}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {currentUser.email}
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleLogout}
+              className="flex items-center gap-2"
+            >
+              <SignOut size={14} />
+              Logout
+            </Button>
+          </div>
         </div>
 
         {/* Week Navigation */}
@@ -444,7 +530,7 @@ function App() {
             <LeagueDashboard
               currentWeek={currentWeek}
               weeklyLineups={weeklyLineups}
-              currentUserId={currentUserId}
+              currentUserId={currentUser?.id || ''}
             />
           </TabsContent>
         </Tabs>
