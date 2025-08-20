@@ -267,10 +267,7 @@ export const fetchESPNTeamRoster = async (teamId: string): Promise<ESPNRoster | 
       
       // More strict checking for year/class - exclude all seniors by default for 2025 season
       if (athlete.class === 'SR' || athlete.class === 'Senior' || athlete.class === 'Grad' || athlete.class === 'Graduate') {
-<<<<<<< Updated upstream
-=======
         // Only allow seniors/graduates with confirmed 2025 eligibility
->>>>>>> Stashed changes
         const hasConfirmed2025Eligibility = athlete.eligibility && (
           athlete.eligibility.toUpperCase().includes('2025') ||
           athlete.eligibility.toUpperCase().includes('RETURNING') ||
@@ -286,12 +283,7 @@ export const fetchESPNTeamRoster = async (teamId: string): Promise<ESPNRoster | 
       // Check if they've transferred, entered portal, or declared for draft
       if (athlete.notes && (
         athlete.notes.toUpperCase().includes('TRANSFER') ||
-<<<<<<< Updated upstream
-        athlete.notes.toUpperCase().includes('DECLARED FOR DRAFT') ||
-        athlete.notes.toUpperCase().includes('NFL DRAFT') ||
-=======
         athlete.notes.toUpperCase().includes('PORTAL') ||
->>>>>>> Stashed changes
         athlete.notes.toUpperCase().includes('ENTERED DRAFT') ||
         athlete.notes.toUpperCase().includes('DECLARED FOR DRAFT') ||
         athlete.notes.toUpperCase().includes('NFL DRAFT') ||
