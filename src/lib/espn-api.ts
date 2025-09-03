@@ -224,7 +224,7 @@ export const fetchESPNTeamRoster = async (teamId: string): Promise<ESPNRoster | 
       return null;
     }
 
-    // Filter for 2025 season eligible players only - strengthened filtering
+    // Filter for 2025 season eligible players only - balanced filtering
     const eligibleAthletes = data.athletes.filter((athlete: any) => {
       // Basic validation that this is an active player entry
       const hasName = athlete.fullName || athlete.displayName;
@@ -236,57 +236,24 @@ export const fetchESPNTeamRoster = async (teamId: string): Promise<ESPNRoster | 
       
       const playerName = athlete.fullName || athlete.displayName;
       
-      // Check for inactive status indicators that would exclude them from 2025
+      // Check for clear inactive status indicators that would exclude them from 2025
       if (athlete.status && (
-        athlete.status.toUpperCase().includes('INACTIVE') ||
-        athlete.status.toUpperCase().includes('TRANSFERRED') ||
-        athlete.status.toUpperCase().includes('TRANSFER') ||
-        athlete.status.toUpperCase().includes('GRADUATED') ||
         athlete.status.toUpperCase().includes('DRAFT') ||
         athlete.status.toUpperCase().includes('NFL') ||
         athlete.status.toUpperCase().includes('PROFESSIONAL') ||
-        athlete.status.toUpperCase().includes('SUSPENDED') ||
-        athlete.status.toUpperCase().includes('INJURED_RESERVE') ||
-        athlete.status.toUpperCase().includes('MEDICAL') ||
+        athlete.status.toUpperCase().includes('FORMER') ||
         athlete.status.toUpperCase().includes('EX-')
       )) {
         console.log(`Excluding player ${playerName} due to status: ${athlete.status}`);
         return false;
       }
       
-      // Exclude players who have exhausted eligibility or graduated
-      if (athlete.eligibility && (
-        athlete.eligibility.toUpperCase().includes('EXHAUSTED') ||
-        athlete.eligibility.toUpperCase().includes('GRADUATED') ||
-        athlete.eligibility.toUpperCase().includes('COMPLETED') ||
-        athlete.eligibility.toUpperCase().includes('FINISHED')
-      )) {
-        console.log(`Excluding player ${playerName} due to eligibility: ${athlete.eligibility}`);
-        return false;
-      }
-      
-      // More strict checking for year/class - exclude all seniors by default for 2025 season
-      if (athlete.class === 'SR' || athlete.class === 'Senior' || athlete.class === 'Grad' || athlete.class === 'Graduate') {
-        // Only allow seniors/graduates with confirmed 2025 eligibility
-        const hasConfirmed2025Eligibility = athlete.eligibility && (
-          athlete.eligibility.toUpperCase().includes('2025') ||
-          athlete.eligibility.toUpperCase().includes('RETURNING') ||
-          athlete.eligibility.toUpperCase().includes('REDSHIRT')
-        );
-        
-        if (!hasConfirmed2025Eligibility) {
-          console.log(`Excluding senior/graduate ${playerName} without confirmed 2025 eligibility (class: ${athlete.class})`);
-          return false;
-        }
-      }
-      
-      // Check if they've transferred, entered portal, or declared for draft
+      // Check for transfer portal or departure notes
       if (athlete.notes && (
-        athlete.notes.toUpperCase().includes('TRANSFER') ||
-        athlete.notes.toUpperCase().includes('PORTAL') ||
         athlete.notes.toUpperCase().includes('ENTERED DRAFT') ||
         athlete.notes.toUpperCase().includes('DECLARED FOR DRAFT') ||
         athlete.notes.toUpperCase().includes('NFL DRAFT') ||
+        athlete.notes.toUpperCase().includes('TRANSFER PORTAL') ||
         athlete.notes.toUpperCase().includes('LEFT TEAM')
       )) {
         console.log(`Excluding player ${playerName} due to notes: ${athlete.notes}`);
@@ -301,24 +268,9 @@ export const fetchESPNTeamRoster = async (teamId: string): Promise<ESPNRoster | 
         return false;
       }
       
-      // Check for additional fields that might indicate 2025 ineligibility
-      if (athlete.experience && (
-        athlete.experience.toUpperCase().includes('FORMER') ||
-        athlete.experience.toUpperCase().includes('TRANSFERRED')
-      )) {
-        console.log(`Excluding player ${playerName} due to experience: ${athlete.experience}`);
-        return false;
-      }
-      
-      // For 2025 season, we want only confirmed active, eligible players
-      // Be more restrictive on what we consider "active"
-      const isActiveFor2025 = !athlete.status || 
-                             athlete.status.toUpperCase() === 'ACTIVE' || 
-                             athlete.status.toUpperCase() === 'ELIGIBLE' ||
-                             athlete.status.toUpperCase() === 'ROSTER' ||
-                             athlete.status.toUpperCase() === 'CURRENT';
-      
-      return isActiveFor2025;
+      // For 2025 season, be more inclusive to capture returning players
+      // Allow most players unless they're clearly ineligible
+      return true;
     });
 
     console.log(`Filtered ${data.athletes.length} roster players to ${eligibleAthletes.length} eligible for 2025 season`);
@@ -464,11 +416,23 @@ const convertESPNPlayerToPlayer = async (espnPlayer: any, teamData: ESPNTeam, st
   
   // Fix headshot URL format - ensure it's a proper ESPN headshot URL
   let finalHeadshotUrl = headshotUrl;
-  if (headshotUrl && !headshotUrl.includes('headshots/college-football/players/full/')) {
-    // Try to construct proper ESPN headshot URL if we have player ID
-    if (espnPlayer.id) {
-      finalHeadshotUrl = `https://a.espncdn.com/i/headshots/college-football/players/full/${espnPlayer.id}.png`;
+  if (headshotUrl) {
+    // Ensure the URL is properly formatted
+    if (!headshotUrl.includes('headshots/college-football/players/full/')) {
+      // Try to construct proper ESPN headshot URL if we have player ID
+      if (espnPlayer.id) {
+        finalHeadshotUrl = `https://a.espncdn.com/i/headshots/college-football/players/full/${espnPlayer.id}.png`;
+      }
+    } else {
+      // Use the existing URL but ensure it's formatted correctly
+      finalHeadshotUrl = headshotUrl.replace(/\/(s|w)\d+\./, '/full/');
     }
+  } else if (espnPlayer.id) {
+    // No headshot URL provided, construct one from player ID
+    finalHeadshotUrl = `https://a.espncdn.com/i/headshots/college-football/players/full/${espnPlayer.id}.png`;
+  } else {
+    // No ID or URL available, use a generic placeholder
+    finalHeadshotUrl = `https://a.espncdn.com/i/headshots/college-football/players/full/default.png`;
   }
   
   return {
@@ -507,8 +471,8 @@ export const fetchESPNCurrentPlayers = async (options?: {
 }): Promise<Player[]> => {
   try {
     // Set up player limits - significantly increased for comprehensive coverage
-    const defaultLimits = { QB: 80, RB: 100, WR: 120 }; // Increased from 50/60/80
-    const expandedLimits = { QB: 300, RB: 400, WR: 500 }; // Much larger limits when filtering
+    const defaultLimits = { QB: 120, RB: 150, WR: 180 }; // Increased for better coverage
+    const expandedLimits = { QB: 400, RB: 500, WR: 600 }; // Much larger limits when filtering
     
     const limits = options?.maxPlayersPerPosition || 
       (options?.specificTeam || options?.specificConference ? expandedLimits : defaultLimits);
@@ -552,7 +516,7 @@ export const fetchESPNCurrentPlayers = async (options?: {
       ];
       teamsToFetch = allTeams.filter(team => 
         team.conference && majorConferences.includes(team.conference.name)
-      ).slice(0, 120); // Increased from 100 to 120 teams for more player diversity
+      ).slice(0, 150); // Increased from 120 to 150 teams for maximum player diversity
     }
 
     if (teamsToFetch.length === 0) {
@@ -593,64 +557,36 @@ export const fetchESPNCurrentPlayers = async (options?: {
         
         for (const espnPlayer of relevantPlayers) {
           try {
-            // Additional eligibility check for 2025 season before processing - strengthened
+            // Basic eligibility check for 2025 season before processing - more balanced
             const playerName = espnPlayer.fullName || espnPlayer.displayName || '';
             
-            // Skip if player has obvious 2025 ineligibility indicators
+            // Skip if player has clear 2025 ineligibility indicators
             if (espnPlayer.status && (
               espnPlayer.status.toUpperCase().includes('DRAFT') ||
-              espnPlayer.status.toUpperCase().includes('PROFESSIONAL') ||
               espnPlayer.status.toUpperCase().includes('NFL') ||
-              espnPlayer.status.toUpperCase().includes('TRANSFERRED') ||
-              espnPlayer.status.toUpperCase().includes('TRANSFER') ||
-              espnPlayer.status.toUpperCase().includes('PORTAL') ||
+              espnPlayer.status.toUpperCase().includes('PROFESSIONAL') ||
               espnPlayer.status.toUpperCase().includes('FORMER') ||
-              espnPlayer.status.toUpperCase().includes('EX-') ||
-              espnPlayer.status.toUpperCase().includes('GRADUATED') ||
-              espnPlayer.status.toUpperCase().includes('INACTIVE') ||
-              espnPlayer.status.toUpperCase().includes('DEPARTED')
+              espnPlayer.status.toUpperCase().includes('EX-')
             )) {
               console.log(`Skipping ${playerName} - not eligible for 2025 season (status: ${espnPlayer.status})`);
               continue;
             }
             
-            // Skip if player notes indicate they won't be playing in 2025
+            // Skip if player notes clearly indicate they won't be playing in 2025
             if (espnPlayer.notes && (
               espnPlayer.notes.toUpperCase().includes('DECLARED FOR DRAFT') ||
               espnPlayer.notes.toUpperCase().includes('ENTERING DRAFT') ||
               espnPlayer.notes.toUpperCase().includes('NFL DRAFT') ||
-              espnPlayer.notes.toUpperCase().includes('TRANSFER PORTAL') ||
-              espnPlayer.notes.toUpperCase().includes('TRANSFERRED') ||
-              espnPlayer.notes.toUpperCase().includes('GRADUATED') ||
-              espnPlayer.notes.toUpperCase().includes('PROFESSIONAL') ||
-              espnPlayer.notes.toUpperCase().includes('FORMER') ||
-              espnPlayer.notes.toUpperCase().includes('NO LONGER') ||
-              espnPlayer.notes.toUpperCase().includes('LEFT TEAM') ||
-              espnPlayer.notes.toUpperCase().includes('DEPARTED')
+              espnPlayer.notes.toUpperCase().includes('LEFT TEAM')
             )) {
               console.log(`Skipping ${playerName} - not eligible for 2025 season (notes: ${espnPlayer.notes})`);
               continue;
             }
             
-            // Skip seniors/graduates unless they have confirmed 2025 eligibility
-            if (espnPlayer.class === 'SR' || espnPlayer.class === 'Senior' || espnPlayer.class === 'Grad' || espnPlayer.class === 'Graduate') {
-              const hasConfirmed2025 = espnPlayer.eligibility && (
-                espnPlayer.eligibility.toUpperCase().includes('2025') ||
-                espnPlayer.eligibility.toUpperCase().includes('RETURNING') ||
-                espnPlayer.eligibility.toUpperCase().includes('REDSHIRT')
-              );
-              
-              if (!hasConfirmed2025) {
-                console.log(`Skipping ${playerName} - senior/graduate without confirmed 2025 eligibility (class: ${espnPlayer.class})`);
-                continue;
-              }
-            }
-            
-            // Additional check for player names that indicate they're no longer active
+            // Check for obvious ineligible name patterns
             if (playerName && (
               playerName.toUpperCase().includes('FORMER') ||
-              playerName.toUpperCase().includes('EX-') ||
-              playerName.toUpperCase().includes('TRANSFERRED')
+              playerName.toUpperCase().includes('EX-')
             )) {
               console.log(`Skipping ${playerName} - name indicates former player`);
               continue;

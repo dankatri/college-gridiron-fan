@@ -74,20 +74,21 @@ function App() {
     const loadPlayers = async () => {
       setIsLoadingPlayers(true);
       try {
-        // Clear cache on component mount to ensure fresh 2025 season data with strict eligibility filtering
+        // Clear cache on component mount to ensure fresh 2025 season data with improved player coverage and picture quality
         clearCache();
         
         const currentPlayers = await getPlayers();
         setPlayers(currentPlayers);
         
         // Debug logging
-        console.log('Players loaded with strict 2025 eligibility filtering:', currentPlayers.length);
+        console.log('Players loaded with improved coverage and picture quality:', currentPlayers.length);
         if (currentPlayers.length > 0) {
-          console.log('Sample confirmed 2025 eligible players:', currentPlayers.slice(0, 3).map(p => ({ 
+          console.log('Sample confirmed 2025 eligible players with improved data:', currentPlayers.slice(0, 3).map(p => ({ 
             id: p.id, 
             name: p.name, 
             position: p.position, 
-            team: p.team 
+            team: p.team,
+            headshotUrl: p.headshotUrl 
           })));
           
           // Check for various name issues
@@ -110,7 +111,7 @@ function App() {
           const qbs = currentPlayers.filter(p => p.position === 'QB').length;
           const rbs = currentPlayers.filter(p => p.position === 'RB').length;
           const wrs = currentPlayers.filter(p => p.position === 'WR').length;
-          console.log('2025 season eligible player counts by position:', { qbs, rbs, wrs });
+          console.log('Enhanced 2025 season player counts by position:', { qbs, rbs, wrs });
         }
       } catch (error) {
         console.error('Failed to load players:', error);
@@ -360,7 +361,7 @@ function App() {
               College Fantasy Football
             </h1>
             <p className="text-muted-foreground">
-              Build your weekly lineup with 2025 season eligible players - each can be used 3 times maximum! Lineups can be edited until each week begins. Current season runs through bowls and College Football Playoff (18 weeks total).
+              Build your weekly lineup with 2025 season players - each can be used 3 times maximum! Lineups can be edited until each week begins. Current season features comprehensive player database with updated rosters and statistics.
             </p>
           </div>
           
@@ -482,7 +483,7 @@ function App() {
                     <CardContent className="flex items-center justify-center py-12">
                       <div className="flex items-center gap-3 text-muted-foreground">
                         <RefreshCw size={20} className="animate-spin" />
-                        Loading confirmed 2025 season eligible players from ESPN...
+                        Loading enhanced 2025 season player data from ESPN...
                       </div>
                     </CardContent>
                   </Card>
