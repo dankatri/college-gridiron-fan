@@ -78,3 +78,66 @@ export function addPlayerToLineup(player: Player, slotIndex: number, lineup: Lin
       : slot
   );
 }
+
+// Week locking functionality
+export function isWeekLocked(week: number): boolean {
+  // Week 1 started on August 24, 2024 and is now over (past weeks are locked)
+  // Generally, each week begins on Saturday
+  const currentDate = new Date();
+  
+  // College football season dates for 2024-2025
+  const weekStartDates = {
+    1: new Date('2024-08-24'), // Week 1 start
+    2: new Date('2024-08-31'), // Week 2 start  
+    3: new Date('2024-09-07'), // Week 3 start
+    4: new Date('2024-09-14'), // Week 4 start
+    5: new Date('2024-09-21'), // Week 5 start
+    6: new Date('2024-09-28'), // Week 6 start
+    7: new Date('2024-10-05'), // Week 7 start
+    8: new Date('2024-10-12'), // Week 8 start
+    9: new Date('2024-10-19'), // Week 9 start
+    10: new Date('2024-10-26'), // Week 10 start
+    11: new Date('2024-11-02'), // Week 11 start
+    12: new Date('2024-11-09'), // Week 12 start
+    13: new Date('2024-11-16'), // Week 13 start
+    14: new Date('2024-11-23'), // Week 14 start (Thanksgiving week)
+    15: new Date('2024-11-30'), // Week 15 start (Conference championships)
+  };
+  
+  const weekStart = weekStartDates[week as keyof typeof weekStartDates];
+  if (!weekStart) {
+    return true; // Lock unknown weeks
+  }
+  
+  // Lock the week once it starts (on Saturday)
+  return currentDate >= weekStart;
+}
+
+export function getCurrentWeek(): number {
+  const currentDate = new Date();
+  
+  // If we're before the season starts, return week 1
+  if (currentDate < new Date('2024-08-24')) {
+    return 1;
+  }
+  
+  // Calculate which week we're currently in
+  const seasonStart = new Date('2024-08-24');
+  const daysSinceStart = Math.floor((currentDate.getTime() - seasonStart.getTime()) / (1000 * 60 * 60 * 24));
+  const weeksSinceStart = Math.floor(daysSinceStart / 7) + 1;
+  
+  // Cap at week 15 (end of regular season + conference championships)
+  return Math.min(weeksSinceStart, 15);
+}
+
+export function getWeekStatus(week: number): 'upcoming' | 'current' | 'locked' {
+  const currentWeek = getCurrentWeek();
+  
+  if (week < currentWeek) {
+    return 'locked';
+  } else if (week === currentWeek) {
+    return isWeekLocked(week) ? 'locked' : 'current';
+  } else {
+    return 'upcoming';
+  }
+}

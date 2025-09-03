@@ -10,22 +10,24 @@ interface LineupSlotCardProps {
   onRemovePlayer?: (slotIndex: number) => void;
   onDropPlayer?: (player: Player, slotIndex: number) => void;
   canDrop?: boolean;
+  isLocked?: boolean;
 }
 
 export function LineupSlotCard({ 
   slot, 
   onRemovePlayer, 
   onDropPlayer,
-  canDrop = false 
+  canDrop = false,
+  isLocked = false
 }: LineupSlotCardProps) {
   const handleDragOver = (e: React.DragEvent) => {
-    if (canDrop) {
+    if (canDrop && !isLocked) {
       e.preventDefault();
     }
   };
 
   const handleDrop = (e: React.DragEvent) => {
-    if (canDrop && onDropPlayer) {
+    if (canDrop && !isLocked && onDropPlayer) {
       e.preventDefault();
       const playerData = e.dataTransfer.getData('application/json');
       if (playerData) {
@@ -38,7 +40,7 @@ export function LineupSlotCard({
   };
 
   const handleRemove = () => {
-    if (onRemovePlayer) {
+    if (onRemovePlayer && !isLocked) {
       onRemovePlayer(slot.slotIndex);
     }
   };
@@ -47,8 +49,9 @@ export function LineupSlotCard({
     <Card 
       className={cn(
         "min-h-[120px] transition-all duration-200",
-        canDrop && "border-dashed border-2 border-primary/50 bg-primary/5",
-        slot.player && "border-solid"
+        canDrop && !isLocked && "border-dashed border-2 border-primary/50 bg-primary/5",
+        slot.player && "border-solid",
+        isLocked && "opacity-75 cursor-not-allowed"
       )}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
@@ -61,7 +64,7 @@ export function LineupSlotCard({
               Slot {slot.slotIndex + 1}
             </span>
           </div>
-          {slot.player && onRemovePlayer && (
+          {slot.player && onRemovePlayer && !isLocked && (
             <Button
               variant="ghost"
               size="sm"

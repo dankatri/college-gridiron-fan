@@ -20,6 +20,7 @@ interface PlayerTableProps {
   currentWeek?: number;
   onPlayerSelect: (player: Player) => void;
   onPlayersUpdate?: (players: Player[]) => void; // New callback to update parent's player list
+  isLocked?: boolean;
 }
 
 export function PlayerTable({ 
@@ -29,7 +30,8 @@ export function PlayerTable({
   currentLineup, 
   currentWeek,
   onPlayerSelect,
-  onPlayersUpdate 
+  onPlayersUpdate,
+  isLocked = false
 }: PlayerTableProps) {
   const [conferenceFilter, setConferenceFilter] = useState('All Conferences');
   const [teamFilter, setTeamFilter] = useState('All Teams');
@@ -378,7 +380,7 @@ export function PlayerTable({
             <TableBody>
               {filteredPlayers.map((player) => {
                 const playerStatus = getPlayerStatus(player);
-                const canSelect = playerStatus.status === 'available' || playerStatus.status === 'used';
+                const canSelect = !isLocked && (playerStatus.status === 'available' || playerStatus.status === 'used');
                 
                 return (
                   <TableRow 

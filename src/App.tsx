@@ -9,7 +9,10 @@ import {
   removePlayerFromLineup,
   addPlayerToLineup,
   isPlayerInLineup,
-  calculateProjectedPoints
+  calculateProjectedPoints,
+  isWeekLocked,
+  getCurrentWeek,
+  getWeekStatus
 } from '@/lib/utils-fantasy';
 import { PlayerTable } from '@/components/PlayerTable';
 import { LineupSlotCard } from '@/components/LineupSlotCard';
@@ -29,7 +32,7 @@ import { Trophy, Users, Target, Activity, Medal, RefreshCw, Calendar, SignOut } 
 import { toast } from 'sonner';
 
 function App() {
-  const [currentWeek, setCurrentWeek] = useState(1);
+  const [currentWeek, setCurrentWeek] = useState(getCurrentWeek());
   const [currentLineup, setCurrentLineup] = useState<LineupSlot[]>(createEmptyLineup());
   const [selectedPosition, setSelectedPosition] = useState<'QB' | 'RB' | 'WR'>('QB');
   const [activeTab, setActiveTab] = useState<'lineup' | 'schedule' | 'scoring' | 'leagues'>('lineup');
@@ -134,6 +137,12 @@ function App() {
   }, [currentWeek, weeklyLineups]);
 
   const handlePlayerSelect = (player: Player) => {
+    // Check if current week is locked
+    if (isWeekLocked(currentWeek)) {
+      toast.error(`Week ${currentWeek} lineup is locked and cannot be modified`);
+      return;
+    }
+
     if (isPlayerInLineup(player.id, currentLineup)) {
       toast.error(`${player.name} is already in your lineup`);
       return;
@@ -155,6 +164,12 @@ function App() {
   };
 
   const handleRemovePlayer = (slotIndex: number) => {
+    // Check if current week is locked
+    if (isWeekLocked(currentWeek)) {
+      toast.error(`Week ${currentWeek} lineup is locked and cannot be modified`);
+      return;
+    }
+
     const slot = currentLineup.find(s => s.slotIndex === slotIndex);
     if (slot?.player) {
       const newLineup = removePlayerFromLineup(slot.player.id, currentLineup);
@@ -164,6 +179,12 @@ function App() {
   };
 
   const handleDropPlayer = (player: Player, slotIndex: number) => {
+    // Check if current week is locked
+    if (isWeekLocked(currentWeek)) {
+      toast.error(`Week ${currentWeek} lineup is locked and cannot be modified`);
+      return;
+    }
+
     if (isPlayerInLineup(player.id, currentLineup)) {
       toast.error(`${player.name} is already in your lineup`);
       return;
@@ -175,6 +196,12 @@ function App() {
   };
 
   const handleSaveLineup = () => {
+    // Check if current week is locked
+    if (isWeekLocked(currentWeek)) {
+      toast.error(`Week ${currentWeek} lineup is locked and cannot be modified`);
+      return;
+    }
+
     if (!isLineupComplete(currentLineup)) {
       toast.error('Please fill all lineup slots before saving');
       return;
@@ -200,13 +227,13 @@ function App() {
       }
     });
 
-    // Save lineup
+    // Save lineup - set isLocked based on week status
     const weeklyLineup: WeeklyLineup = {
       week: currentWeek,
       lineup: currentLineup,
       totalPoints: calculateProjectedPoints(currentLineup),
       actualPoints: existingWeekData?.actualPoints, // Preserve existing actual points
-      isLocked: false
+      isLocked: isWeekLocked(currentWeek)
     };
 
     const newWeeklyLineups = weeklyLineups.filter(w => w.week !== currentWeek);
@@ -333,7 +360,7 @@ function App() {
               College Fantasy Football
             </h1>
             <p className="text-muted-foreground">
-              Build your weekly lineup with confirmed 2025 season eligible players from ESPN data - only current college players who will be playing in the 2025/26 season are available, each can be used 3 times per season!
+              Build your weekly lineup with confirmed 2025 season eligible players from ESPN data - only current college players who will be playing in the 2025/26 season are available, each can be used 3 times per season! Week {currentWeek} is {getWeekStatus(currentWeek) === 'locked' ? 'locked' : 'currently active'}.
             </p>
           </div>
           
@@ -367,7 +394,15 @@ function App() {
         </div>
 
         {/* Week Navigation */}
-        <WeekNavigation currentWeek={currentWeek} onWeekChange={setCurrentWeek} />
+        <div className="space-y-2">
+          <WeekNavigation currentWeek={currentWeek} onWeekChange={setCurrentWeek} />
+          {isWeekLocked(currentWeek) && (
+            <div className="flex items-center justify-center gap-2 text-sm text-orange-600 bg-orange-50 border border-orange-200 rounded-lg p-2">
+              <Trophy size={16} />
+              Week {currentWeek} lineup is locked - no changes allowed
+            </div>
+          )}
+        </div>
 
         {/* Main Navigation Tabs */}
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)}>
@@ -396,7 +431,14 @@ function App() {
               {/* Player Selection */}
               <div className="lg:col-span-2 space-y-4">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold">Available Players</h3>
+                  <div>
+                    <h3 className="text-lg font-semibold">Available Players</h3>
+                    {isWeekLocked(currentWeek) && (
+                      <p className="text-sm text-orange-600 mt-1">
+                        Week {currentWeek} is locked - viewing only
+                      </p>
+                    )}
+                  </div>
                   <div className="flex gap-2">
                     <Button
                       variant="outline"
@@ -446,6 +488,7 @@ function App() {
                         currentWeek={currentWeek}
                         onPlayerSelect={handlePlayerSelect}
                         onPlayersUpdate={handlePlayersUpdate}
+                        isLocked={isWeekLocked(currentWeek)}
                       />
                     </TabsContent>
                   </Tabs>
@@ -472,15 +515,19 @@ function App() {
                         onRemovePlayer={handleRemovePlayer}
                         onDropPlayer={handleDropPlayer}
                         canDrop={!slot.player}
+                        isLocked={isWeekLocked(currentWeek)}
                       />
                     ))}
                     
                     <Button
                       onClick={handleSaveLineup}
                       className="w-full"
-                      disabled={!isLineupComplete(currentLineup)}
+                      disabled={!isLineupComplete(currentLineup) || isWeekLocked(currentWeek)}
                     >
-                      Save Week {currentWeek} Lineup
+                      {isWeekLocked(currentWeek) 
+                        ? `Week ${currentWeek} Locked` 
+                        : `Save Week ${currentWeek} Lineup`
+                      }
                     </Button>
                   </CardContent>
                 </Card>

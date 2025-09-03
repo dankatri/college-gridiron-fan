@@ -351,6 +351,13 @@ export const fetchESPNPlayerStats = async (playerId: string, season: number = 20
 
 // Calculate projected points based on ESPN stats
 const calculateProjectedPoints = (stats: any, position: string): number => {
+  if (!stats || !stats.statistics) {
+    return 0;
+  }
+
+  const statMap: { [key: string]: number } = {};
+  let points = 0;
+
   stats.statistics.forEach((stat: any) => {
     const name = stat.shortDisplayName || stat.name;
     const value = typeof stat.value === 'number' ? stat.value : parseFloat(stat.displayValue) || 0;
@@ -455,6 +462,15 @@ const convertESPNPlayerToPlayer = async (espnPlayer: any, teamData: ESPNTeam, st
   const teamColorPrimary = teamData.color ? `#${teamData.color}` : undefined;
   const teamColorSecondary = teamData.alternateColor ? `#${teamData.alternateColor}` : undefined;
   
+  // Fix headshot URL format - ensure it's a proper ESPN headshot URL
+  let finalHeadshotUrl = headshotUrl;
+  if (headshotUrl && !headshotUrl.includes('headshots/college-football/players/full/')) {
+    // Try to construct proper ESPN headshot URL if we have player ID
+    if (espnPlayer.id) {
+      finalHeadshotUrl = `https://a.espncdn.com/i/headshots/college-football/players/full/${espnPlayer.id}.png`;
+    }
+  }
+  
   return {
     id: `espn_${espnPlayer.position.abbreviation.toLowerCase()}_${espnPlayer.id}`,
     name: fullName.trim(),
@@ -463,7 +479,7 @@ const convertESPNPlayerToPlayer = async (espnPlayer: any, teamData: ESPNTeam, st
     conference,
     projectedPoints: calculateProjectedPoints(stats, espnPlayer.position.abbreviation),
     // Media assets
-    headshotUrl,
+    headshotUrl: finalHeadshotUrl,
     teamLogoUrl,
     teamColorPrimary,
     teamColorSecondary,
