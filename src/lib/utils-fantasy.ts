@@ -81,27 +81,28 @@ export function addPlayerToLineup(player: Player, slotIndex: number, lineup: Lin
 
 // Week locking functionality
 export function isWeekLocked(week: number): boolean {
-  // Week 1 started on August 24, 2024 and is now over (past weeks are locked)
-  // Generally, each week begins on Saturday
   const currentDate = new Date();
   
-  // College football season dates for 2024-2025
+  // College football season dates for 2025 based on provided schedule
   const weekStartDates = {
-    1: new Date('2024-08-24'), // Week 1 start
-    2: new Date('2024-08-31'), // Week 2 start  
-    3: new Date('2024-09-07'), // Week 3 start
-    4: new Date('2024-09-14'), // Week 4 start
-    5: new Date('2024-09-21'), // Week 5 start
-    6: new Date('2024-09-28'), // Week 6 start
-    7: new Date('2024-10-05'), // Week 7 start
-    8: new Date('2024-10-12'), // Week 8 start
-    9: new Date('2024-10-19'), // Week 9 start
-    10: new Date('2024-10-26'), // Week 10 start
-    11: new Date('2024-11-02'), // Week 11 start
-    12: new Date('2024-11-09'), // Week 12 start
-    13: new Date('2024-11-16'), // Week 13 start
-    14: new Date('2024-11-23'), // Week 14 start (Thanksgiving week)
-    15: new Date('2024-11-30'), // Week 15 start (Conference championships)
+    1: new Date('2025-08-30'), // Week 1 start (estimated late August)
+    2: new Date('2025-09-02'), // Week 2: 2 Sep - 7
+    3: new Date('2025-09-08'), // Week 3: 8 Sep - 14
+    4: new Date('2025-09-15'), // Week 4: 15 Sep - 21
+    5: new Date('2025-09-22'), // Week 5: 22 Sep - 28
+    6: new Date('2025-09-29'), // Week 6: 29 Sep - 5 Oct
+    7: new Date('2025-10-06'), // Week 7: 6 Oct - 12
+    8: new Date('2025-10-13'), // Week 8: 13 Oct - 19
+    9: new Date('2025-10-20'), // Week 9: 20 Oct - 26
+    10: new Date('2025-10-27'), // Week 10: 27 Oct - 2 Nov
+    11: new Date('2025-11-03'), // Week 11: 3 Nov - 9
+    12: new Date('2025-11-10'), // Week 12: 10 Nov - 16
+    13: new Date('2025-11-17'), // Week 13: 17 Nov - 23
+    14: new Date('2025-11-24'), // Week 14: 24 Nov - 30
+    15: new Date('2025-12-01'), // Week 15: 1 Dec - 7
+    16: new Date('2025-12-08'), // Week 16: 8 Dec - 13 Dec
+    17: new Date('2025-12-13'), // Bowls: 13 Dec - 20 Jan
+    18: new Date('2025-12-19'), // CFP: 19 Dec - 19 Jan
   };
   
   const weekStart = weekStartDates[week as keyof typeof weekStartDates];
@@ -109,25 +110,48 @@ export function isWeekLocked(week: number): boolean {
     return true; // Lock unknown weeks
   }
   
-  // Lock the week once it starts (on Saturday)
+  // Lock the week once it starts
   return currentDate >= weekStart;
 }
 
 export function getCurrentWeek(): number {
   const currentDate = new Date();
   
-  // If we're before the season starts, return week 1
-  if (currentDate < new Date('2024-08-24')) {
+  // If we're before the 2025 season starts, return week 1
+  if (currentDate < new Date('2025-08-30')) {
     return 1;
   }
   
-  // Calculate which week we're currently in
-  const seasonStart = new Date('2024-08-24');
-  const daysSinceStart = Math.floor((currentDate.getTime() - seasonStart.getTime()) / (1000 * 60 * 60 * 24));
-  const weeksSinceStart = Math.floor(daysSinceStart / 7) + 1;
+  // Week start dates for 2025 season
+  const weekStartDates = [
+    new Date('2025-08-30'), // Week 1
+    new Date('2025-09-02'), // Week 2
+    new Date('2025-09-08'), // Week 3
+    new Date('2025-09-15'), // Week 4
+    new Date('2025-09-22'), // Week 5
+    new Date('2025-09-29'), // Week 6
+    new Date('2025-10-06'), // Week 7
+    new Date('2025-10-13'), // Week 8
+    new Date('2025-10-20'), // Week 9
+    new Date('2025-10-27'), // Week 10
+    new Date('2025-11-03'), // Week 11
+    new Date('2025-11-10'), // Week 12
+    new Date('2025-11-17'), // Week 13
+    new Date('2025-11-24'), // Week 14
+    new Date('2025-12-01'), // Week 15
+    new Date('2025-12-08'), // Week 16
+    new Date('2025-12-13'), // Bowls
+    new Date('2025-12-19'), // CFP
+  ];
   
-  // Cap at week 15 (end of regular season + conference championships)
-  return Math.min(weeksSinceStart, 15);
+  // Find the current week based on the date
+  for (let i = weekStartDates.length - 1; i >= 0; i--) {
+    if (currentDate >= weekStartDates[i]) {
+      return i + 1;
+    }
+  }
+  
+  return 1; // Default to week 1
 }
 
 export function getWeekStatus(week: number): 'upcoming' | 'current' | 'locked' {

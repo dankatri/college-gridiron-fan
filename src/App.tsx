@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useKV } from '@github/spark/hooks';
-import { Player, LineupSlot, WeeklyLineup, PlayerUsage, MAX_PLAYER_USES } from '@/lib/types';
+import { Player, LineupSlot, WeeklyLineup, PlayerUsage, MAX_PLAYER_USES, TOTAL_WEEKS } from '@/lib/types';
 import { getPlayers, clearCache } from '@/lib/data';
 import {
   createEmptyLineup,
@@ -360,7 +360,7 @@ function App() {
               College Fantasy Football
             </h1>
             <p className="text-muted-foreground">
-              Build your weekly lineup with confirmed 2025 season eligible players from ESPN data - only current college players who will be playing in the 2025/26 season are available, each can be used 3 times per season! Week {currentWeek} is {getWeekStatus(currentWeek) === 'locked' ? 'locked' : 'currently active'}.
+              Build your weekly lineup with 2025 season eligible players - each can be used 3 times maximum! Lineups can be edited until each week begins. Current season runs through bowls and College Football Playoff (18 weeks total).
             </p>
           </div>
           
@@ -396,12 +396,27 @@ function App() {
         {/* Week Navigation */}
         <div className="space-y-2">
           <WeekNavigation currentWeek={currentWeek} onWeekChange={setCurrentWeek} />
-          {isWeekLocked(currentWeek) && (
-            <div className="flex items-center justify-center gap-2 text-sm text-orange-600 bg-orange-50 border border-orange-200 rounded-lg p-2">
-              <Trophy size={16} />
-              Week {currentWeek} lineup is locked - no changes allowed
+          <div className="flex items-center justify-between">
+            {isWeekLocked(currentWeek) ? (
+              <div className="flex items-center justify-center gap-2 text-sm text-orange-600 bg-orange-50 border border-orange-200 rounded-lg p-2">
+                <Trophy size={16} />
+                Week {currentWeek} lineup is locked - no changes allowed
+              </div>
+            ) : (
+              <div className="flex items-center justify-center gap-2 text-sm text-green-600 bg-green-50 border border-green-200 rounded-lg p-2">
+                <Trophy size={16} />
+                Week {currentWeek} lineup can be edited until the week starts
+              </div>
+            )}
+            <div className="text-xs text-muted-foreground">
+              Current Date: {new Date().toLocaleDateString('en-US', { 
+                weekday: 'short',
+                year: 'numeric', 
+                month: 'short', 
+                day: 'numeric' 
+              })}
             </div>
-          )}
+          </div>
         </div>
 
         {/* Main Navigation Tabs */}
@@ -543,7 +558,7 @@ function App() {
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Weeks Completed</span>
                       <Badge variant="outline">
-                        {weeklyLineups.length}/{15}
+                        {weeklyLineups.length}/{TOTAL_WEEKS}
                       </Badge>
                     </div>
                     <div className="flex justify-between text-sm">

@@ -24,9 +24,10 @@
 
 ### Core Lineup Management
 - **Weekly Lineup Builder**: Set 2 QBs, 2 RBs, 2 WRs for each week with drag-and-drop functionality
-- **Player Usage Tracking**: Enforce maximum 3 uses per player across the 15-week season
+- **Player Usage Tracking**: Enforce maximum 3 uses per player across the 18-week season (includes regular season, conference championships, bowl games, and CFP)
 - **Position-based Player Selection**: Tabbed interface for QB, RB, WR with availability indicators
 - **Lineup Validation**: Ensure all positions filled before saving with clear progress indicators
+- **Week Locking System**: Lineups automatically lock when each week begins based on 2025 college football schedule, preventing changes to started weeks
 
 ### Live Scoring System
 - **Real-time Stat Tracking**: Monitor player performance with automatic point calculations
@@ -44,8 +45,9 @@ Using official scoring rules:
 - **Schedule Overview**: Comprehensive weekly schedule display showing all games and bye teams
 - **Bye Week Indicators**: Visual badges and alerts for players whose teams are on bye
 - **Current Week Highlighting**: Clear indication of which players are unavailable in the current week
-- **Multi-Week Schedule View**: Navigation through weeks 1-15 to plan ahead for bye weeks
+- **Multi-Week Schedule View**: Navigation through weeks 1-18 covering regular season, conference championships, bowl games, and College Football Playoff
 - **Strategic Planning Aid**: Help users identify and replace players before bye weeks affect scoring
+- **Date-Based Week Locking**: Automatic lineup protection based on 2025 college football calendar (Sep 2 - Jan 19)
 
 ### Data Integration
 - **ESPN Player Data**: Integration with ESPN College Football API for current 2025 season rosters across all major conferences
@@ -76,6 +78,21 @@ Using official scoring rules:
 - **Social Leaderboards**: Compare performance with friends across different leagues
 - **League Chat**: Built-in communication for league members (future enhancement)
 - **Achievement Sharing**: Celebrate weekly wins and season accomplishments
+
+## Recent Updates (Date-Based Week Locking)
+
+### Enhanced Week Management
+- **2025 Season Schedule**: Updated all week logic to use the official 2025 college football calendar
+- **Extended Season Coverage**: Support for 18 weeks total (regular season weeks 1-14, conference championships week 15, bowl games weeks 16-17, CFP week 18)
+- **Intelligent Week Labels**: Clear labeling with 'CCG' for conference championships, 'Bowl'/'Bowl+' for bowl games, 'CFP' for playoff
+- **Real-Time Lock Status**: Visual indicators showing which weeks are locked vs. editable with current date display
+- **Automatic Protection**: Lineups automatically become read-only when their respective weeks begin
+
+### User Experience Improvements
+- **Status Feedback**: Clear messaging about whether lineups can be edited or are locked
+- **Visual Week Indicators**: Color-coded dots showing week status (green for current/editable, red for locked)
+- **Enhanced Navigation**: Improved week selection with better responsive layout for 18 weeks
+- **Date Transparency**: Display current system date to help users understand locking logic
 
 ## Design Direction
 
