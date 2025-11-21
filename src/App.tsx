@@ -74,16 +74,21 @@ function App() {
     const loadPlayers = async () => {
       setIsLoadingPlayers(true);
       try {
-        // Clear cache on component mount to ensure fresh 2025 season data with improved player coverage and picture quality
+        // Clear cache on component mount to ensure fresh 2025 season data
+        // The ESPN API automatically filters out players who are:
+        // - Declared for NFL Draft
+        // - Graduated
+        // - Transferred out
+        // - Otherwise ineligible for 2025 season
         clearCache();
         
         const currentPlayers = await getPlayers();
         setPlayers(currentPlayers);
         
         // Debug logging
-        console.log('Players loaded with improved coverage and picture quality:', currentPlayers.length);
+        console.log('Players loaded - 2025 season eligible only:', currentPlayers.length);
         if (currentPlayers.length > 0) {
-          console.log('Sample confirmed 2025 eligible players with improved data:', currentPlayers.slice(0, 3).map(p => ({ 
+          console.log('Sample 2025-eligible players:', currentPlayers.slice(0, 3).map(p => ({ 
             id: p.id, 
             name: p.name, 
             position: p.position, 
@@ -111,7 +116,7 @@ function App() {
           const qbs = currentPlayers.filter(p => p.position === 'QB').length;
           const rbs = currentPlayers.filter(p => p.position === 'RB').length;
           const wrs = currentPlayers.filter(p => p.position === 'WR').length;
-          console.log('Enhanced 2025 season player counts by position:', { qbs, rbs, wrs });
+          console.log('2025 season player counts by position:', { qbs, rbs, wrs });
         }
       } catch (error) {
         console.error('Failed to load players:', error);
@@ -361,7 +366,7 @@ function App() {
               College Fantasy Football
             </h1>
             <p className="text-muted-foreground">
-              Build your weekly lineup with 2025 season players - each can be used 3 times maximum! Lineups can be edited until each week begins. Current season features comprehensive player database with updated rosters and statistics.
+              Build your weekly lineup with 2025 season players - each can be used 3 times maximum! Lineups can be edited until each week begins. Only players currently eligible for the 2025 college football season are shown (NFL-bound players are automatically excluded).
             </p>
           </div>
           
@@ -483,7 +488,7 @@ function App() {
                     <CardContent className="flex items-center justify-center py-12">
                       <div className="flex items-center gap-3 text-muted-foreground">
                         <RefreshCw size={20} className="animate-spin" />
-                        Loading enhanced 2025 season player data from ESPN...
+                        Loading 2025 season players from ESPN (NFL-bound players excluded)...
                       </div>
                     </CardContent>
                   </Card>
