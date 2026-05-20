@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useKV } from '@github/spark/hooks';
+import { useLocalStorage as useKV } from '@/hooks/use-local-storage';
 import { League, LeagueMember, WeeklyLineup } from '@/lib/types';
 import { calculateLeaderboard, updateLeagueMemberPoints } from '@/lib/league-utils';
 import { SEASON_YEAR } from '@/lib/season-config';
@@ -38,8 +38,8 @@ export function LeagueDashboard({
   const [showCreateForm, setShowCreateForm] = useState(false);
 
   // Persistent data
-  const [allLeagues, setAllLeagues] = useKV<League[]>('all-leagues', []);
-  const [userLeagues, setUserLeagues] = useKV<string[]>('user-leagues', []);
+  const [allLeagues, setAllLeagues] = useKV<League[]>(`all-leagues-${currentUserId}-${SEASON_YEAR}`, []);
+  const [userLeagues, setUserLeagues] = useKV<string[]>(`user-leagues-${currentUserId}-${SEASON_YEAR}`, []);
 
   // Sample leagues for demo
   useEffect(() => {
@@ -125,12 +125,9 @@ export function LeagueDashboard({
 
   const handleJoinLeague = async (league: League) => {
     try {
-      const user = await spark.user();
-      
       const newMember: LeagueMember = {
-        userId: user.id,
-        username: user.login,
-        avatarUrl: user.avatarUrl,
+        userId: currentUserId,
+        username: currentUsername,
         joinedAt: new Date(),
         isActive: true,
         totalPoints: 0,

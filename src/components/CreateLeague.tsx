@@ -41,9 +41,7 @@ export function CreateLeague({
     setIsCreating(true);
 
     try {
-      // In a real app, you'd get user info from authentication
-      const currentUser = await spark.user();
-      
+      // Use props for current user identity
       const settings: LeagueSettings = {
         maxMembers: maxMembers[0],
         isPublic,
@@ -55,12 +53,11 @@ export function CreateLeague({
         id: generateLeagueId(),
         name: leagueName.trim(),
         description: description.trim() || undefined,
-        ownerId: currentUser.id,
-        ownerName: currentUser.login,
+        ownerId: currentUserId,
+        ownerName: currentUsername,
         members: [{
-          userId: currentUser.id,
-          username: currentUser.login,
-          avatarUrl: currentUser.avatarUrl,
+          userId: currentUserId,
+          username: currentUsername,
           joinedAt: new Date(),
           isActive: true,
           totalPoints: 0,

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useKV } from '@github/spark/hooks';
+import { useLocalStorage as useKV } from '@/hooks/use-local-storage';
 import { PlayerStats, GameStatus, LiveUpdate, Player, WeeklyLineup } from '@/lib/types';
 import { generateLiveStats, generateGameStatuses, createLiveUpdate, calculateFantasyPoints } from '@/lib/stats-utils';
 import { SAMPLE_PLAYERS } from '@/lib/data';

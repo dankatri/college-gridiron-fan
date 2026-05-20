@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { useKV } from '@github/spark/hooks';
 import { Player, LineupSlot, WeeklyLineup, PlayerUsage, MAX_PLAYER_USES, TOTAL_WEEKS } from '@/lib/types';
 import { getPlayers, clearCache } from '@/lib/data';
 import { SEASON_YEAR, WEEK_START_DATES } from '@/lib/season-config';
+import { useLocalStorage as useKV } from '@/hooks/use-local-storage';
+import { useAuth } from '@/hooks/use-auth';
 import {
   createEmptyLineup,
   updatePlayerUsage,
@@ -40,33 +41,9 @@ function App() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [isLoadingPlayers, setIsLoadingPlayers] = useState(true);
   
-  // Authentication state
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [currentUser, setCurrentUser] = useState<any>(null);
-  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
-
-  // Check authentication status on app load
-  useEffect(() => {
-    const checkAuthentication = async () => {
-      setIsCheckingAuth(true);
-      try {
-        const user = await spark.user();
-        if (user && user.id) {
-          setCurrentUser(user);
-          setIsAuthenticated(true);
-        } else {
-          setIsAuthenticated(false);
-        }
-      } catch (error) {
-        console.log('User not authenticated');
-        setIsAuthenticated(false);
-      } finally {
-        setIsCheckingAuth(false);
-      }
-    };
-    
-    checkAuthentication();
-  }, []);
+  // Authentication via local profile
+  const { user: currentUser, signIn, signOut } = useAuth();
+  const isAuthenticated = !!currentUser;
 
   // Load players only when authenticated
   useEffect(() => {
@@ -297,29 +274,19 @@ function App() {
     }
   };
 
-  const handleLoginSuccess = (user: any) => {
-    setCurrentUser(user);
-    setIsAuthenticated(true);
-    toast.success(`Welcome, ${user.login}!`);
+  const handleLoginSuccess = (login: string, email?: string) => {
+    signIn(login, email);
+    toast.success(`Welcome, ${login}!`);
   };
 
-  const handleLogout = async () => {
-    try {
-      // Clear local state
-      setIsAuthenticated(false);
-      setCurrentUser(null);
-      setPlayers([]);
-      setCurrentLineup(createEmptyLineup());
-      setCurrentWeek(1);
-      setActiveTab('lineup');
-      
-      // Clear cache
-      clearCache();
-      
-      toast.success('Logged out successfully');
-    } catch (error) {
-      console.error('Logout error:', error);
-    }
+  const handleLogout = () => {
+    signOut();
+    setPlayers([]);
+    setCurrentLineup(createEmptyLineup());
+    setCurrentWeek(1);
+    setActiveTab('lineup');
+    clearCache();
+    toast.success('Logged out successfully');
   };
 
   const handlePointsUpdate = (week: number, actualPoints: number) => {
@@ -332,18 +299,6 @@ function App() {
   };
 
   const currentWeekLineup = weeklyLineups.find(w => w.week === currentWeek);
-
-  // Show loading spinner while checking authentication
-  if (isCheckingAuth) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="flex items-center gap-3 text-muted-foreground">
-          <RefreshCw size={20} className="animate-spin" />
-          Checking authentication...
-        </div>
-      </div>
-    );
-  }
 
   // Show login screen if not authenticated
   if (!isAuthenticated) {

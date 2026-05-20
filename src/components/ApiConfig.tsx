@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useKV } from '@github/spark/hooks';
+import { useLocalStorage as useKV } from '@/hooks/use-local-storage';
 import { setApiKey } from '@/lib/api';
 import { clearCache } from '@/lib/data';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';

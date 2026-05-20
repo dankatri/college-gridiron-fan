@@ -1,51 +1,28 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Trophy, User, GitBranch, ShieldCheck } from '@phosphor-icons/react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Trophy, User, ShieldCheck } from '@phosphor-icons/react';
 
 interface LoginScreenProps {
-  onLoginSuccess: (user: any) => void;
+  onLoginSuccess: (login: string, email?: string) => void;
 }
 
 export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
-  const [isLoading, setIsLoading] = useState(false);
+  const [displayName, setDisplayName] = useState('');
+  const [email, setEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  // Check if user is already authenticated on component mount
-  useEffect(() => {
-    const checkExistingAuth = async () => {
-      try {
-        const user = await spark.user();
-        if (user && user.id) {
-          onLoginSuccess(user);
-        }
-      } catch (error) {
-        // User not authenticated, show login screen
-        console.log('User not authenticated, showing login screen');
-      }
-    };
-    
-    checkExistingAuth();
-  }, [onLoginSuccess]);
-
-  const handleLogin = async () => {
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      const user = await spark.user();
-      if (user && user.id) {
-        onLoginSuccess(user);
-      } else {
-        setError('Authentication failed. Please try again.');
-      }
-    } catch (error) {
-      console.error('Login error:', error);
-      setError('Unable to authenticate. Please ensure you are logged into GitHub and try again.');
-    } finally {
-      setIsLoading(false);
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = displayName.trim();
+    if (!name) {
+      setError('Please enter a display name');
+      return;
     }
+    onLoginSuccess(name, email.trim() || undefined);
   };
 
   return (
@@ -58,7 +35,7 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
           </div>
           <h1 className="text-3xl font-bold">College Fantasy Football</h1>
           <p className="text-muted-foreground">
-            Sign in to create and manage your fantasy lineups
+            Enter your name to get started
           </p>
         </div>
 
@@ -67,69 +44,60 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
           <CardHeader>
             <CardTitle className="flex items-center justify-center gap-2">
               <ShieldCheck size={20} />
-              Authentication Required
+              Create Your Profile
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-3">
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-                <GitBranch size={20} className="text-primary" />
-                <div className="text-sm">
-                  <div className="font-medium">GitHub Authentication</div>
-                  <div className="text-muted-foreground">Secure login with your GitHub account</div>
-                </div>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="displayName">Display Name *</Label>
+                <Input
+                  id="displayName"
+                  placeholder="Enter your name or GitHub username"
+                  value={displayName}
+                  onChange={(e) => { setDisplayName(e.target.value); setError(null); }}
+                  autoFocus
+                />
+                <p className="text-xs text-muted-foreground">
+                  Tip: use your GitHub username to show your avatar
+                </p>
               </div>
-              
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-                <User size={20} className="text-secondary" />
-                <div className="text-sm">
-                  <div className="font-medium">Personalized Experience</div>
-                  <div className="text-muted-foreground">Your lineups and stats are saved to your account</div>
-                </div>
-              </div>
-            </div>
 
-            {error && (
-              <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20">
-                <p className="text-sm text-destructive">{error}</p>
+              <div className="space-y-2">
+                <Label htmlFor="email">Email (optional)</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="your@email.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
               </div>
-            )}
 
-            <Button 
-              onClick={handleLogin}
-              disabled={isLoading}
-              className="w-full"
-              size="lg"
-            >
-              {isLoading ? (
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
-                  Authenticating...
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <GitBranch size={18} />
-                  Sign in with GitHub
+              {error && (
+                <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20">
+                  <p className="text-sm text-destructive">{error}</p>
                 </div>
               )}
-            </Button>
 
-            <div className="text-center space-y-2">
-              <div className="text-xs text-muted-foreground">
-                Powered by GitHub Spark
+              <Button type="submit" className="w-full" size="lg">
+                <div className="flex items-center gap-2">
+                  <User size={18} />
+                  Get Started
+                </div>
+              </Button>
+
+              <div className="text-center">
+                <div className="flex justify-center gap-2">
+                  <Badge variant="outline" className="text-xs">
+                    No signup required
+                  </Badge>
+                  <Badge variant="outline" className="text-xs">
+                    Data saved locally
+                  </Badge>
+                </div>
               </div>
-              <div className="flex justify-center gap-2">
-                <Badge variant="outline" className="text-xs">
-                  Secure
-                </Badge>
-                <Badge variant="outline" className="text-xs">
-                  Private
-                </Badge>
-                <Badge variant="outline" className="text-xs">
-                  Fast
-                </Badge>
-              </div>
-            </div>
+            </form>
           </CardContent>
         </Card>
 
