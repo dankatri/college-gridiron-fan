@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { 
   Users, 
-  Search, 
+  MagnifyingGlass as Search, 
   Plus, 
   Crown, 
   Calendar,

@@ -13,7 +13,7 @@ import {
   Copy, 
   Check, 
   UserMinus,
-  Settings,
+  Gear as Settings,
   User
 } from '@phosphor-icons/react';
 import { toast } from 'sonner';
