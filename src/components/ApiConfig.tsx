@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { Key, CheckCircle, AlertCircle, Info, RefreshCw } from '@phosphor-icons/react';
+import { Key, CheckCircle, WarningCircle as AlertCircle, Info, ArrowClockwise as RefreshCw } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
 interface ApiConfigProps {

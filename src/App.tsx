@@ -30,7 +30,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Toaster } from '@/components/ui/sonner';
-import { Trophy, Users, Target, Activity, Medal, RefreshCw, Calendar, SignOut } from '@phosphor-icons/react';
+import { Trophy, Users, Target, Activity, Medal, ArrowClockwise as RefreshCw, Calendar, SignOut } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
 function App() {

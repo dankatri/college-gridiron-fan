@@ -7,7 +7,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { getTeamSchedules, getTeamsOnBye } from '@/lib/schedule-data';
 import { TeamSchedule, TOTAL_WEEKS } from '@/lib/types';
 import { WEEK_LABELS } from '@/lib/season-config';
-import { Calendar, CalendarX, RefreshCw, Users } from '@phosphor-icons/react';
+import { Calendar, CalendarX, ArrowClockwise as RefreshCw, Users } from '@phosphor-icons/react';
 
 interface ScheduleOverviewProps {
   currentWeek: number;

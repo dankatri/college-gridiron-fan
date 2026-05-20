@@ -2,7 +2,7 @@ import { LiveUpdate } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { Lightning, TrendingUp, TrendingDown } from '@phosphor-icons/react';
+import { Lightning, TrendUp as TrendingUp, TrendDown as TrendingDown } from '@phosphor-icons/react';
 
 function formatTimeAgo(date: Date): string {
   const now = new Date();

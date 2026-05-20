@@ -2,7 +2,7 @@ import { LineupSlot } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { calculateProjectedPoints } from '@/lib/utils-fantasy';
-import { TrendingUp, TrendingDown } from '@phosphor-icons/react';
+import { TrendUp as TrendingUp, TrendDown as TrendingDown } from '@phosphor-icons/react';
 
 interface LineupSummaryProps {
   lineup: LineupSlot[];

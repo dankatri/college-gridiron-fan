@@ -1,7 +1,7 @@
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { LineupSlot } from '@/lib/types';
-import { CalendarX, AlertTriangle } from '@phosphor-icons/react';
+import { CalendarX, Warning as AlertTriangle } from '@phosphor-icons/react';
 
 interface ByeWeekAlertProps {
   lineup: LineupSlot[];

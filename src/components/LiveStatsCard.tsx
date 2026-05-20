@@ -2,7 +2,7 @@ import { PlayerStats, Player } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Activity, TrendingUp, Clock, User } from '@phosphor-icons/react';
+import { Activity, TrendUp as TrendingUp, Clock, User } from '@phosphor-icons/react';
 
 interface LiveStatsCardProps {
   player: Player;

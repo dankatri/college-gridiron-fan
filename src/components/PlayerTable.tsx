@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { LineupSlot } from '@/lib/types';
 import { ByeWeekIndicator } from '@/components/ByeWeekIndicator';
-import { Users, Filter, Trophy, RefreshCw, User } from '@phosphor-icons/react';
+import { Users, Funnel as Filter, Trophy, ArrowClockwise as RefreshCw, User } from '@phosphor-icons/react';
 
 interface PlayerTableProps {
   position: 'QB' | 'RB' | 'WR';
