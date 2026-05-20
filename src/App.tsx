@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useKV } from '@github/spark/hooks';
 import { Player, LineupSlot, WeeklyLineup, PlayerUsage, MAX_PLAYER_USES, TOTAL_WEEKS } from '@/lib/types';
 import { getPlayers, clearCache } from '@/lib/data';
+import { SEASON_YEAR, WEEK_START_DATES } from '@/lib/season-config';
 import {
   createEmptyLineup,
   updatePlayerUsage,
@@ -74,21 +75,15 @@ function App() {
     const loadPlayers = async () => {
       setIsLoadingPlayers(true);
       try {
-        // Clear cache on component mount to ensure fresh 2025 season data
-        // The ESPN API automatically filters out players who are:
-        // - Declared for NFL Draft
-        // - Graduated
-        // - Transferred out
-        // - Otherwise ineligible for 2025 season
+        // Clear cache on component mount to ensure fresh season data
         clearCache();
         
         const currentPlayers = await getPlayers();
         setPlayers(currentPlayers);
         
-        // Debug logging
-        console.log('Players loaded - 2025 season eligible only:', currentPlayers.length);
+        console.log('Players loaded for season:', currentPlayers.length);
         if (currentPlayers.length > 0) {
-          console.log('Sample 2025-eligible players:', currentPlayers.slice(0, 3).map(p => ({ 
+          console.log('Sample eligible players:', currentPlayers.slice(0, 3).map(p => ({ 
             id: p.id, 
             name: p.name, 
             position: p.position, 
@@ -116,7 +111,7 @@ function App() {
           const qbs = currentPlayers.filter(p => p.position === 'QB').length;
           const rbs = currentPlayers.filter(p => p.position === 'RB').length;
           const wrs = currentPlayers.filter(p => p.position === 'WR').length;
-          console.log('2025 season player counts by position:', { qbs, rbs, wrs });
+          console.log(`${SEASON_YEAR} season player counts by position:`, { qbs, rbs, wrs });
         }
       } catch (error) {
         console.error('Failed to load players:', error);
@@ -129,8 +124,8 @@ function App() {
   }, [isAuthenticated]);
 
   // Persistent data - scoped to authenticated user
-  const [weeklyLineups, setWeeklyLineups] = useKV<WeeklyLineup[]>(`weekly-lineups-${currentUser?.id || 'unknown'}`, []);
-  const [playerUsage, setPlayerUsage] = useKV<PlayerUsage[]>(`player-usage-${currentUser?.id || 'unknown'}`, []);
+  const [weeklyLineups, setWeeklyLineups] = useKV<WeeklyLineup[]>(`weekly-lineups-${currentUser?.id || 'unknown'}-${SEASON_YEAR}`, []);
+  const [playerUsage, setPlayerUsage] = useKV<PlayerUsage[]>(`player-usage-${currentUser?.id || 'unknown'}-${SEASON_YEAR}`, []);
 
   // Load lineup for current week
   useEffect(() => {
@@ -366,7 +361,7 @@ function App() {
               College Fantasy Football
             </h1>
             <p className="text-muted-foreground">
-              Build your weekly lineup with 2025 season players - each can be used 3 times maximum! Lineups can be edited until each week begins. Only players currently eligible for the 2025 college football season are shown (NFL-bound players are automatically excluded).
+              Build your weekly lineup with {SEASON_YEAR} season players - each can be used 3 times maximum! Lineups can be edited until each week begins.
             </p>
           </div>
           
@@ -403,17 +398,33 @@ function App() {
         <div className="space-y-2">
           <WeekNavigation currentWeek={currentWeek} onWeekChange={setCurrentWeek} />
           <div className="flex items-center justify-between">
-            {isWeekLocked(currentWeek) ? (
-              <div className="flex items-center justify-center gap-2 text-sm text-orange-600 bg-orange-50 border border-orange-200 rounded-lg p-2">
-                <Trophy size={16} />
-                Week {currentWeek} lineup is locked - no changes allowed
-              </div>
-            ) : (
-              <div className="flex items-center justify-center gap-2 text-sm text-green-600 bg-green-50 border border-green-200 rounded-lg p-2">
-                <Trophy size={16} />
-                Week {currentWeek} lineup can be edited until the week starts
-              </div>
-            )}
+            {(() => {
+              const seasonStart = WEEK_START_DATES[1];
+              const now = new Date();
+              if (now < seasonStart) {
+                const daysUntil = Math.ceil((seasonStart.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+                return (
+                  <div className="flex items-center justify-center gap-2 text-sm text-blue-600 bg-blue-50 border border-blue-200 rounded-lg p-2">
+                    <Trophy size={16} />
+                    {SEASON_YEAR} season starts in {daysUntil} days — set your Week 1 lineup now!
+                  </div>
+                );
+              }
+              if (isWeekLocked(currentWeek)) {
+                return (
+                  <div className="flex items-center justify-center gap-2 text-sm text-orange-600 bg-orange-50 border border-orange-200 rounded-lg p-2">
+                    <Trophy size={16} />
+                    Week {currentWeek} lineup is locked - no changes allowed
+                  </div>
+                );
+              }
+              return (
+                <div className="flex items-center justify-center gap-2 text-sm text-green-600 bg-green-50 border border-green-200 rounded-lg p-2">
+                  <Trophy size={16} />
+                  Week {currentWeek} lineup can be edited until the week starts
+                </div>
+              );
+            })()}
             <div className="text-xs text-muted-foreground">
               Current Date: {new Date().toLocaleDateString('en-US', { 
                 weekday: 'short',
@@ -488,7 +499,7 @@ function App() {
                     <CardContent className="flex items-center justify-center py-12">
                       <div className="flex items-center gap-3 text-muted-foreground">
                         <RefreshCw size={20} className="animate-spin" />
-                        Loading 2025 season players from ESPN (NFL-bound players excluded)...
+                        Loading {SEASON_YEAR} season players from ESPN...
                       </div>
                     </CardContent>
                   </Card>

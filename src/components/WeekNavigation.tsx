@@ -1,6 +1,7 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TOTAL_WEEKS } from '@/lib/types';
 import { getWeekStatus } from '@/lib/utils-fantasy';
+import { WEEK_LABELS } from '@/lib/season-config';
 import { Badge } from '@/components/ui/badge';
 
 interface WeekNavigationProps {
@@ -12,21 +13,20 @@ export function WeekNavigation({ currentWeek, onWeekChange }: WeekNavigationProp
   const weeks = Array.from({ length: TOTAL_WEEKS }, (_, i) => i + 1);
   
   const getWeekLabel = (week: number): string => {
-    if (week <= 14) return `W${week}`;
-    if (week === 15) return 'CCG'; // Conference Championships
-    if (week === 16) return 'Bowl'; // Bowl Games
-    if (week === 17) return 'Bowl+'; // More Bowl Games  
-    if (week === 18) return 'CFP'; // College Football Playoff
-    return `W${week}`;
+    if (week <= 12) return `W${week}`;
+    const label = WEEK_LABELS[week];
+    if (!label) return `W${week}`;
+    if (label === 'Rivalry Week') return 'Rival';
+    if (label === 'Championship Week') return 'CCG';
+    if (label === 'CFP First Round') return 'CFP R1';
+    if (label === 'CFP Quarterfinals') return 'CFP QF';
+    if (label === 'CFP Semifinals') return 'CFP SF';
+    if (label === 'National Championship') return 'NCG';
+    return label;
   };
   
   const getWeekTooltip = (week: number): string => {
-    if (week <= 14) return `Week ${week}`;
-    if (week === 15) return 'Conference Championships';
-    if (week === 16) return 'Bowl Games (Dec 8-13)';
-    if (week === 17) return 'Bowl Games (Dec 13-Jan 20)';
-    if (week === 18) return 'College Football Playoff';
-    return `Week ${week}`;
+    return WEEK_LABELS[week] || `Week ${week}`;
   };
   
   return (

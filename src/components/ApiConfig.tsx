@@ -122,7 +122,7 @@ export function ApiConfig({ onConfigured }: ApiConfigProps) {
         <Alert>
           <Info size={16} />
           <AlertDescription>
-            To use current 2025 season player data, you need an API key from{' '}
+            To use live player data, you can optionally provide an API key from{' '}
             <a 
               href="https://collegefootballdata.com/" 
               target="_blank" 

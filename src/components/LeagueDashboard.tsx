@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useKV } from '@github/spark/hooks';
 import { League, LeagueMember, WeeklyLineup } from '@/lib/types';
 import { calculateLeaderboard, updateLeagueMemberPoints } from '@/lib/league-utils';
+import { SEASON_YEAR } from '@/lib/season-config';
 import { CreateLeague } from '@/components/CreateLeague';
 import { LeagueList } from '@/components/LeagueList';
 import { LeagueManagement } from '@/components/LeagueManagement';
@@ -54,7 +55,7 @@ export function LeagueDashboard({
             {
               userId: 'sample_user_1',
               username: 'FantasyPro',
-              joinedAt: new Date('2024-01-01'),
+              joinedAt: new Date(`${SEASON_YEAR}-01-01`),
               isActive: true,
               totalPoints: 145.8,
               weeklyPoints: { 1: 72.4, 2: 73.4 },
@@ -63,7 +64,7 @@ export function LeagueDashboard({
             {
               userId: 'sample_user_2',
               username: 'GridironGuru',
-              joinedAt: new Date('2024-01-02'),
+              joinedAt: new Date(`${SEASON_YEAR}-01-02`),
               isActive: true,
               totalPoints: 138.2,
               weeklyPoints: { 1: 65.8, 2: 72.4 },
@@ -76,8 +77,8 @@ export function LeagueDashboard({
             allowLateJoins: true,
             scoringMultiplier: 1.0
           },
-          createdAt: new Date('2024-01-01'),
-          season: 2024
+          createdAt: new Date(`${SEASON_YEAR}-01-01`),
+          season: SEASON_YEAR
         },
         {
           id: 'league_sample_2',
@@ -89,7 +90,7 @@ export function LeagueDashboard({
             {
               userId: 'sample_user_3',
               username: 'CasualFan',
-              joinedAt: new Date('2024-01-03'),
+              joinedAt: new Date(`${SEASON_YEAR}-01-03`),
               isActive: true,
               totalPoints: 125.6,
               weeklyPoints: { 1: 58.2, 2: 67.4 },
@@ -102,8 +103,8 @@ export function LeagueDashboard({
             allowLateJoins: false,
             scoringMultiplier: 1.0
           },
-          createdAt: new Date('2024-01-03'),
-          season: 2024
+          createdAt: new Date(`${SEASON_YEAR}-01-03`),
+          season: SEASON_YEAR
         }
       ];
       setAllLeagues(sampleLeagues);

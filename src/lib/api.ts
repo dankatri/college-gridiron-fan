@@ -1,4 +1,5 @@
 import { Player } from './types';
+import { SEASON_YEAR, PROJECTION_YEAR } from './season-config';
 
 // College Football Data API configuration
 const API_BASE_URL = 'https://api.collegefootballdata.com';
@@ -104,7 +105,7 @@ const getTeamConference = async (teamName: string): Promise<string> => {
 };
 
 // Fetch current roster for a team
-export const fetchTeamRoster = async (teamName: string, year: number = 2025): Promise<ApiPlayer[]> => {
+export const fetchTeamRoster = async (teamName: string, year: number = SEASON_YEAR): Promise<ApiPlayer[]> => {
   try {
     const players = await apiRequest(`/roster?team=${encodeURIComponent(teamName)}&year=${year}`);
     console.log(`Fetched roster for ${teamName}:`, players?.slice(0, 3)); // Debug first 3 players
@@ -116,7 +117,7 @@ export const fetchTeamRoster = async (teamName: string, year: number = 2025): Pr
 };
 
 // Fetch player stats
-export const fetchPlayerStats = async (year: number = 2024): Promise<ApiPlayerStats[]> => {
+export const fetchPlayerStats = async (year: number = PROJECTION_YEAR): Promise<ApiPlayerStats[]> => {
   try {
     const stats = await apiRequest(`/stats/player/season?year=${year}`);
     return stats || [];
@@ -262,22 +263,24 @@ export const fetchCurrentPlayers = async (options?: {
         .map(team => team.school)
         .slice(0, 20); // Limit to prevent too many API calls
     } else {
-      // Default set of major programs for "All" view
+      // Default set of major programs (2026 conference affiliations)
       teamsToFetch = [
-        // Major programs across all conferences
-        'Alabama', 'Georgia', 'Tennessee', 'LSU', 'Auburn', 'Florida', 'Texas A&M', 'Arkansas', 'Kentucky', 'South Carolina', // SEC
-        'Michigan', 'Ohio State', 'Penn State', 'Michigan State', 'Wisconsin', 'Iowa', 'Illinois', 'Maryland', 'Purdue', 'Indiana', // Big Ten
-        'Texas', 'Oklahoma', 'Oklahoma State', 'Kansas State', 'Texas Tech', 'TCU', 'Baylor', 'West Virginia', 'Cincinnati', 'UCF', // Big 12
-        'USC', 'Oregon', 'Washington', 'UCLA', 'Utah', 'Oregon State', 'Washington State', 'Colorado', 'Stanford', 'California', // Pac-12
-        'Florida State', 'Clemson', 'Miami', 'North Carolina', 'NC State', 'Virginia Tech', 'Pittsburgh', 'Louisville', 'Wake Forest', 'Syracuse', // ACC
-        'Notre Dame' // Independent
+        // SEC
+        'Alabama', 'Georgia', 'Tennessee', 'LSU', 'Auburn', 'Florida', 'Texas A&M', 'Arkansas', 'Kentucky', 'South Carolina', 'Texas', 'Oklahoma', 'Ole Miss', 'Missouri',
+        // Big Ten
+        'Michigan', 'Ohio State', 'Penn State', 'Michigan State', 'Wisconsin', 'Iowa', 'Illinois', 'Maryland', 'Purdue', 'Indiana', 'Oregon', 'USC', 'UCLA', 'Washington',
+        // Big 12
+        'Oklahoma State', 'Kansas State', 'Texas Tech', 'TCU', 'Baylor', 'West Virginia', 'Cincinnati', 'UCF', 'BYU', 'Colorado', 'Utah', 'Arizona', 'Arizona State', 'Houston',
+        // ACC
+        'Florida State', 'Clemson', 'Miami', 'North Carolina', 'NC State', 'Virginia Tech', 'Pittsburgh', 'Louisville', 'Wake Forest', 'Syracuse', 'Stanford', 'California', 'SMU',
+        'Notre Dame', // Independent
       ];
     }
 
     console.log(`Fetching rosters from ${teamsToFetch.length} teams`);
 
-    // Fetch 2024 stats to project 2025 performance (most recent complete season)
-    const statsData = await fetchPlayerStats(2024);
+    // Fetch previous season stats for projections
+    const statsData = await fetchPlayerStats(PROJECTION_YEAR);
     
     // Group stats by player
     const playerStatsMap = new Map<string, any>();
@@ -329,7 +332,7 @@ export const fetchCurrentPlayers = async (options?: {
     
     for (const team of teamsToFetch) {
       try {
-        const roster = await fetchTeamRoster(team, 2025);
+        const roster = await fetchTeamRoster(team, SEASON_YEAR);
         
         // Filter for QB, RB, WR positions only
         const relevantPlayers = roster.filter(player => 
@@ -337,7 +340,7 @@ export const fetchCurrentPlayers = async (options?: {
         );
         
         for (const apiPlayer of relevantPlayers) {
-          // Look for their 2024 stats
+          // Look for their prior-season stats
           const statsKey = `${apiPlayer.id}_${team}`;
           const stats = playerStatsMap.get(statsKey) || {};
           

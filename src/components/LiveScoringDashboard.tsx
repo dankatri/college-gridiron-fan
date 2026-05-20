@@ -3,6 +3,7 @@ import { useKV } from '@github/spark/hooks';
 import { PlayerStats, GameStatus, LiveUpdate, Player, WeeklyLineup } from '@/lib/types';
 import { generateLiveStats, generateGameStatuses, createLiveUpdate, calculateFantasyPoints } from '@/lib/stats-utils';
 import { SAMPLE_PLAYERS } from '@/lib/data';
+import { SEASON_YEAR } from '@/lib/season-config';
 import { LiveStatsCard } from '@/components/LiveStatsCard';
 import { GameStatusTracker } from '@/components/GameStatusTracker';
 import { LiveUpdatesFeed } from '@/components/LiveUpdatesFeed';
@@ -28,9 +29,9 @@ export function LiveScoringDashboard({
   const [isLiveMode, setIsLiveMode] = useState(false);
   
   // Persistent live data
-  const [liveStats, setLiveStats] = useKV<PlayerStats[]>(`live-stats-week-${week}`, []);
-  const [gameStatuses, setGameStatuses] = useKV<GameStatus[]>(`game-statuses-week-${week}`, []);
-  const [liveUpdates, setLiveUpdates] = useKV<LiveUpdate[]>(`live-updates-week-${week}`, []);
+  const [liveStats, setLiveStats] = useKV<PlayerStats[]>(`live-stats-${SEASON_YEAR}-week-${week}`, []);
+  const [gameStatuses, setGameStatuses] = useKV<GameStatus[]>(`game-statuses-${SEASON_YEAR}-week-${week}`, []);
+  const [liveUpdates, setLiveUpdates] = useKV<LiveUpdate[]>(`live-updates-${SEASON_YEAR}-week-${week}`, []);
 
   const currentWeekLineup = weeklyLineups.find(w => w.week === week);
   const lineupPlayerIds = currentWeekLineup?.lineup

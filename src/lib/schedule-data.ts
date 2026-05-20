@@ -1,4 +1,5 @@
 import { TeamSchedule, WeeklyGame } from './types';
+import { SEASON_YEAR } from './season-config';
 
 // Cache for team schedules
 let scheduleCache: Map<string, TeamSchedule> = new Map();
@@ -33,7 +34,6 @@ export async function getTeamSchedules(): Promise<TeamSchedule[]> {
   try {
     console.log('Fetching fresh schedule data from ESPN...');
     
-    // For 2025 season, we'll fetch team data and construct schedules
     const teamsResponse = await fetch('https://site.api.espn.com/apis/site/v2/sports/football/college-football/teams?limit=200');
     
     if (!teamsResponse.ok) {
@@ -52,7 +52,7 @@ export async function getTeamSchedules(): Promise<TeamSchedule[]> {
 
         // Fetch schedule for this specific team
         const scheduleResponse = await fetch(
-          `https://site.api.espn.com/apis/site/v2/sports/football/college-football/teams/${teamId}/schedule?season=2024`
+          `https://site.api.espn.com/apis/site/v2/sports/football/college-football/teams/${teamId}/schedule?season=${SEASON_YEAR}`
         );
 
         if (scheduleResponse.ok) {

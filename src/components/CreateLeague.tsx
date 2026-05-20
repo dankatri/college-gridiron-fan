@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { League, LeagueSettings } from '@/lib/types';
 import { generateLeagueId, generateLeagueJoinCode } from '@/lib/league-utils';
+import { SEASON_YEAR } from '@/lib/season-config';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -68,7 +69,7 @@ export function CreateLeague({
         }],
         settings,
         createdAt: new Date(),
-        season: new Date().getFullYear()
+        season: SEASON_YEAR
       };
 
       onLeagueCreated(league);

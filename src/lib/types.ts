@@ -143,7 +143,7 @@ export const LINEUP_REQUIREMENTS = {
 };
 
 export const MAX_PLAYER_USES = 3;
-export const TOTAL_WEEKS = 18; // Includes regular season (1-14), conference championships (15), bowl games (16-17), and CFP (18)
+export const TOTAL_WEEKS = 18; // Weeks 1-13 (regular season), 14 (rivalry + CCG), 15-18 (CFP rounds)
 
 // League and Competition Types
 export interface League {

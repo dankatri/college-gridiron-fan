@@ -1,13 +1,13 @@
 import { Player } from './types';
 import { fetchESPNCurrentPlayers, getESPNConferences, getESPNTeams } from './espn-api';
 import { getTeamSchedules, isTeamOnBye } from './schedule-data';
+import { SEASON_YEAR, ALL_FBS_CONFERENCES, MAJOR_PROGRAMS } from './season-config';
 
-// Fallback sample data for when API is not available - VERIFIED 2025 season active players only
-// Updated to only include players confirmed to be playing in the 2025 college football season
-// NOTE: The ESPN API is the primary source and will filter out NFL-bound players automatically
-// This fallback data is only used when the API is unavailable
+// Minimal fallback sample data — used only when ESPN API is completely unavailable.
+// In production, prefer showing an error state over stale data.
+// This tiny fixture ensures the app can render something in dev/offline mode.
 export const SAMPLE_PLAYERS: Player[] = [
-  // Quarterbacks - Confirmed returning for 2025 season
+  // Quarterbacks
   {
     id: 'qb1',
     name: 'Drew Allar',
@@ -146,7 +146,7 @@ export const SAMPLE_PLAYERS: Player[] = [
     rushingTDs: 9,
   },
 
-  // Running Backs - Confirmed returning for 2025 season
+  // Running Backs
   {
     id: 'rb5',
     name: 'Jarquez Hunter',
@@ -284,7 +284,7 @@ export const SAMPLE_PLAYERS: Player[] = [
     receivingTDs: 1,
   },
 
-  // Wide Receivers - Confirmed returning for 2025 season
+  // Wide Receivers
   {
     id: 'wr2',
     name: 'Ryan Williams',
@@ -487,8 +487,8 @@ export const getPlayers = async (options?: {
       };
     });
     
-    console.log(`Filtered to ${validPlayers.length} valid players for 2025 season`);
-    console.log(`✓ ESPN API filtering removed players who are NFL-bound, graduated, or otherwise ineligible for 2025`);
+    console.log(`Filtered to ${validPlayers.length} valid players for ${SEASON_YEAR} season`);
+    console.log(`✓ ESPN API filtering removed players who are NFL-bound, graduated, or otherwise ineligible for ${SEASON_YEAR}`);
     
     // Set minimum player count based on filter type - increased thresholds
     const minExpectedPlayers = options?.specificTeam ? 15 : options?.specificConference ? 80 : 150;
@@ -562,14 +562,10 @@ export const getPlayers = async (options?: {
   }
 }
 
-// Default fallback conferences and teams that should always be available
+// Default fallback conferences — derived from season-config
 const DEFAULT_CONFERENCES = [
   'All Conferences', 
-  'SEC', 'Big Ten', 'Big 12', 'ACC', 'Pac-12', // Power 5
-  'American Athletic', 'Conference USA', 'Mid-American', 'Mountain West', 'Sun Belt', // Group of 5
-  'Big Sky', 'Big South', 'Colonial Athletic', 'Ivy League', 'Northeast', // FCS
-  'Ohio Valley', 'Patriot League', 'Southern', 'Southland', 'Western Athletic',
-  'Independent' // For Notre Dame, etc.
+  ...ALL_FBS_CONFERENCES,
 ];
 
 const DEFAULT_TEAMS_FROM_SAMPLE = [
@@ -599,21 +595,8 @@ export const getConferences = async (): Promise<string[]> => {
   } catch (error) {
     console.error('Failed to fetch conferences from ESPN, using comprehensive default list:', error);
     
-    // Enhanced fallback with more comprehensive conference list
-    const enhancedConferences = [
-      'All Conferences',
-      // Power 5
-      'SEC', 'Big Ten', 'Big 12', 'ACC', 'Pac-12',
-      // Group of 5
-      'American Athletic', 'Conference USA', 'Mid-American', 'Mountain West', 'Sun Belt',
-      // FCS Conferences  
-      'Big Sky', 'Big South', 'Colonial Athletic', 'Ivy League', 'Northeast',
-      'Ohio Valley', 'Patriot League', 'Southern', 'Southland', 'Western Athletic',
-      // Additional conferences
-      'ASUN', 'MEAC', 'SWAC', 'Pioneer League', 'NEC',
-      // Independent
-      'Independent'
-    ];
+    // Enhanced fallback conference list
+    const enhancedConferences = ['All Conferences', ...ALL_FBS_CONFERENCES];
     
     conferencesCache = enhancedConferences;
     cacheTimestamp = Date.now();
@@ -653,22 +636,10 @@ export const getTeams = async (): Promise<string[]> => {
   } catch (error) {
     console.error('Failed to fetch teams from ESPN, using sample data teams:', error);
     
-    // Enhanced fallback with teams from sample data plus common major teams
+    // Enhanced fallback with major programs from season-config
+    const configTeams = Object.values(MAJOR_PROGRAMS).flat();
     const sampleTeamNames = Array.from(new Set(SAMPLE_PLAYERS.map(p => p.team))).sort();
-    const commonMajorTeams = [
-      // SEC
-      'Alabama', 'Georgia', 'LSU', 'Texas', 'Tennessee', 'Florida', 'Auburn', 'Arkansas', 'Kentucky', 'Mississippi State', 'Missouri', 'Ole Miss', 'South Carolina', 'Texas A&M', 'Vanderbilt',
-      // Big Ten
-      'Ohio State', 'Michigan', 'Penn State', 'Wisconsin', 'Iowa', 'Minnesota', 'Nebraska', 'Northwestern', 'Illinois', 'Indiana', 'Maryland', 'Michigan State', 'Purdue', 'Rutgers', 'Oregon', 'UCLA', 'USC', 'Washington',
-      // Big 12
-      'Oklahoma', 'Oklahoma State', 'Texas Tech', 'Baylor', 'TCU', 'Kansas', 'Kansas State', 'Iowa State', 'West Virginia', 'Cincinnati', 'Houston', 'UCF', 'BYU',
-      // ACC
-      'Clemson', 'Florida State', 'Miami', 'North Carolina', 'NC State', 'Duke', 'Virginia', 'Virginia Tech', 'Wake Forest', 'Georgia Tech', 'Louisville', 'Pittsburgh', 'Syracuse', 'Boston College',
-      // Pac-12 (remaining)
-      'Stanford', 'Cal', 'Arizona', 'Arizona State', 'Colorado', 'Utah', 'Washington State', 'Oregon State'
-    ];
-    
-    const enhancedTeams = ['All Teams', ...new Set([...sampleTeamNames, ...commonMajorTeams])].sort();
+    const enhancedTeams = ['All Teams', ...new Set([...sampleTeamNames, ...configTeams])].sort();
     
     teamsCache = enhancedTeams;
     cacheTimestamp = Date.now();
