@@ -1,11 +1,11 @@
-import bcrypt from 'bcryptjs';
+import { verifyPassword } from '../../src/server/password';
 import { eq } from 'drizzle-orm';
-import { db } from '../_lib/db';
-import { users } from '../_lib/schema';
-import { createSessionToken, sessionCookieHeader } from '../_lib/auth-utils';
+import { db } from '../../src/server/db';
+import { users } from '../../src/server/schema';
+import { createSessionToken, sessionCookieHeader } from '../../src/server/auth-utils';
 
 export const config = {
-  runtime: 'nodejs',
+  runtime: 'edge',
 };
 
 type LoginBody = {
@@ -54,7 +54,7 @@ export default async function handler(request: Request): Promise<Response> {
       return jsonResponse({ error: 'Invalid credentials' }, 401);
     }
 
-    const isValid = await bcrypt.compare(password, user.passwordHash);
+    const isValid = await verifyPassword(password, user.passwordHash);
     if (!isValid) {
       return jsonResponse({ error: 'Invalid credentials' }, 401);
     }

@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
-import type { Player } from './_lib/types';
-import { db } from './_lib/db';
-import { dataCache } from './_lib/schema';
+import type { Player } from './../src/server/types';
+import { db } from './../src/server/db';
+import { dataCache } from './../src/server/schema';
 
 export const config = {
   runtime: 'edge',

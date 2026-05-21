@@ -1,7 +1,7 @@
-import { clearSessionCookieHeader } from '../_lib/auth-utils';
+import { clearSessionCookieHeader } from '../../src/server/auth-utils';
 
 export const config = {
-  runtime: 'nodejs',
+  runtime: 'edge',
 };
 
 function jsonResponse(body: unknown, status = 200, setCookie?: string): Response {

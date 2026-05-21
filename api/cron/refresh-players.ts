@@ -1,9 +1,9 @@
 import pLimit from 'p-limit';
 import { sql } from 'drizzle-orm';
-import type { Player } from '../_lib/types';
-import { MAJOR_PROGRAMS } from '../_lib/season-config';
-import { db } from '../_lib/db';
-import { dataCache } from '../_lib/schema';
+import type { Player } from '../../src/server/types';
+import { MAJOR_PROGRAMS } from '../../src/server/season-config';
+import { db } from '../../src/server/db';
+import { dataCache } from '../../src/server/schema';
 
 export const config = {
   runtime: 'edge',

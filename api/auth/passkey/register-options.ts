@@ -1,16 +1,16 @@
 import { eq } from 'drizzle-orm';
 import { generateRegistrationOptions } from '@simplewebauthn/server';
-import { db } from '../../_lib/db';
-import { users, webauthnCredentials } from '../../_lib/schema';
+import { db } from '../../../src/server/db';
+import { users, webauthnCredentials } from '../../../src/server/schema';
 import {
   getSessionCookie,
   passkeyChallengeCookieHeader,
   verifySessionToken,
-} from '../../_lib/auth-utils';
-import { getWebAuthnOrigin, getWebAuthnRPID, WEBAUTHN_RP_NAME } from '../../_lib/webauthn-utils';
+} from '../../../src/server/auth-utils';
+import { getWebAuthnOrigin, getWebAuthnRPID, WEBAUTHN_RP_NAME } from '../../../src/server/webauthn-utils';
 
 export const config = {
-  runtime: 'nodejs',
+  runtime: 'edge',
 };
 
 function jsonResponse(body: unknown, status = 200, setCookie?: string): Response {

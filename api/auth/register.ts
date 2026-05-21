@@ -1,10 +1,10 @@
-import bcrypt from 'bcryptjs';
-import { db } from '../_lib/db';
-import { users } from '../_lib/schema';
-import { createSessionToken, sessionCookieHeader } from '../_lib/auth-utils';
+import { hashPassword } from '../../src/server/password';
+import { db } from '../../src/server/db';
+import { users } from '../../src/server/schema';
+import { createSessionToken, sessionCookieHeader } from '../../src/server/auth-utils';
 
 export const config = {
-  runtime: 'nodejs',
+  runtime: 'edge',
 };
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -48,7 +48,7 @@ export default async function handler(request: Request): Promise<Response> {
   }
 
   try {
-    const passwordHash = await bcrypt.hash(password, 12);
+    const passwordHash = await hashPassword(password);
     const inserted = await db
       .insert(users)
       .values({
