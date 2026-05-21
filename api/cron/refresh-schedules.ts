@@ -1,12 +1,11 @@
+import pLimit from 'p-limit';
 import { sql } from 'drizzle-orm';
 import { MAJOR_PROGRAMS, SEASON_YEAR, WEEK_START_DATES } from '../../src/lib/season-config';
 import { db } from '../../src/server/db';
 import { dataCache } from '../../src/server/schema';
-import pLimit from 'p-limit';
 
 export const config = {
-  runtime: 'nodejs',
-  maxDuration: 60,
+  runtime: 'edge',
 };
 
 const CACHE_KEY = `schedules-${SEASON_YEAR}`;

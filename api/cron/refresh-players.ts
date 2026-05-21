@@ -1,13 +1,12 @@
 import pLimit from 'p-limit';
 import { sql } from 'drizzle-orm';
-import type { Player } from '../../src/server/types';
-import { MAJOR_PROGRAMS } from '../../src/server/season-config';
+import type { Player } from '../../src/lib/types';
+import { MAJOR_PROGRAMS } from '../../src/lib/season-config';
 import { db } from '../../src/server/db';
 import { dataCache } from '../../src/server/schema';
 
 export const config = {
-  runtime: 'nodejs',
-  maxDuration: 60,
+  runtime: 'edge',
 };
 
 const CACHE_KEY = 'players-2026';
