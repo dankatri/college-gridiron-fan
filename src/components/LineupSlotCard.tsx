@@ -29,13 +29,13 @@ export function LineupSlotCard({
   return (
     <Card 
       className={cn(
-        "min-h-[80px] transition-all duration-200",
+        "min-h-[68px] md:min-h-[80px] transition-all duration-200",
         !slot.player && "border-dashed border-2 border-muted-foreground/20",
         slot.player && "border-solid",
         isLocked && "opacity-75 cursor-not-allowed"
       )}
     >
-      <CardHeader className="pb-2">
+      <CardHeader className="px-3 pt-3 pb-2 md:px-6 md:pt-6 md:pb-2">
         <CardTitle className="text-sm flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Badge variant="outline">{slot.position}</Badge>
@@ -56,11 +56,11 @@ export function LineupSlotCard({
         </CardTitle>
       </CardHeader>
       
-      <CardContent className="pt-0">
+      <CardContent className="px-3 pb-3 pt-0 md:px-6 md:pb-6">
         {slot.player ? (
-          <div className="space-y-2">
-            <div className="flex items-start gap-3">
-              <div className="relative w-12 h-12 rounded-full overflow-hidden bg-muted flex-shrink-0">
+          <div className="space-y-1.5 md:space-y-2">
+            <div className="flex items-start gap-2 md:gap-3">
+              <div className="relative w-10 h-10 md:w-12 md:h-12 rounded-full overflow-hidden bg-muted flex-shrink-0">
                 {slot.player.headshotUrl ? (
                   <img 
                     src={slot.player.headshotUrl} 
@@ -74,7 +74,8 @@ export function LineupSlotCard({
                   />
                 ) : null}
                 <div className={`absolute inset-0 flex items-center justify-center ${slot.player.headshotUrl ? 'hidden' : ''}`}>
-                  <User size={20} className="text-muted-foreground" />
+                  <User size={16} className="text-muted-foreground md:hidden" />
+                  <User size={20} className="text-muted-foreground hidden md:block" />
                 </div>
               </div>
               

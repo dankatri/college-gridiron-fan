@@ -304,14 +304,14 @@ export function PlayerTable({
         
         {/* Filters */}
         <div className="flex gap-4 items-center flex-wrap">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Filter size={16} className="text-muted-foreground" />
             <Select 
               value={conferenceFilter} 
               onValueChange={setConferenceFilter} 
               disabled={isLoadingFilters && conferences.length <= 1}
             >
-              <SelectTrigger className="w-[160px]">
+              <SelectTrigger className="w-full sm:w-[160px]">
                 <SelectValue placeholder={isLoadingFilters && conferences.length <= 1 ? "Loading..." : "All Conferences"} />
               </SelectTrigger>
               <SelectContent>
@@ -326,7 +326,7 @@ export function PlayerTable({
               onValueChange={setTeamFilter} 
               disabled={isLoadingFilters && filteredTeams.length <= 1}
             >
-              <SelectTrigger className="w-[140px]">
+              <SelectTrigger className="w-full sm:w-[140px]">
                 <SelectValue placeholder={isLoadingFilters && filteredTeams.length <= 1 ? "Loading..." : "All Teams"} />
               </SelectTrigger>
               <SelectContent>
@@ -356,7 +356,67 @@ export function PlayerTable({
       </CardHeader>
       
       <CardContent>
-        <div className="rounded-md border">
+        <div className="space-y-2 md:hidden">
+          {filteredPlayers.map((player) => {
+            const playerStatus = getPlayerStatus(player);
+            const canSelect = !isLocked && (playerStatus.status === 'available' || playerStatus.status === 'used');
+
+            return (
+              <div
+                key={player.id}
+                className={`rounded-md border p-3 ${playerStatus.status === 'in-lineup' ? 'bg-secondary/20' : ''}`}
+              >
+                <div className="flex items-center gap-2">
+                  <div className="relative w-9 h-9 rounded-full overflow-hidden bg-muted flex-shrink-0">
+                    {player.headshotUrl ? (
+                      <img
+                        src={player.headshotUrl}
+                        alt={`${player.name} headshot`}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = 'none';
+                          target.nextElementSibling?.classList.remove('hidden');
+                        }}
+                      />
+                    ) : null}
+                    <div className={`absolute inset-0 flex items-center justify-center ${player.headshotUrl ? 'hidden' : ''}`}>
+                      <User size={16} className="text-muted-foreground" />
+                    </div>
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <div className="font-semibold truncate">{player.name}</div>
+                    <div className="mt-1 flex items-center gap-2">
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                        {player.position}
+                      </Badge>
+                      <Badge variant={playerStatus.variant} className="text-[10px] px-1.5 py-0">
+                        {playerStatus.label}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  <Button
+                    size="sm"
+                    variant={canSelect ? "default" : "secondary"}
+                    disabled={!canSelect}
+                    onClick={() => onPlayerSelect(player)}
+                    className="h-7 px-2 text-xs flex-shrink-0"
+                  >
+                    {playerStatus.status === 'in-lineup' ? 'Added' : 'Add'}
+                  </Button>
+                </div>
+
+                <div className="mt-2 text-xs text-muted-foreground">
+                  {player.team} • {player.conference} • {player.projectedPoints} pts
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="hidden md:block rounded-md border">
           <Table>
             <TableHeader>
               <TableRow>
@@ -379,19 +439,18 @@ export function PlayerTable({
               {filteredPlayers.map((player) => {
                 const playerStatus = getPlayerStatus(player);
                 const canSelect = !isLocked && (playerStatus.status === 'available' || playerStatus.status === 'used');
-                
+
                 return (
-                  <TableRow 
+                  <TableRow
                     key={player.id}
                     className={playerStatus.status === 'in-lineup' ? 'bg-secondary/20' : ''}
                   >
                     <TableCell className="font-medium">
                       <div className="flex items-center gap-3">
-                        {/* Player Headshot */}
                         <div className="relative w-10 h-10 rounded-full overflow-hidden bg-muted flex-shrink-0">
                           {player.headshotUrl ? (
-                            <img 
-                              src={player.headshotUrl} 
+                            <img
+                              src={player.headshotUrl}
                               alt={`${player.name} headshot`}
                               className="w-full h-full object-cover"
                               onError={(e) => {
@@ -405,14 +464,12 @@ export function PlayerTable({
                             <User size={20} className="text-muted-foreground" />
                           </div>
                         </div>
-                        
-                        {/* Player Info */}
+
                         <div className="min-w-0 flex-1">
                           <div className="font-semibold truncate">{player.name}</div>
                           <div className="text-xs text-muted-foreground">{player.position}</div>
                         </div>
 
-                        {/* Status + Add Button */}
                         <Badge variant={playerStatus.variant} className="text-xs flex-shrink-0">
                           {playerStatus.label}
                         </Badge>
@@ -429,10 +486,9 @@ export function PlayerTable({
                     </TableCell>
                     <TableCell className="font-medium">
                       <div className="flex items-center gap-2">
-                        {/* Team Logo */}
                         {player.teamLogoUrl && (
-                          <img 
-                            src={player.teamLogoUrl} 
+                          <img
+                            src={player.teamLogoUrl}
                             alt={`${player.team} logo`}
                             className="w-6 h-6 object-contain"
                             onError={(e) => {

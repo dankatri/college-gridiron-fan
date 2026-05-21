@@ -427,18 +427,18 @@ function App() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="container mx-auto p-4 space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="text-center space-y-2 flex-1">
-            <h1 className="text-3xl font-bold flex items-center justify-center gap-2">
+      <div className="container mx-auto p-3 sm:p-4 space-y-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="text-center space-y-2 flex-1 lg:text-left">
+            <h1 className="text-2xl sm:text-3xl font-bold flex items-center justify-center lg:justify-start gap-2">
               <Trophy size={32} className="text-accent" />
               College Fantasy Football
             </h1>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="text-right">
-              <div className="flex items-center gap-2 text-sm font-medium">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+            <div className="text-center sm:text-right">
+              <div className="flex items-center justify-center sm:justify-end gap-2 text-sm font-medium">
                 {currentUser.avatarUrl && (
                   <img src={currentUser.avatarUrl} alt={currentUser.displayName} className="w-6 h-6 rounded-full" />
                 )}
@@ -446,10 +446,10 @@ function App() {
               </div>
               <div className="text-xs text-muted-foreground">{currentUser.email || ''}</div>
             </div>
-            <Button variant="outline" size="sm" onClick={handleAddPasskey} className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={handleAddPasskey} className="flex items-center justify-center gap-2 w-full sm:w-auto">
               Add Passkey
             </Button>
-            <Button variant="outline" size="sm" onClick={() => void handleLogout()} className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => void handleLogout()} className="flex items-center justify-center gap-2 w-full sm:w-auto">
               <SignOut size={14} />
               Logout
             </Button>
@@ -458,14 +458,14 @@ function App() {
 
         <div className="space-y-2">
           <WeekNavigation currentWeek={currentWeek} onWeekChange={setCurrentWeek} />
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             {(() => {
               const seasonStart = WEEK_START_DATES[1];
               const now = new Date();
               if (now < seasonStart) {
                 const daysUntil = Math.ceil((seasonStart.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
                 return (
-                  <div className="flex items-center justify-center gap-2 text-sm text-blue-600 bg-blue-50 border border-blue-200 rounded-lg p-2">
+                  <div className="flex flex-wrap items-center justify-center gap-2 text-sm text-blue-600 bg-blue-50 border border-blue-200 rounded-lg p-2">
                     <Trophy size={16} />
                     {SEASON_YEAR} season starts in {daysUntil} days — set your Week 1 lineup now!
                   </div>
@@ -473,20 +473,20 @@ function App() {
               }
               if (isWeekLocked(currentWeek)) {
                 return (
-                  <div className="flex items-center justify-center gap-2 text-sm text-orange-600 bg-orange-50 border border-orange-200 rounded-lg p-2">
+                  <div className="flex flex-wrap items-center justify-center gap-2 text-sm text-orange-600 bg-orange-50 border border-orange-200 rounded-lg p-2">
                     <Trophy size={16} />
                     Week {currentWeek} lineup is locked - no changes allowed
                   </div>
                 );
               }
               return (
-                <div className="flex items-center justify-center gap-2 text-sm text-green-600 bg-green-50 border border-green-200 rounded-lg p-2">
+                <div className="flex flex-wrap items-center justify-center gap-2 text-sm text-green-600 bg-green-50 border border-green-200 rounded-lg p-2">
                   <Trophy size={16} />
                   Week {currentWeek} lineup can be edited until the week starts
                 </div>
               );
             })()}
-            <div className="text-xs text-muted-foreground">
+            <div className="text-xs text-muted-foreground text-center sm:text-right">
               Current Date:{' '}
               {new Date().toLocaleDateString('en-US', {
                 weekday: 'short',
@@ -537,7 +537,7 @@ function App() {
                       <div className="flex flex-wrap items-center gap-3">
                         <span className="text-sm text-muted-foreground">Current league</span>
                         <Select value={currentLeagueId ?? ''} onValueChange={(value) => setCurrentLeagueId(value)}>
-                          <SelectTrigger className="w-[260px]">
+                          <SelectTrigger className="w-full sm:w-[260px]">
                             <SelectValue placeholder="Select league" />
                           </SelectTrigger>
                           <SelectContent>
@@ -554,20 +554,20 @@ function App() {
                     </CardContent>
                   </Card>
 
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <h3 className="text-lg font-semibold">Available Players</h3>
                       {isWeekLocked(currentWeek) && (
                         <p className="text-sm text-orange-600 mt-1">Week {currentWeek} is locked - viewing only</p>
                       )}
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={handleRefreshPlayers}
                         disabled={isLoadingPlayers}
-                        className="flex items-center gap-2"
+                        className="flex items-center justify-center gap-2 w-full sm:w-auto"
                       >
                         <RefreshCw size={14} className={isLoadingPlayers ? 'animate-spin' : ''} />
                         Refresh
@@ -577,7 +577,7 @@ function App() {
                         size="sm"
                         onClick={handleForceSampleData}
                         disabled={isLoadingPlayers}
-                        className="flex items-center gap-2"
+                        className="flex items-center justify-center gap-2 w-full sm:w-auto"
                       >
                         Reload Data
                       </Button>
