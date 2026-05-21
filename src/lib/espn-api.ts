@@ -484,72 +484,57 @@ export const fetchESPNCurrentPlayers = async (options?: {
   maxPlayersPerPosition?: { QB: number; RB: number; WR: number };
 }): Promise<Player[]> => {
   try {
-    // Set up player limits - significantly increased for comprehensive coverage
-    const defaultLimits = { QB: 120, RB: 150, WR: 180 }; // Increased for better coverage
-    const expandedLimits = { QB: 400, RB: 500, WR: 600 }; // Much larger limits when filtering
+    const defaultLimits = { QB: 120, RB: 150, WR: 180 };
+    const expandedLimits = { QB: 400, RB: 500, WR: 600 };
     
     const limits = options?.maxPlayersPerPosition || 
       (options?.specificTeam || options?.specificConference ? expandedLimits : defaultLimits);
 
     console.log('Fetching ESPN players with limits:', limits);
-    console.log('Filter options:', { 
-      specificTeam: options?.specificTeam, 
-      specificConference: options?.specificConference 
-    });
 
-    // Get all teams
-    const allTeams = await fetchESPNTeams();
-    console.log(`ESPN API returned ${allTeams.length} total teams`);
-    
-    // Filter teams based on options
-    let teamsToFetch: ESPNTeam[] = [];
-    
+    // Build team list from MAJOR_PROGRAMS config (with embedded ESPN IDs).
+    // This avoids the bulk /teams endpoint which has CORS issues on custom domains.
+    type TeamEntry = { id: string; name: string; conference: string };
+    let teamsToFetch: TeamEntry[] = [];
+
     if (options?.specificTeam && options.specificTeam !== 'All Teams') {
-      teamsToFetch = allTeams.filter(team => 
-        team.displayName === options.specificTeam || 
-        team.name === options.specificTeam ||
-        team.shortDisplayName === options.specificTeam ||
-        team.location === options.specificTeam
-      );
-      console.log(`Filtered to ${teamsToFetch.length} teams matching "${options.specificTeam}"`);
-    } else if (options?.specificConference && options.specificConference !== 'All Conferences') {
-      // Conference filtering by matching team location against MAJOR_PROGRAMS
-      const conferenceTeamNames = MAJOR_PROGRAMS[options.specificConference] || [];
-      teamsToFetch = allTeams.filter(team => 
-        conferenceTeamNames.some(name => team.location === name)
-      );
-      console.log(`Filtered to ${teamsToFetch.length} teams in "${options.specificConference}"`);
-    } else {
-      // Default: match all known major programs by exact location name
-      const allMajorNames = Object.values(MAJOR_PROGRAMS).flat();
-      teamsToFetch = allTeams.filter(team =>
-        allMajorNames.some(name => team.location === name)
-      );
-      console.log(`Matched ${teamsToFetch.length} major program teams from ESPN`);
-
-      // If name matching found too few, use all teams as fallback
-      if (teamsToFetch.length < 20) {
-        console.warn(`Only matched ${teamsToFetch.length} teams by name, using all ${allTeams.length} teams`);
-        teamsToFetch = allTeams.slice(0, 150);
+      // Find the specific team across all conferences
+      for (const [conf, teams] of Object.entries(MAJOR_PROGRAMS)) {
+        for (const [name, id] of Object.entries(teams)) {
+          if (name === options.specificTeam) {
+            teamsToFetch.push({ id, name, conference: conf });
+          }
+        }
       }
+      console.log(`Found ${teamsToFetch.length} teams matching "${options.specificTeam}"`);
+    } else if (options?.specificConference && options.specificConference !== 'All Conferences') {
+      const confTeams = MAJOR_PROGRAMS[options.specificConference] || {};
+      teamsToFetch = Object.entries(confTeams).map(([name, id]) => ({
+        id, name, conference: options.specificConference!,
+      }));
+      console.log(`${teamsToFetch.length} teams in "${options.specificConference}"`);
+    } else {
+      // All major programs
+      for (const [conf, teams] of Object.entries(MAJOR_PROGRAMS)) {
+        for (const [name, id] of Object.entries(teams)) {
+          teamsToFetch.push({ id, name, conference: conf });
+        }
+      }
+      console.log(`Fetching rosters from ${teamsToFetch.length} major programs`);
     }
 
     if (teamsToFetch.length === 0) {
-      console.warn('No teams found matching filter criteria, using fallback teams');
-      teamsToFetch = allTeams.slice(0, 100); // Increased fallback to 100 teams
+      throw new Error('No teams to fetch');
     }
-
-    console.log(`Fetching rosters from ${teamsToFetch.length} ESPN teams`);
 
     const allPlayers: Player[] = [];
     
-    // Fetch rosters and stats for each team
-    for (const team of teamsToFetch) {
+    for (const teamEntry of teamsToFetch) {
       try {
-        const roster = await fetchESPNTeamRoster(team.id);
+        const roster = await fetchESPNTeamRoster(teamEntry.id);
         
         if (!roster || !roster.athletes) {
-          console.warn(`No roster data for team ${team.displayName}`);
+          console.warn(`No roster data for team ${teamEntry.name}`);
           continue;
         }
         
@@ -558,69 +543,49 @@ export const fetchESPNCurrentPlayers = async (options?: {
           ['QB', 'RB', 'WR'].includes(player.position.abbreviation)
         );
         
-        console.log(`Processing ${relevantPlayers.length} players from ${team.displayName}`);
-        
-        if (relevantPlayers.length > 0) {
-          console.log(`Sample players from ${team.displayName}:`, relevantPlayers.slice(0, 2).map(p => ({
-            name: p.fullName || p.displayName,
-            position: p.position.abbreviation,
-            status: p.status,
-            class: p.class,
-            eligibility: p.eligibility
-          })));
-        }
+        // Build a minimal team data object for convertESPNPlayerToPlayer
+        const teamData: ESPNTeam = {
+          id: teamEntry.id,
+          uid: '',
+          location: teamEntry.name,
+          name: teamEntry.name,
+          displayName: teamEntry.name,
+          shortDisplayName: teamEntry.name,
+          color: '',
+          alternateColor: '',
+          logo: '',
+          conference: { id: '', name: teamEntry.conference, shortName: teamEntry.conference },
+        };
         
         for (const espnPlayer of relevantPlayers) {
           try {
-            // Eligibility is already filtered by fetchESPNTeamRoster — trust its output
             const playerName = espnPlayer.fullName || espnPlayer.displayName || '';
-            
-            if (!playerName) {
-              continue;
-            }
+            if (!playerName) continue;
             
             // Fetch stats for projections
             const stats = await fetchESPNPlayerStats(espnPlayer.id, SEASON_YEAR);
+            const player = await convertESPNPlayerToPlayer(espnPlayer, teamData, stats);
             
-            const player = await convertESPNPlayerToPlayer(espnPlayer, team, stats);
-            
-            // Validate player has a proper name
-            if (!player.name || 
-                player.name.includes('undefined') || 
-                player.name.trim() === '' ||
-                player.name.startsWith('Player ')) {
-              console.warn('Skipping ESPN player with invalid name:', {
-                id: espnPlayer.id,
-                name: player.name,
-                rawName: espnPlayer.fullName || espnPlayer.displayName
-              });
-              continue;
-            }
-            
-            // For current season players, we want active eligible players
-            // Only filter out players with obviously incorrect data
-            if (player.name && player.team && player.position) {
+            if (player.name && !player.name.includes('undefined') && 
+                player.name.trim() !== '' && !player.name.startsWith('Player ') &&
+                player.team && player.position) {
               allPlayers.push(player);
             }
           } catch (error) {
-            console.warn(`Failed to process ESPN player ${espnPlayer.fullName || espnPlayer.id}:`, error);
+            console.warn(`Failed to process player ${espnPlayer.fullName || espnPlayer.id}:`, error);
           }
         }
         
-        // Reduced delay to speed up loading but still avoid rate limiting
+        // Small delay to avoid rate limiting
         await new Promise(resolve => setTimeout(resolve, 50));
         
       } catch (error) {
-        console.warn(`Failed to fetch roster for ESPN team ${team.displayName}:`, error);
+        console.warn(`Failed to fetch roster for ${teamEntry.name}:`, error);
       }
     }
 
-    // Filter out players with invalid names
     const playersWithValidNames = allPlayers.filter(p => 
-      p.name && 
-      !p.name.includes('undefined') && 
-      p.name.trim() !== '' && 
-      !p.name.startsWith('Player ')
+      p.name && !p.name.includes('undefined') && p.name.trim() !== '' && !p.name.startsWith('Player ')
     );
     
     if (playersWithValidNames.length === 0) {

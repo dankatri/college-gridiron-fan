@@ -637,7 +637,7 @@ export const getTeams = async (): Promise<string[]> => {
     console.error('Failed to fetch teams from ESPN, using sample data teams:', error);
     
     // Enhanced fallback with major programs from season-config
-    const configTeams = Object.values(MAJOR_PROGRAMS).flat();
+    const configTeams = Object.values(MAJOR_PROGRAMS).flatMap(conf => Object.keys(conf));
     const sampleTeamNames = Array.from(new Set(SAMPLE_PLAYERS.map(p => p.team))).sort();
     const enhancedTeams = ['All Teams', ...new Set([...sampleTeamNames, ...configTeams])].sort();
     

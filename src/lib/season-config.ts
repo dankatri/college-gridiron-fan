@@ -85,34 +85,40 @@ export const ALL_FBS_CONFERENCES = [
 ] as const;
 
 /**
- * Major programs list for default "All" view when ESPN is unavailable.
+ * Major programs with ESPN team IDs.
+ * IDs allow direct roster fetches without the bulk /teams endpoint (which has CORS issues).
  * Updated for 2026 conference affiliations.
  */
-export const MAJOR_PROGRAMS: Record<string, string[]> = {
-  SEC: [
-    'Alabama', 'Arkansas', 'Auburn', 'Florida', 'Georgia', 'Kentucky',
-    'LSU', 'Mississippi State', 'Missouri', 'Ole Miss', 'Oklahoma',
-    'South Carolina', 'Tennessee', 'Texas', 'Texas A&M', 'Vanderbilt',
-  ],
-  'Big Ten': [
-    'Illinois', 'Indiana', 'Iowa', 'Maryland', 'Michigan',
-    'Michigan State', 'Minnesota', 'Nebraska', 'Northwestern',
-    'Ohio State', 'Oregon', 'Penn State', 'Purdue', 'Rutgers',
-    'UCLA', 'USC', 'Washington', 'Wisconsin',
-  ],
-  'Big 12': [
-    'Arizona', 'Arizona State', 'Baylor', 'BYU', 'Cincinnati',
-    'Colorado', 'Houston', 'Iowa State', 'Kansas', 'Kansas State',
-    'Oklahoma State', 'TCU', 'Texas Tech', 'UCF', 'Utah',
-    'West Virginia',
-  ],
-  ACC: [
-    'Boston College', 'California', 'Clemson', 'Duke', 'Florida State',
-    'Georgia Tech', 'Louisville', 'Miami', 'NC State', 'North Carolina',
-    'Pittsburgh', 'SMU', 'Stanford', 'Syracuse', 'Virginia',
-    'Virginia Tech', 'Wake Forest',
-  ],
-  Independent: ['Notre Dame'],
+export const MAJOR_PROGRAMS: Record<string, Record<string, string>> = {
+  SEC: {
+    'Alabama': '333', 'Arkansas': '8', 'Auburn': '2', 'Florida': '57',
+    'Georgia': '61', 'Kentucky': '96', 'LSU': '99', 'Mississippi State': '344',
+    'Missouri': '142', 'Ole Miss': '145', 'Oklahoma': '201',
+    'South Carolina': '2579', 'Tennessee': '2633', 'Texas': '251',
+    'Texas A&M': '245', 'Vanderbilt': '238',
+  },
+  'Big Ten': {
+    'Illinois': '356', 'Indiana': '84', 'Iowa': '2294', 'Maryland': '120',
+    'Michigan': '130', 'Michigan State': '127', 'Minnesota': '135',
+    'Nebraska': '158', 'Northwestern': '77', 'Ohio State': '194',
+    'Oregon': '2483', 'Penn State': '213', 'Purdue': '2509', 'Rutgers': '164',
+    'UCLA': '26', 'USC': '30', 'Washington': '264', 'Wisconsin': '275',
+  },
+  'Big 12': {
+    'Arizona': '12', 'Arizona State': '9', 'Baylor': '239', 'BYU': '252',
+    'Cincinnati': '2132', 'Colorado': '38', 'Houston': '248', 'Iowa State': '66',
+    'Kansas': '2305', 'Kansas State': '2306', 'Oklahoma State': '197',
+    'TCU': '2628', 'Texas Tech': '2641', 'UCF': '2116', 'Utah': '254',
+    'West Virginia': '277',
+  },
+  ACC: {
+    'Boston College': '103', 'California': '25', 'Clemson': '228', 'Duke': '150',
+    'Florida State': '52', 'Georgia Tech': '59', 'Louisville': '97', 'Miami': '2390',
+    'NC State': '152', 'North Carolina': '153', 'Pittsburgh': '221', 'SMU': '2567',
+    'Stanford': '24', 'Syracuse': '183', 'Virginia': '258',
+    'Virginia Tech': '259', 'Wake Forest': '154',
+  },
+  Independent: { 'Notre Dame': '87' },
 };
 
 // Dev-mode assertion: validate week date spacing
