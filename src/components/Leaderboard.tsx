@@ -11,7 +11,8 @@ import {
   Minus, 
   Medal,
   User,
-  Calendar
+  Calendar,
+  Users,
 } from '@phosphor-icons/react';
 
 interface LeaderboardProps {

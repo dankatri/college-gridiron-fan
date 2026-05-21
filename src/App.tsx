@@ -1,12 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Player, LineupSlot, WeeklyLineup, PlayerUsage, MAX_PLAYER_USES, TOTAL_WEEKS } from '@/lib/types';
 import { getPlayers, clearCache } from '@/lib/data';
 import { SEASON_YEAR, WEEK_START_DATES } from '@/lib/season-config';
-import { useLocalStorage as useKV } from '@/hooks/use-local-storage';
+import { useLocalStorage } from '@/hooks/use-local-storage';
 import { useAuth } from '@/hooks/use-auth';
 import {
   createEmptyLineup,
-  updatePlayerUsage,
   isLineupComplete,
   removePlayerFromLineup,
   addPlayerToLineup,
@@ -14,7 +13,6 @@ import {
   calculateProjectedPoints,
   isWeekLocked,
   getCurrentWeek,
-  getWeekStatus
 } from '@/lib/utils-fantasy';
 import { PlayerTable } from '@/components/PlayerTable';
 import { LineupSlotCard } from '@/components/LineupSlotCard';
@@ -29,9 +27,58 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Toaster } from '@/components/ui/sonner';
-import { Trophy, Users, Target, Activity, Medal, ArrowClockwise as RefreshCw, Calendar, SignOut } from '@phosphor-icons/react';
+import {
+  Trophy,
+  Users,
+  Target,
+  Activity,
+  Medal,
+  ArrowClockwise as RefreshCw,
+  Calendar,
+  SignOut,
+} from '@phosphor-icons/react';
 import { toast } from 'sonner';
+
+type ApiLeagueSummary = {
+  id: string;
+  name: string;
+};
+
+type ApiLineupSlot = {
+  slotIndex: number;
+  position: 'QB' | 'RB' | 'WR';
+  playerId: string | null;
+};
+
+type ApiLineup = {
+  id: string;
+  week: number;
+  season: number;
+  slots: ApiLineupSlot[];
+  projectedPoints: string | null;
+  actualPoints: string | null;
+  lockedAt: string | null;
+};
+
+function hydrateSlots(slots: ApiLineupSlot[], playersById: Map<string, Player>): LineupSlot[] {
+  return [...slots]
+    .sort((a, b) => a.slotIndex - b.slotIndex)
+    .map((slot) => ({
+      slotIndex: slot.slotIndex,
+      position: slot.position,
+      player: slot.playerId ? playersById.get(slot.playerId) : undefined,
+    }));
+}
+
+function toSlotPayload(lineup: LineupSlot[]): ApiLineupSlot[] {
+  return lineup.map((slot) => ({
+    slotIndex: slot.slotIndex,
+    position: slot.position,
+    playerId: slot.player?.id ?? null,
+  }));
+}
 
 function App() {
   const [currentWeek, setCurrentWeek] = useState(getCurrentWeek());
@@ -40,94 +87,170 @@ function App() {
   const [activeTab, setActiveTab] = useState<'lineup' | 'schedule' | 'scoring' | 'leagues'>('lineup');
   const [players, setPlayers] = useState<Player[]>([]);
   const [isLoadingPlayers, setIsLoadingPlayers] = useState(true);
-  
-  // Authentication via local profile
+  const [savedLineupRows, setSavedLineupRows] = useState<ApiLineup[]>([]);
+  const [currentWeekLineupRow, setCurrentWeekLineupRow] = useState<ApiLineup | null>(null);
+  const [playerUsage, setPlayerUsage] = useState<PlayerUsage[]>([]);
+  const [leagues, setLeagues] = useState<ApiLeagueSummary[]>([]);
+  const [isLoadingLeagues, setIsLoadingLeagues] = useState(false);
+
   const { user: currentUser, isLoading, registerPasskey, signOut } = useAuth();
   const isAuthenticated = !!currentUser;
+  const [currentLeagueId, setCurrentLeagueId] = useLocalStorage<string | null>(
+    `current-league-${currentUser?.id || 'unknown'}`,
+    null,
+  );
 
-  // Load players only when authenticated
+  const playersById = useMemo(() => new Map(players.map((player) => [player.id, player])), [players]);
+
+  const weeklyLineups = useMemo<WeeklyLineup[]>(
+    () =>
+      savedLineupRows
+        .map((row) => ({
+          week: row.week,
+          lineup: hydrateSlots(row.slots, playersById),
+          totalPoints: Number.parseFloat(row.projectedPoints ?? '0') || 0,
+          actualPoints: row.actualPoints ? Number.parseFloat(row.actualPoints) : undefined,
+          isLocked: !!row.lockedAt || isWeekLocked(row.week),
+        }))
+        .sort((a, b) => a.week - b.week),
+    [savedLineupRows, playersById],
+  );
+
+  const fetchLeagues = useCallback(async () => {
+    if (!isAuthenticated) return;
+    setIsLoadingLeagues(true);
+    try {
+      const response = await fetch('/api/leagues', { method: 'GET', credentials: 'include' });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to load leagues');
+      }
+      const fetchedLeagues = (payload.leagues ?? []) as ApiLeagueSummary[];
+      setLeagues(fetchedLeagues);
+
+      if (fetchedLeagues.length === 0) {
+        setCurrentLeagueId(null);
+        return;
+      }
+
+      const currentStillValid = currentLeagueId && fetchedLeagues.some((league) => league.id === currentLeagueId);
+      if (!currentStillValid) {
+        setCurrentLeagueId(fetchedLeagues[0].id);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to load leagues';
+      toast.error(message);
+    } finally {
+      setIsLoadingLeagues(false);
+    }
+  }, [isAuthenticated, currentLeagueId, setCurrentLeagueId]);
+
+  const fetchAllLineups = useCallback(async () => {
+    if (!isAuthenticated || !currentLeagueId) {
+      setSavedLineupRows([]);
+      setPlayerUsage([]);
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/leagues/${currentLeagueId}/lineups`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to load lineups');
+      }
+      setSavedLineupRows((payload.lineups ?? []) as ApiLineup[]);
+      setPlayerUsage((payload.playerUsage ?? []) as PlayerUsage[]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to load lineups';
+      toast.error(message);
+    }
+  }, [isAuthenticated, currentLeagueId]);
+
+  const fetchCurrentWeekLineup = useCallback(async () => {
+    if (!isAuthenticated || !currentLeagueId) {
+      setCurrentWeekLineupRow(null);
+      setCurrentLineup(createEmptyLineup());
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/leagues/${currentLeagueId}/lineups?week=${currentWeek}`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to load week lineup');
+      }
+
+      const lineup = (payload.lineup ?? null) as ApiLineup | null;
+      setCurrentWeekLineupRow(lineup);
+      setPlayerUsage((payload.playerUsage ?? []) as PlayerUsage[]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to load week lineup';
+      toast.error(message);
+      setCurrentWeekLineupRow(null);
+      setCurrentLineup(createEmptyLineup());
+    }
+  }, [isAuthenticated, currentLeagueId, currentWeek]);
+
   useEffect(() => {
     if (!isAuthenticated) return;
-    
+
     const loadPlayers = async () => {
       setIsLoadingPlayers(true);
       try {
         const currentPlayers = await getPlayers();
         setPlayers(currentPlayers);
-        
-        console.log('Players loaded for season:', currentPlayers.length);
-        if (currentPlayers.length > 0) {
-          console.log('Sample eligible players:', currentPlayers.slice(0, 3).map(p => ({ 
-            id: p.id, 
-            name: p.name, 
-            position: p.position, 
-            team: p.team,
-            headshotUrl: p.headshotUrl 
-          })));
-          
-          // Check for various name issues
-          const badNames = currentPlayers.filter(p => 
-            !p.name || 
-            p.name.includes('undefined') || 
-            p.name.trim() === '' ||
-            p.name.startsWith('Player ')
-          );
-          if (badNames.length > 0) {
-            console.error('Players with bad names:', badNames.slice(0, 5).map(p => ({
-              id: p.id,
-              name: p.name,
-              team: p.team,
-              position: p.position
-            })));
-          }
-          
-          // Count by position
-          const qbs = currentPlayers.filter(p => p.position === 'QB').length;
-          const rbs = currentPlayers.filter(p => p.position === 'RB').length;
-          const wrs = currentPlayers.filter(p => p.position === 'WR').length;
-          console.log(`${SEASON_YEAR} season player counts by position:`, { qbs, rbs, wrs });
-        }
       } catch (error) {
         console.error('Failed to load players:', error);
       } finally {
         setIsLoadingPlayers(false);
       }
     };
-    
+
     loadPlayers();
   }, [isAuthenticated]);
 
-  // Persistent data - scoped to authenticated user
-  const [weeklyLineups, setWeeklyLineups] = useKV<WeeklyLineup[]>(`weekly-lineups-${currentUser?.id || 'unknown'}-${SEASON_YEAR}`, []);
-  const [playerUsage, setPlayerUsage] = useKV<PlayerUsage[]>(`player-usage-${currentUser?.id || 'unknown'}-${SEASON_YEAR}`, []);
-
-  // Load lineup for current week
   useEffect(() => {
-    const weekData = weeklyLineups.find(w => w.week === currentWeek);
-    if (weekData) {
-      setCurrentLineup(weekData.lineup);
-    } else {
+    if (!isAuthenticated) return;
+    fetchLeagues();
+  }, [isAuthenticated, fetchLeagues, activeTab]);
+
+  useEffect(() => {
+    fetchAllLineups();
+  }, [fetchAllLineups]);
+
+  useEffect(() => {
+    fetchCurrentWeekLineup();
+  }, [fetchCurrentWeekLineup]);
+
+  useEffect(() => {
+    if (!currentWeekLineupRow) {
       setCurrentLineup(createEmptyLineup());
+      return;
     }
-  }, [currentWeek, weeklyLineups]);
+    setCurrentLineup(hydrateSlots(currentWeekLineupRow.slots, playersById));
+  }, [currentWeekLineupRow, playersById]);
 
   const handlePlayerSelect = (player: Player) => {
-    // Check if current week is locked
+    if (!currentLeagueId) {
+      toast.error('Choose a league first');
+      return;
+    }
     if (isWeekLocked(currentWeek)) {
       toast.error(`Week ${currentWeek} lineup is locked and cannot be modified`);
       return;
     }
-
     if (isPlayerInLineup(player.id, currentLineup)) {
       toast.error(`${player.name} is already in your lineup`);
       return;
     }
 
-    // Find first available slot for this position
-    const availableSlot = currentLineup.find(slot => 
-      slot.position === player.position && !slot.player
-    );
-
+    const availableSlot = currentLineup.find((slot) => slot.position === player.position && !slot.player);
     if (!availableSlot) {
       toast.error(`No available ${player.position} slots`);
       return;
@@ -139,106 +262,85 @@ function App() {
   };
 
   const handleRemovePlayer = (slotIndex: number) => {
-    // Check if current week is locked
     if (isWeekLocked(currentWeek)) {
       toast.error(`Week ${currentWeek} lineup is locked and cannot be modified`);
       return;
     }
 
-    const slot = currentLineup.find(s => s.slotIndex === slotIndex);
+    const slot = currentLineup.find((item) => item.slotIndex === slotIndex);
     if (slot?.player) {
-      const newLineup = removePlayerFromLineup(slot.player.id, currentLineup);
-      setCurrentLineup(newLineup);
+      setCurrentLineup(removePlayerFromLineup(slot.player.id, currentLineup));
       toast.success(`Removed ${slot.player.name} from lineup`);
     }
   };
 
   const handleDropPlayer = (player: Player, slotIndex: number) => {
-    // Check if current week is locked
     if (isWeekLocked(currentWeek)) {
       toast.error(`Week ${currentWeek} lineup is locked and cannot be modified`);
       return;
     }
-
     if (isPlayerInLineup(player.id, currentLineup)) {
       toast.error(`${player.name} is already in your lineup`);
       return;
     }
 
-    const newLineup = addPlayerToLineup(player, slotIndex, currentLineup);
-    setCurrentLineup(newLineup);
+    setCurrentLineup(addPlayerToLineup(player, slotIndex, currentLineup));
     toast.success(`Added ${player.name} to lineup`);
   };
 
-  const handleSaveLineup = () => {
-    // Check if current week is locked
+  const handleSaveLineup = async () => {
+    if (!currentLeagueId) {
+      toast.error('Choose a league first');
+      return;
+    }
     if (isWeekLocked(currentWeek)) {
       toast.error(`Week ${currentWeek} lineup is locked and cannot be modified`);
       return;
     }
-
     if (!isLineupComplete(currentLineup)) {
       toast.error('Please fill all lineup slots before saving');
       return;
     }
 
-    // Update player usage counts
-    let newPlayerUsage = [...playerUsage];
-    const existingWeekData = weeklyLineups.find(w => w.week === currentWeek);
-    
-    // If updating existing lineup, first subtract old usage
-    if (existingWeekData) {
-      existingWeekData.lineup.forEach(slot => {
-        if (slot.player) {
-          newPlayerUsage = updatePlayerUsage(slot.player.id, newPlayerUsage, -1);
-        }
+    try {
+      const response = await fetch(`/api/leagues/${currentLeagueId}/lineups`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          week: currentWeek,
+          slots: toSlotPayload(currentLineup),
+          projectedPoints: calculateProjectedPoints(currentLineup),
+        }),
       });
-    }
-
-    // Add new usage
-    currentLineup.forEach(slot => {
-      if (slot.player) {
-        newPlayerUsage = updatePlayerUsage(slot.player.id, newPlayerUsage, 1);
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to save lineup');
       }
-    });
 
-    // Save lineup - set isLocked based on week status
-    const weeklyLineup: WeeklyLineup = {
-      week: currentWeek,
-      lineup: currentLineup,
-      totalPoints: calculateProjectedPoints(currentLineup),
-      actualPoints: existingWeekData?.actualPoints, // Preserve existing actual points
-      isLocked: isWeekLocked(currentWeek)
-    };
-
-    const newWeeklyLineups = weeklyLineups.filter(w => w.week !== currentWeek);
-    newWeeklyLineups.push(weeklyLineup);
-    newWeeklyLineups.sort((a, b) => a.week - b.week);
-
-    setWeeklyLineups(newWeeklyLineups);
-    setPlayerUsage(newPlayerUsage);
-    toast.success(`Week ${currentWeek} lineup saved!`);
+      const saved = (payload.lineup ?? null) as ApiLineup | null;
+      if (saved) {
+        setCurrentWeekLineupRow(saved);
+        setSavedLineupRows((previous) => {
+          const next = previous.filter((row) => row.week !== saved.week);
+          next.push(saved);
+          return next.sort((a, b) => a.week - b.week);
+        });
+      }
+      setPlayerUsage((payload.playerUsage ?? []) as PlayerUsage[]);
+      toast.success(`Week ${currentWeek} lineup saved!`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to save lineup';
+      toast.error(message);
+    }
   };
 
   const handleRefreshPlayers = async () => {
     setIsLoadingPlayers(true);
     try {
-      // Clear cache to force fresh data
       clearCache();
       const currentPlayers = await getPlayers();
       setPlayers(currentPlayers);
-      
-      // Debug logging
-      console.log('Refreshed players:', currentPlayers.length);
-      if (currentPlayers.length > 0) {
-        console.log('First 3 refreshed players:', currentPlayers.slice(0, 3).map(p => ({ 
-          id: p.id, 
-          name: p.name, 
-          position: p.position, 
-          team: p.team 
-        })));
-      }
-      
       toast.success('Player data refreshed!');
     } catch (error) {
       console.error('Failed to refresh players:', error);
@@ -249,19 +351,15 @@ function App() {
   };
 
   const handlePlayersUpdate = (newPlayers: Player[]) => {
-    // Update the main players list when PlayerTable loads filtered players
     setPlayers(newPlayers);
   };
 
   const handleForceSampleData = async () => {
     setIsLoadingPlayers(true);
     try {
-      // Force clear everything and load sample data
       clearCache();
       const currentPlayers = await getPlayers();
       setPlayers(currentPlayers);
-      
-      console.log('Forced data reload:', currentPlayers.length);
       toast.success('Player data reloaded!');
     } catch (error) {
       console.error('Failed to reload data:', error);
@@ -277,6 +375,10 @@ function App() {
     setCurrentLineup(createEmptyLineup());
     setCurrentWeek(1);
     setActiveTab('lineup');
+    setSavedLineupRows([]);
+    setCurrentWeekLineupRow(null);
+    setPlayerUsage([]);
+    setLeagues([]);
     clearCache();
     toast.success('Logged out successfully');
   };
@@ -292,15 +394,21 @@ function App() {
   };
 
   const handlePointsUpdate = (week: number, actualPoints: number) => {
-    setWeeklyLineups(prev => prev.map(lineup => {
-      if (lineup.week === week) {
-        return { ...lineup, actualPoints };
-      }
-      return lineup;
-    }));
+    setSavedLineupRows((previous) =>
+      previous.map((lineup) =>
+        lineup.week === week
+          ? {
+              ...lineup,
+              actualPoints: actualPoints.toString(),
+            }
+          : lineup,
+      ),
+    );
   };
 
-  const currentWeekLineup = weeklyLineups.find(w => w.week === currentWeek);
+  const currentWeekLineup = weeklyLineups.find((lineup) => lineup.week === currentWeek);
+  const currentLeagueName = leagues.find((league) => league.id === currentLeagueId)?.name;
+  const hasLeagues = leagues.length > 0;
 
   if (isLoading) {
     return (
@@ -313,7 +421,6 @@ function App() {
     );
   }
 
-  // Show login screen if not authenticated
   if (!isAuthenticated) {
     return <LoginScreen />;
   }
@@ -321,7 +428,6 @@ function App() {
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto p-4 space-y-6">
-        {/* Header */}
         <div className="flex items-center justify-between">
           <div className="text-center space-y-2 flex-1">
             <h1 className="text-3xl font-bold flex items-center justify-center gap-2">
@@ -329,48 +435,30 @@ function App() {
               College Fantasy Football
             </h1>
             <p className="text-muted-foreground">
-              Build your weekly lineup with {SEASON_YEAR} season players - each can be used 3 times maximum! Lineups can be edited until each week begins.
+              Build your weekly lineup with {SEASON_YEAR} season players - each can be used 3 times maximum!
             </p>
           </div>
-          
-          {/* User Profile & Logout */}
+
           <div className="flex items-center gap-3">
             <div className="text-right">
               <div className="flex items-center gap-2 text-sm font-medium">
                 {currentUser.avatarUrl && (
-                  <img 
-                    src={currentUser.avatarUrl} 
-                    alt={currentUser.displayName}
-                    className="w-6 h-6 rounded-full"
-                  />
+                  <img src={currentUser.avatarUrl} alt={currentUser.displayName} className="w-6 h-6 rounded-full" />
                 )}
                 {currentUser.displayName}
               </div>
-              <div className="text-xs text-muted-foreground">
-                {currentUser.email || ''}
-              </div>
+              <div className="text-xs text-muted-foreground">{currentUser.email || ''}</div>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleAddPasskey}
-              className="flex items-center gap-2"
-            >
+            <Button variant="outline" size="sm" onClick={handleAddPasskey} className="flex items-center gap-2">
               Add Passkey
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void handleLogout()}
-              className="flex items-center gap-2"
-            >
+            <Button variant="outline" size="sm" onClick={() => void handleLogout()} className="flex items-center gap-2">
               <SignOut size={14} />
               Logout
             </Button>
           </div>
         </div>
 
-        {/* Week Navigation */}
         <div className="space-y-2">
           <WeekNavigation currentWeek={currentWeek} onWeekChange={setCurrentWeek} />
           <div className="flex items-center justify-between">
@@ -402,18 +490,18 @@ function App() {
               );
             })()}
             <div className="text-xs text-muted-foreground">
-              Current Date: {new Date().toLocaleDateString('en-US', { 
+              Current Date:{' '}
+              {new Date().toLocaleDateString('en-US', {
                 weekday: 'short',
-                year: 'numeric', 
-                month: 'short', 
-                day: 'numeric' 
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
               })}
             </div>
           </div>
         </div>
 
-        {/* Main Navigation Tabs */}
-        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)}>
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'lineup' | 'schedule' | 'scoring' | 'leagues')}>
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="lineup" className="flex items-center gap-2">
               <Users size={16} />
@@ -433,154 +521,165 @@ function App() {
             </TabsTrigger>
           </TabsList>
 
-          {/* Lineup Tab */}
           <TabsContent value="lineup" className="mt-6">
-            <div className="grid lg:grid-cols-3 gap-6">
-              {/* Player Selection */}
-              <div className="lg:col-span-2 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-lg font-semibold">Available Players</h3>
-                    {isWeekLocked(currentWeek) && (
-                      <p className="text-sm text-orange-600 mt-1">
-                        Week {currentWeek} is locked - viewing only
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleRefreshPlayers}
-                      disabled={isLoadingPlayers}
-                      className="flex items-center gap-2"
-                    >
-                      <RefreshCw size={14} className={isLoadingPlayers ? 'animate-spin' : ''} />
-                      Refresh
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={handleForceSampleData}
-                      disabled={isLoadingPlayers}
-                      className="flex items-center gap-2"
-                    >
-                      Reload Data
-                    </Button>
-                  </div>
-                </div>
-                
-                {isLoadingPlayers ? (
+            {!hasLeagues ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>No league selected</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <p className="text-muted-foreground">Create or join a league before setting your weekly lineup.</p>
+                  <Button onClick={() => setActiveTab('leagues')}>Go to Leagues</Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-2 space-y-4">
                   <Card>
-                    <CardContent className="flex items-center justify-center py-12">
-                      <div className="flex items-center gap-3 text-muted-foreground">
-                        <RefreshCw size={20} className="animate-spin" />
-                        Loading {SEASON_YEAR} season players from ESPN...
+                    <CardContent className="pt-6">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <span className="text-sm text-muted-foreground">Current league</span>
+                        <Select value={currentLeagueId ?? ''} onValueChange={(value) => setCurrentLeagueId(value)}>
+                          <SelectTrigger className="w-[260px]">
+                            <SelectValue placeholder="Select league" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {leagues.map((league) => (
+                              <SelectItem key={league.id} value={league.id}>
+                                {league.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {isLoadingLeagues && <span className="text-xs text-muted-foreground">Refreshing leagues...</span>}
+                        {currentLeagueName && <Badge variant="outline">{currentLeagueName}</Badge>}
                       </div>
                     </CardContent>
                   </Card>
-                ) : (
-                  <Tabs value={selectedPosition} onValueChange={(value) => setSelectedPosition(value as any)}>
-                    <TabsList className="grid w-full grid-cols-3">
-                      <TabsTrigger value="QB">Quarterbacks</TabsTrigger>
-                      <TabsTrigger value="RB">Running Backs</TabsTrigger>
-                      <TabsTrigger value="WR">Wide Receivers</TabsTrigger>
-                    </TabsList>
-                    
-                    <TabsContent value={selectedPosition} className="mt-4">
-                      <PlayerTable
-                        position={selectedPosition}
-                        players={players}
-                        playerUsage={playerUsage}
-                        currentLineup={currentLineup}
-                        currentWeek={currentWeek}
-                        onPlayerSelect={handlePlayerSelect}
-                        onPlayersUpdate={handlePlayersUpdate}
-                        isLocked={isWeekLocked(currentWeek)}
-                      />
-                    </TabsContent>
-                  </Tabs>
-                )}
-              </div>
 
-              {/* Lineup & Summary */}
-              <div className="space-y-4">
-                {/* Bye Week Alert */}
-                <ByeWeekAlert lineup={currentLineup} currentWeek={currentWeek} />
-                
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Target size={20} />
-                      Your Lineup
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {currentLineup.map((slot) => (
-                      <LineupSlotCard
-                        key={slot.slotIndex}
-                        slot={slot}
-                        onRemovePlayer={handleRemovePlayer}
-                        onDropPlayer={handleDropPlayer}
-                        canDrop={!slot.player}
-                        isLocked={isWeekLocked(currentWeek)}
-                      />
-                    ))}
-                    
-                    <Button
-                      onClick={handleSaveLineup}
-                      className="w-full"
-                      disabled={!isLineupComplete(currentLineup) || isWeekLocked(currentWeek)}
-                    >
-                      {isWeekLocked(currentWeek) 
-                        ? `Week ${currentWeek} Locked` 
-                        : `Save Week ${currentWeek} Lineup`
-                      }
-                    </Button>
-                  </CardContent>
-                </Card>
-
-                <LineupSummary lineup={currentLineup} actualPoints={currentWeekLineup?.actualPoints} />
-
-                {/* Quick Stats */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">Season Stats</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Weeks Completed</span>
-                      <Badge variant="outline">
-                        {weeklyLineups.length}/{TOTAL_WEEKS}
-                      </Badge>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-lg font-semibold">Available Players</h3>
+                      {isWeekLocked(currentWeek) && (
+                        <p className="text-sm text-orange-600 mt-1">Week {currentWeek} is locked - viewing only</p>
+                      )}
                     </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Players at Max Uses</span>
-                      <Badge variant="outline">
-                        {playerUsage.filter(u => u.timesUsed >= MAX_PLAYER_USES).length}
-                      </Badge>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleRefreshPlayers}
+                        disabled={isLoadingPlayers}
+                        className="flex items-center gap-2"
+                      >
+                        <RefreshCw size={14} className={isLoadingPlayers ? 'animate-spin' : ''} />
+                        Refresh
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={handleForceSampleData}
+                        disabled={isLoadingPlayers}
+                        className="flex items-center gap-2"
+                      >
+                        Reload Data
+                      </Button>
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+
+                  {isLoadingPlayers ? (
+                    <Card>
+                      <CardContent className="flex items-center justify-center py-12">
+                        <div className="flex items-center gap-3 text-muted-foreground">
+                          <RefreshCw size={20} className="animate-spin" />
+                          Loading {SEASON_YEAR} season players from ESPN...
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <Tabs value={selectedPosition} onValueChange={(value) => setSelectedPosition(value as 'QB' | 'RB' | 'WR')}>
+                      <TabsList className="grid w-full grid-cols-3">
+                        <TabsTrigger value="QB">Quarterbacks</TabsTrigger>
+                        <TabsTrigger value="RB">Running Backs</TabsTrigger>
+                        <TabsTrigger value="WR">Wide Receivers</TabsTrigger>
+                      </TabsList>
+
+                      <TabsContent value={selectedPosition} className="mt-4">
+                        <PlayerTable
+                          position={selectedPosition}
+                          players={players}
+                          playerUsage={playerUsage}
+                          currentLineup={currentLineup}
+                          currentWeek={currentWeek}
+                          onPlayerSelect={handlePlayerSelect}
+                          onPlayersUpdate={handlePlayersUpdate}
+                          isLocked={isWeekLocked(currentWeek)}
+                        />
+                      </TabsContent>
+                    </Tabs>
+                  )}
+                </div>
+
+                <div className="space-y-4">
+                  <ByeWeekAlert lineup={currentLineup} currentWeek={currentWeek} />
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Target size={20} />
+                        Your Lineup
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {currentLineup.map((slot) => (
+                        <LineupSlotCard
+                          key={slot.slotIndex}
+                          slot={slot}
+                          onRemovePlayer={handleRemovePlayer}
+                          onDropPlayer={handleDropPlayer}
+                          canDrop={!slot.player}
+                          isLocked={isWeekLocked(currentWeek)}
+                        />
+                      ))}
+
+                      <Button onClick={() => void handleSaveLineup()} className="w-full" disabled={!isLineupComplete(currentLineup) || isWeekLocked(currentWeek)}>
+                        {isWeekLocked(currentWeek) ? `Week ${currentWeek} Locked` : `Save Week ${currentWeek} Lineup`}
+                      </Button>
+                    </CardContent>
+                  </Card>
+
+                  <LineupSummary lineup={currentLineup} actualPoints={currentWeekLineup?.actualPoints} />
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Season Stats</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Weeks Completed</span>
+                        <Badge variant="outline">
+                          {weeklyLineups.length}/{TOTAL_WEEKS}
+                        </Badge>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Players at Max Uses</span>
+                        <Badge variant="outline">{playerUsage.filter((entry) => entry.timesUsed >= MAX_PLAYER_USES).length}</Badge>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
               </div>
-            </div>
+            )}
           </TabsContent>
 
-          {/* Schedule Tab */}
           <TabsContent value="schedule" className="mt-6">
             <ScheduleOverview currentWeek={currentWeek} />
           </TabsContent>
 
-          {/* Live Scoring Tab */}
           <TabsContent value="scoring" className="mt-6">
-            <LiveScoringDashboard 
-              week={currentWeek}
-              weeklyLineups={weeklyLineups}
-              onPointsUpdate={handlePointsUpdate}
-            />
+            <LiveScoringDashboard week={currentWeek} weeklyLineups={weeklyLineups} onPointsUpdate={handlePointsUpdate} />
           </TabsContent>
 
-          {/* Leagues Tab */}
           <TabsContent value="leagues" className="mt-6">
             <LeagueDashboard
               currentWeek={currentWeek}

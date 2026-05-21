@@ -1,4 +1,4 @@
-import { integer, jsonb, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { integer, jsonb, pgTable, primaryKey, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
 
 export const dataCache = pgTable('data_cache', {
   key: text('key').primaryKey(),
@@ -54,5 +54,49 @@ export const leagueMembers = pgTable(
   },
   (table) => ({
     pk: primaryKey({ columns: [table.leagueId, table.userId] }),
+  }),
+);
+
+export const lineups = pgTable(
+  'lineups',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    leagueId: uuid('league_id')
+      .notNull()
+      .references(() => leagues.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    season: integer('season').notNull(),
+    week: integer('week').notNull(),
+    slots: jsonb('slots')
+      .$type<{ slotIndex: number; position: string; playerId: string | null }[]>()
+      .notNull(),
+    projectedPoints: text('projected_points').default('0'),
+    actualPoints: text('actual_points'),
+    lockedAt: timestamp('locked_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    uniqueLineup: unique().on(table.leagueId, table.userId, table.season, table.week),
+  }),
+);
+
+export const playerUsage = pgTable(
+  'player_usage',
+  {
+    leagueId: uuid('league_id')
+      .notNull()
+      .references(() => leagues.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    season: integer('season').notNull(),
+    playerId: text('player_id').notNull(),
+    timesUsed: integer('times_used').notNull().default(0),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.leagueId, table.userId, table.season, table.playerId] }),
   }),
 );

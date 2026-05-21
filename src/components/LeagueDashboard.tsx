@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { League, WeeklyLineup } from '@/lib/types';
-import { calculateLeaderboard } from '@/lib/league-utils';
+import { League, LeaderboardEntry, WeeklyLineup } from '@/lib/types';
 import { CreateLeague } from '@/components/CreateLeague';
 import { LeagueList } from '@/components/LeagueList';
 import { LeagueManagement } from '@/components/LeagueManagement';
@@ -96,6 +95,7 @@ export function LeagueDashboard({
   const [activeTab, setActiveTab] = useState<'my-leagues' | 'browse' | 'create'>('my-leagues');
   const [selectedLeague, setSelectedLeague] = useState<League | null>(null);
   const [myLeagues, setMyLeagues] = useState<League[]>([]);
+  const [leaderboardEntries, setLeaderboardEntries] = useState<LeaderboardEntry[]>([]);
   const [joinCode, setJoinCode] = useState('');
   const [isLoadingLeagues, setIsLoadingLeagues] = useState(false);
   const [isJoiningLeague, setIsJoiningLeague] = useState(false);
@@ -137,6 +137,46 @@ export function LeagueDashboard({
     const league = toLeagueDetail(payload.league as ApiLeague);
     setSelectedLeague(league);
   }, []);
+
+  const fetchLeaderboard = useCallback(async (leagueId: string) => {
+    const response = await fetch(`/api/leagues/${leagueId}/leaderboard`, {
+      method: 'GET',
+      credentials: 'include',
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || 'Failed to load leaderboard');
+    }
+
+    const entries = ((payload.leaderboard ?? []) as Array<{
+      rank: number;
+      userId: string;
+      username: string;
+      avatarUrl?: string | null;
+      totalPoints: number;
+      weeklyPoints: Record<number, number>;
+    }>).map((entry) => {
+      const weekPoints = Object.values(entry.weeklyPoints ?? {});
+      const weeksPlayed = weekPoints.length;
+      const weeklyAverage = weeksPlayed > 0 ? entry.totalPoints / weeksPlayed : 0;
+      const pointsThisWeek = entry.weeklyPoints?.[currentWeek] ?? 0;
+      return {
+        rank: entry.rank,
+        userId: entry.userId,
+        username: entry.username,
+        avatarUrl: entry.avatarUrl ?? undefined,
+        totalPoints: entry.totalPoints,
+        weeklyAverage,
+        bestWeek: weekPoints.length > 0 ? Math.max(...weekPoints) : 0,
+        worstWeek: weekPoints.length > 0 ? Math.min(...weekPoints) : 0,
+        weeksPlayed,
+        pointsThisWeek,
+        trend: 'same' as const,
+        trendChange: 0,
+      };
+    });
+    setLeaderboardEntries(entries);
+  }, [currentWeek]);
 
   useEffect(() => {
     fetchMyLeagues();
@@ -182,20 +222,11 @@ export function LeagueDashboard({
   const handleSelectLeague = async (league: League) => {
     try {
       await fetchLeagueDetails(league.id);
+      await fetchLeaderboard(league.id);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to load league';
       toast.error(message);
     }
-  };
-
-  const getLeaderboardForLeague = (league: League) => {
-    const allLineups: { [userId: string]: WeeklyLineup[] } = {};
-
-    league.members.forEach((member) => {
-      allLineups[member.userId] = member.userId === currentUserId ? weeklyLineups : [];
-    });
-
-    return calculateLeaderboard(league.members, allLineups, currentWeek);
   };
 
   if (selectedLeague) {
@@ -235,7 +266,7 @@ export function LeagueDashboard({
           </TabsList>
 
           <TabsContent value="leaderboard" className="mt-6">
-            <Leaderboard entries={getLeaderboardForLeague(selectedLeague)} currentWeek={currentWeek} currentUserId={currentUserId} />
+            <Leaderboard entries={leaderboardEntries} currentWeek={currentWeek} currentUserId={currentUserId} />
           </TabsContent>
 
           <TabsContent value="manage" className="mt-6">
@@ -244,6 +275,7 @@ export function LeagueDashboard({
               currentUserId={currentUserId}
               onRefreshLeague={async () => {
                 await fetchLeagueDetails(selectedLeague.id);
+                await fetchLeaderboard(selectedLeague.id);
                 await fetchMyLeagues();
               }}
               onLeftLeague={() => {
