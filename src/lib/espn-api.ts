@@ -225,6 +225,23 @@ export const fetchESPNTeamRoster = async (teamId: string): Promise<ESPNRoster | 
       return null;
     }
 
+    // ESPN may return athletes as position groups: [{position: "offense", items: [...]}]
+    // or as a flat array of athlete objects. Handle both shapes.
+    let flatAthletes: any[] = [];
+    if (Array.isArray(data.athletes) && data.athletes.length > 0) {
+      if (data.athletes[0].items) {
+        // Grouped format — flatten all position groups
+        for (const group of data.athletes) {
+          if (Array.isArray(group.items)) {
+            flatAthletes.push(...group.items);
+          }
+        }
+      } else {
+        // Already flat
+        flatAthletes = data.athletes;
+      }
+    }
+
     // Filter for current season eligible players — negative blacklist approach
     const INELIGIBLE_STATUSES = [
       'DECLARED FOR NFL DRAFT', 'ENTERED NFL DRAFT', 'PROFESSIONAL',
@@ -236,7 +253,7 @@ export const fetchESPNTeamRoster = async (teamId: string): Promise<ESPNRoster | 
       'TRANSFER OUT', 'DEPARTED', 'NO LONGER', 'OPTED OUT',
     ];
 
-    const eligibleAthletes = data.athletes.filter((athlete: any) => {
+    const eligibleAthletes = flatAthletes.filter((athlete: any) => {
       const hasName = athlete.fullName || athlete.displayName;
       const hasPosition = athlete.position && athlete.position.abbreviation;
       
@@ -247,7 +264,7 @@ export const fetchESPNTeamRoster = async (teamId: string): Promise<ESPNRoster | 
       const playerName = athlete.fullName || athlete.displayName;
       
       if (athlete.status) {
-        const statusUpper = athlete.status.toUpperCase();
+        const statusUpper = (typeof athlete.status === 'string' ? athlete.status : athlete.status.type || '').toUpperCase();
         if (INELIGIBLE_STATUSES.some(s => statusUpper.includes(s))) {
           console.log(`Excluding player ${playerName} due to status: ${athlete.status}`);
           return false;
@@ -270,7 +287,7 @@ export const fetchESPNTeamRoster = async (teamId: string): Promise<ESPNRoster | 
       return true;
     });
 
-    console.log(`Filtered ${data.athletes.length} roster players to ${eligibleAthletes.length} eligible for ${SEASON_YEAR} season`);
+    console.log(`Filtered ${flatAthletes.length} roster players to ${eligibleAthletes.length} eligible for ${SEASON_YEAR} season`);
 
     return { ...data, athletes: eligibleAthletes };
   } catch (error) {

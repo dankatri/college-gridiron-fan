@@ -1,6 +1,6 @@
 import { Player } from './types';
 import { fetchESPNCurrentPlayers, getESPNConferences, getESPNTeams } from './espn-api';
-import { getTeamSchedules, isTeamOnBye } from './schedule-data';
+import { getTeamSchedules, isTeamOnBye, clearScheduleCache } from './schedule-data';
 import { SEASON_YEAR, ALL_FBS_CONFERENCES, MAJOR_PROGRAMS } from './season-config';
 
 // Minimal fallback sample data — used only when ESPN API is completely unavailable.
@@ -654,7 +654,5 @@ export const clearCache = () => {
   conferencesCache = [];
   teamsCache = [];
   cacheTimestamp = 0;
-  // Also clear schedule cache when clearing all data
-  const { clearScheduleCache } = require('./schedule-data');
   clearScheduleCache();
 };
