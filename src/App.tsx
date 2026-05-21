@@ -434,9 +434,6 @@ function App() {
               <Trophy size={32} className="text-accent" />
               College Fantasy Football
             </h1>
-            <p className="text-muted-foreground">
-              Build your weekly lineup with {SEASON_YEAR} season players - each can be used 3 times maximum!
-            </p>
           </div>
 
           <div className="flex items-center gap-3">

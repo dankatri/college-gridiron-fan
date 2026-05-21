@@ -360,7 +360,7 @@ export function PlayerTable({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[240px]">Player</TableHead>
+                <TableHead className="w-[320px]">Player</TableHead>
                 <TableHead>Team</TableHead>
                 <TableHead>Conf</TableHead>
                 <TableHead className="text-center">Schedule</TableHead>
@@ -373,8 +373,6 @@ export function PlayerTable({
                 {statsColumns.map(col => (
                   <TableHead key={col.key} className="text-center">{col.label}</TableHead>
                 ))}
-                <TableHead>Status</TableHead>
-                <TableHead className="w-[80px]"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -413,6 +411,20 @@ export function PlayerTable({
                           <div className="font-semibold truncate">{player.name}</div>
                           <div className="text-xs text-muted-foreground">{player.position}</div>
                         </div>
+
+                        {/* Status + Add Button */}
+                        <Badge variant={playerStatus.variant} className="text-xs flex-shrink-0">
+                          {playerStatus.label}
+                        </Badge>
+                        <Button
+                          size="sm"
+                          variant={canSelect ? "default" : "secondary"}
+                          disabled={!canSelect}
+                          onClick={() => onPlayerSelect(player)}
+                          className="h-7 px-2 text-xs flex-shrink-0"
+                        >
+                          {playerStatus.status === 'in-lineup' ? 'Added' : 'Add'}
+                        </Button>
                       </div>
                     </TableCell>
                     <TableCell className="font-medium">
@@ -442,22 +454,6 @@ export function PlayerTable({
                         {col.format((player as any)[col.key])}
                       </TableCell>
                     ))}
-                    <TableCell>
-                      <Badge variant={playerStatus.variant} className="text-xs">
-                        {playerStatus.label}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        size="sm"
-                        variant={canSelect ? "default" : "secondary"}
-                        disabled={!canSelect}
-                        onClick={() => onPlayerSelect(player)}
-                        className="h-8 px-3"
-                      >
-                        {playerStatus.status === 'in-lineup' ? 'Added' : 'Add'}
-                      </Button>
-                    </TableCell>
                   </TableRow>
                 );
               })}

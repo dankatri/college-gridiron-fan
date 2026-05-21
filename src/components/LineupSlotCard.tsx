@@ -15,30 +15,11 @@ interface LineupSlotCardProps {
 
 export function LineupSlotCard({ 
   slot, 
-  onRemovePlayer, 
+  onRemovePlayer,
   onDropPlayer,
   canDrop = false,
   isLocked = false
 }: LineupSlotCardProps) {
-  const handleDragOver = (e: React.DragEvent) => {
-    if (canDrop && !isLocked) {
-      e.preventDefault();
-    }
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    if (canDrop && !isLocked && onDropPlayer) {
-      e.preventDefault();
-      const playerData = e.dataTransfer.getData('application/json');
-      if (playerData) {
-        const player: Player = JSON.parse(playerData);
-        if (player.position === slot.position) {
-          onDropPlayer(player, slot.slotIndex);
-        }
-      }
-    }
-  };
-
   const handleRemove = () => {
     if (onRemovePlayer && !isLocked) {
       onRemovePlayer(slot.slotIndex);
@@ -48,13 +29,11 @@ export function LineupSlotCard({
   return (
     <Card 
       className={cn(
-        "min-h-[120px] transition-all duration-200",
-        canDrop && !isLocked && "border-dashed border-2 border-primary/50 bg-primary/5",
+        "min-h-[80px] transition-all duration-200",
+        !slot.player && "border-dashed border-2 border-muted-foreground/20",
         slot.player && "border-solid",
         isLocked && "opacity-75 cursor-not-allowed"
       )}
-      onDragOver={handleDragOver}
-      onDrop={handleDrop}
     >
       <CardHeader className="pb-2">
         <CardTitle className="text-sm flex items-center justify-between">
@@ -81,7 +60,6 @@ export function LineupSlotCard({
         {slot.player ? (
           <div className="space-y-2">
             <div className="flex items-start gap-3">
-              {/* Player Headshot */}
               <div className="relative w-12 h-12 rounded-full overflow-hidden bg-muted flex-shrink-0">
                 {slot.player.headshotUrl ? (
                   <img 
@@ -100,13 +78,11 @@ export function LineupSlotCard({
                 </div>
               </div>
               
-              {/* Player Info */}
               <div className="flex-1 min-w-0">
                 <h4 className="font-semibold text-sm leading-tight">
                   {slot.player.name}
                 </h4>
                 <div className="flex items-center gap-2 mt-1">
-                  {/* Team Logo */}
                   {slot.player.teamLogoUrl && (
                     <img 
                       src={slot.player.teamLogoUrl} 
@@ -132,9 +108,9 @@ export function LineupSlotCard({
             </div>
           </div>
         ) : (
-          <div className="text-center py-4">
+          <div className="text-center py-2">
             <p className="text-xs text-muted-foreground">
-              Drop {slot.position} here
+              Select a {slot.position} from the player list
             </p>
           </div>
         )}
