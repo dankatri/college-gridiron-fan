@@ -1,5 +1,5 @@
 import { Player } from './types';
-import { SEASON_YEAR, PROJECTION_YEAR } from './season-config';
+import { SEASON_YEAR, PROJECTION_YEAR, MAJOR_PROGRAMS } from './season-config';
 
 // ESPN API configuration - no API key required for public endpoints  
 const ESPN_BASE_URL = 'https://site.api.espn.com/apis/site/v2/sports/football/college-football';
@@ -518,22 +518,30 @@ export const fetchESPNCurrentPlayers = async (options?: {
       );
       console.log(`Filtered to ${teamsToFetch.length} teams matching "${options.specificTeam}"`);
     } else if (options?.specificConference && options.specificConference !== 'All Conferences') {
+      // Conference filtering: ESPN bulk teams endpoint doesn't include conference data,
+      // so match against our known MAJOR_PROGRAMS list by conference name
+      const conferenceTeamNames = MAJOR_PROGRAMS[options.specificConference] || [];
       teamsToFetch = allTeams.filter(team => 
-        team.conference?.name === options.specificConference ||
-        team.conference?.shortName === options.specificConference
+        conferenceTeamNames.some(name => 
+          team.displayName?.includes(name) || team.location === name || team.shortDisplayName === name
+        )
       );
       console.log(`Filtered to ${teamsToFetch.length} teams in "${options.specificConference}"`);
-      
-      // No arbitrary slice limit for conference filtering - get ALL teams in the conference
     } else {
-      // Get teams from all major conferences
-      const majorConferences = [
-        'SEC', 'Big Ten', 'Big 12', 'ACC', // Power 4
-        'American Athletic', 'Conference USA', 'Mid-American', 'Mountain West', 'Sun Belt', 'Pac-12', // Group of 5+
-      ];
-      teamsToFetch = allTeams.filter(team => 
-        team.conference && majorConferences.includes(team.conference.name)
-      ).slice(0, 150); // Increased from 120 to 150 teams for maximum player diversity
+      // Default: use all known major programs from season config
+      const allMajorNames = Object.values(MAJOR_PROGRAMS).flat();
+      teamsToFetch = allTeams.filter(team =>
+        allMajorNames.some(name =>
+          team.displayName?.includes(name) || team.location === name || team.shortDisplayName === name
+        )
+      );
+      console.log(`Matched ${teamsToFetch.length} major program teams from ESPN`);
+
+      // If name matching found too few, use all teams as fallback
+      if (teamsToFetch.length < 20) {
+        console.warn(`Only matched ${teamsToFetch.length} teams by name, using all ${allTeams.length} teams`);
+        teamsToFetch = allTeams.slice(0, 150);
+      }
     }
 
     if (teamsToFetch.length === 0) {
