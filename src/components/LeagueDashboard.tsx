@@ -255,13 +255,13 @@ export function LeagueDashboard({
 
         <Tabs defaultValue="leaderboard" className="w-full">
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="leaderboard" className="flex items-center gap-2">
+            <TabsTrigger value="leaderboard" className="flex items-center gap-1 sm:gap-2">
               <Trophy size={16} />
-              Leaderboard
+              <span className="hidden sm:inline">Leaderboard</span>
             </TabsTrigger>
-            <TabsTrigger value="manage" className="flex items-center gap-2">
+            <TabsTrigger value="manage" className="flex items-center gap-1 sm:gap-2">
               <Users size={16} />
-              Manage
+              <span className="hidden sm:inline">Manage</span>
             </TabsTrigger>
           </TabsList>
 
@@ -335,17 +335,17 @@ export function LeagueDashboard({
 
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'my-leagues' | 'browse' | 'create')}>
         <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="my-leagues" className="flex items-center gap-2">
+          <TabsTrigger value="my-leagues" className="flex items-center gap-1 sm:gap-2">
             <Users size={16} />
-            My Leagues ({myLeagues.length})
+            <span className="hidden sm:inline">My Leagues ({myLeagues.length})</span>
           </TabsTrigger>
-          <TabsTrigger value="browse" className="flex items-center gap-2">
+          <TabsTrigger value="browse" className="flex items-center gap-1 sm:gap-2">
             <Target size={16} />
-            Browse
+            <span className="hidden sm:inline">Browse</span>
           </TabsTrigger>
-          <TabsTrigger value="create" className="flex items-center gap-2">
+          <TabsTrigger value="create" className="flex items-center gap-1 sm:gap-2">
             <Plus size={16} />
-            Create
+            <span className="hidden sm:inline">Create</span>
           </TabsTrigger>
         </TabsList>
 
