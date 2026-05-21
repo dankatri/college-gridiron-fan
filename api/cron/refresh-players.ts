@@ -6,7 +6,8 @@ import { db } from '../../src/server/db';
 import { dataCache } from '../../src/server/schema';
 
 export const config = {
-  runtime: 'edge',
+  runtime: 'nodejs',
+  maxDuration: 60,
 };
 
 const CACHE_KEY = 'players-2026';

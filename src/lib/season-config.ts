@@ -121,8 +121,10 @@ export const MAJOR_PROGRAMS: Record<string, Record<string, string>> = {
   Independent: { 'Notre Dame': '87' },
 };
 
-// Dev-mode assertion: validate week date spacing
-if (import.meta.env?.DEV) {
+// Dev-mode assertion: validate week date spacing (Vite only)
+if (typeof globalThis !== 'undefined' && typeof (globalThis as any).process === 'undefined') {
+  try {
+    if (import.meta.env?.DEV) {
   const weeks = Object.keys(WEEK_START_DATES).map(Number).sort((a, b) => a - b);
   for (let i = 0; i < weeks.length - 1; i++) {
     const curr = WEEK_START_DATES[weeks[i]];
@@ -133,5 +135,9 @@ if (import.meta.env?.DEV) {
         `⚠️ Season config: Week ${weeks[i]}→${weeks[i + 1]} gap is only ${gapDays} days (expected ≥7)`
       );
     }
+  }
+    }
+  } catch {
+    // Not in Vite — skip dev assertions
   }
 }
