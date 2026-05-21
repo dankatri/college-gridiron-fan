@@ -1,4 +1,4 @@
-import { clearSessionCookieHeader } from '../../src/server/auth-utils';
+import { clearSessionCookieHeader } from '../_lib/auth-utils';
 
 export const config = {
   runtime: 'nodejs',

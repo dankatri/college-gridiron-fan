@@ -1,12 +1,12 @@
 import { eq } from 'drizzle-orm';
 import { generateAuthenticationOptions } from '@simplewebauthn/server';
-import { db } from '../../../src/server/db';
-import { users, webauthnCredentials } from '../../../src/server/schema';
+import { db } from '../../_lib/db';
+import { users, webauthnCredentials } from '../../_lib/schema';
 import {
   passkeyChallengeCookieHeader,
   passkeyUserCookieHeader,
-} from '../../../src/server/auth-utils';
-import { getWebAuthnRPID } from '../../../src/server/webauthn-utils';
+} from '../../_lib/auth-utils';
+import { getWebAuthnRPID } from '../../_lib/webauthn-utils';
 
 export const config = {
   runtime: 'nodejs',

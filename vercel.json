@@ -1,9 +1,4 @@
 {
-  "functions": {
-    "api/**/*.ts": {
-      "includeFiles": "src/server/**,src/lib/types.ts,src/lib/season-config.ts"
-    }
-  },
   "crons": [
     {
       "path": "/api/cron/refresh-players",

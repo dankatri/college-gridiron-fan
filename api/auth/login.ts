@@ -1,8 +1,8 @@
 import bcrypt from 'bcryptjs';
 import { eq } from 'drizzle-orm';
-import { db } from '../../src/server/db';
-import { users } from '../../src/server/schema';
-import { createSessionToken, sessionCookieHeader } from '../../src/server/auth-utils';
+import { db } from '../_lib/db';
+import { users } from '../_lib/schema';
+import { createSessionToken, sessionCookieHeader } from '../_lib/auth-utils';
 
 export const config = {
   runtime: 'nodejs',

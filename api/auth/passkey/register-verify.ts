@@ -1,15 +1,15 @@
 import { eq } from 'drizzle-orm';
 import { verifyRegistrationResponse } from '@simplewebauthn/server';
 import type { RegistrationResponseJSON } from '@simplewebauthn/server';
-import { db } from '../../../src/server/db';
-import { users, webauthnCredentials } from '../../../src/server/schema';
+import { db } from '../../_lib/db';
+import { users, webauthnCredentials } from '../../_lib/schema';
 import {
   clearPasskeyChallengeCookieHeader,
   getPasskeyChallengeCookie,
   getSessionCookie,
   verifySessionToken,
-} from '../../../src/server/auth-utils';
-import { getWebAuthnOrigin, getWebAuthnRPID } from '../../../src/server/webauthn-utils';
+} from '../../_lib/auth-utils';
+import { getWebAuthnOrigin, getWebAuthnRPID } from '../../_lib/webauthn-utils';
 
 export const config = {
   runtime: 'nodejs',
