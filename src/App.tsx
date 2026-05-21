@@ -551,21 +551,21 @@ function App() {
 
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'lineup' | 'schedule' | 'scoring' | 'leagues')}>
           <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="lineup" className="flex items-center gap-2">
+            <TabsTrigger value="lineup" className="flex items-center gap-1 sm:gap-2">
               <Users size={16} />
-              Set Lineup
+              <span className="hidden sm:inline">Set Lineup</span>
             </TabsTrigger>
-            <TabsTrigger value="schedule" className="flex items-center gap-2">
+            <TabsTrigger value="schedule" className="flex items-center gap-1 sm:gap-2">
               <Calendar size={16} />
-              Schedule
+              <span className="hidden sm:inline">Schedule</span>
             </TabsTrigger>
-            <TabsTrigger value="scoring" className="flex items-center gap-2">
+            <TabsTrigger value="scoring" className="flex items-center gap-1 sm:gap-2">
               <Activity size={16} />
-              Live Scoring
+              <span className="hidden sm:inline">Live Scoring</span>
             </TabsTrigger>
-            <TabsTrigger value="leagues" className="flex items-center gap-2">
+            <TabsTrigger value="leagues" className="flex items-center gap-1 sm:gap-2">
               <Medal size={16} />
-              Leagues
+              <span className="hidden sm:inline">Leagues</span>
             </TabsTrigger>
           </TabsList>
 
