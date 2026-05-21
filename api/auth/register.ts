@@ -4,7 +4,7 @@ import { users } from '../../src/server/schema';
 import { createSessionToken, sessionCookieHeader } from '../../src/server/auth-utils';
 
 export const config = {
-  runtime: 'nodejs22.x',
+  runtime: 'nodejs',
 };
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

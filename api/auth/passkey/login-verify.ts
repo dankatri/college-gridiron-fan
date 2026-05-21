@@ -14,7 +14,7 @@ import {
 import { getWebAuthnOrigin, getWebAuthnRPID } from '../../../src/server/webauthn-utils';
 
 export const config = {
-  runtime: 'nodejs22.x',
+  runtime: 'nodejs',
 };
 
 type LoginVerifyBody = {

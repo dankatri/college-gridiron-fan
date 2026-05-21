@@ -1,7 +1,7 @@
 import { clearSessionCookieHeader } from '../../src/server/auth-utils';
 
 export const config = {
-  runtime: 'nodejs22.x',
+  runtime: 'nodejs',
 };
 
 function jsonResponse(body: unknown, status = 200, setCookie?: string): Response {

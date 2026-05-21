@@ -10,7 +10,7 @@ import {
 import { getWebAuthnOrigin, getWebAuthnRPID, WEBAUTHN_RP_NAME } from '../../../src/server/webauthn-utils';
 
 export const config = {
-  runtime: 'nodejs22.x',
+  runtime: 'nodejs',
 };
 
 function jsonResponse(body: unknown, status = 200, setCookie?: string): Response {
