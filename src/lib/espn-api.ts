@@ -135,7 +135,7 @@ export const fetchESPNTeams = async (): Promise<ESPNTeam[]> => {
   
   try {
     console.log('Fetching teams from ESPN API...');
-    const data = await espnRequest('/teams');
+    const data = await espnRequest('/teams?limit=1000');
     
     console.log('ESPN teams API response structure:', {
       hasSports: !!data.sports,
@@ -518,22 +518,17 @@ export const fetchESPNCurrentPlayers = async (options?: {
       );
       console.log(`Filtered to ${teamsToFetch.length} teams matching "${options.specificTeam}"`);
     } else if (options?.specificConference && options.specificConference !== 'All Conferences') {
-      // Conference filtering: ESPN bulk teams endpoint doesn't include conference data,
-      // so match against our known MAJOR_PROGRAMS list by conference name
+      // Conference filtering by matching team location against MAJOR_PROGRAMS
       const conferenceTeamNames = MAJOR_PROGRAMS[options.specificConference] || [];
       teamsToFetch = allTeams.filter(team => 
-        conferenceTeamNames.some(name => 
-          team.displayName?.includes(name) || team.location === name || team.shortDisplayName === name
-        )
+        conferenceTeamNames.some(name => team.location === name)
       );
       console.log(`Filtered to ${teamsToFetch.length} teams in "${options.specificConference}"`);
     } else {
-      // Default: use all known major programs from season config
+      // Default: match all known major programs by exact location name
       const allMajorNames = Object.values(MAJOR_PROGRAMS).flat();
       teamsToFetch = allTeams.filter(team =>
-        allMajorNames.some(name =>
-          team.displayName?.includes(name) || team.location === name || team.shortDisplayName === name
-        )
+        allMajorNames.some(name => team.location === name)
       );
       console.log(`Matched ${teamsToFetch.length} major program teams from ESPN`);
 

@@ -34,7 +34,7 @@ export async function getTeamSchedules(): Promise<TeamSchedule[]> {
   try {
     console.log('Fetching fresh schedule data from ESPN...');
     
-    const teamsResponse = await fetch('https://site.api.espn.com/apis/site/v2/sports/football/college-football/teams?limit=200');
+    const teamsResponse = await fetch('https://site.api.espn.com/apis/site/v2/sports/football/college-football/teams?limit=1000');
     
     if (!teamsResponse.ok) {
       throw new Error(`ESPN teams API error: ${teamsResponse.status}`);
