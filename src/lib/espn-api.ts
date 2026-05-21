@@ -562,9 +562,9 @@ export const fetchESPNCurrentPlayers = async (options?: {
             const playerName = espnPlayer.fullName || espnPlayer.displayName || '';
             if (!playerName) continue;
             
-            // Fetch stats for projections
-            const stats = await fetchESPNPlayerStats(espnPlayer.id, SEASON_YEAR);
-            const player = await convertESPNPlayerToPlayer(espnPlayer, teamData, stats);
+            // Skip per-player stats fetches — too many requests causes rate limiting.
+            // Players load with 0 projected points; stats can be fetched on-demand later.
+            const player = await convertESPNPlayerToPlayer(espnPlayer, teamData, null);
             
             if (player.name && !player.name.includes('undefined') && 
                 player.name.trim() !== '' && !player.name.startsWith('Player ') &&

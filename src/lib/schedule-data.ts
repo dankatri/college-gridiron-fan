@@ -1,5 +1,5 @@
 import { TeamSchedule, WeeklyGame } from './types';
-import { SEASON_YEAR } from './season-config';
+import { SEASON_YEAR, MAJOR_PROGRAMS } from './season-config';
 
 // Cache for team schedules
 let scheduleCache: Map<string, TeamSchedule> = new Map();
@@ -34,21 +34,22 @@ export async function getTeamSchedules(): Promise<TeamSchedule[]> {
   try {
     console.log('Fetching fresh schedule data from ESPN...');
     
-    const teamsResponse = await fetch('https://site.api.espn.com/apis/site/v2/sports/football/college-football/teams?limit=1000');
-    
-    if (!teamsResponse.ok) {
-      throw new Error(`ESPN teams API error: ${teamsResponse.status}`);
+    // Build team list from MAJOR_PROGRAMS config (avoids CORS-blocked bulk /teams endpoint)
+    const teamEntries: Array<{ id: string; name: string; conference: string }> = [];
+    for (const [conf, teams] of Object.entries(MAJOR_PROGRAMS)) {
+      for (const [name, id] of Object.entries(teams)) {
+        teamEntries.push({ id, name, conference: conf });
+      }
     }
 
-    const teamsData = await teamsResponse.json();
     const schedules: TeamSchedule[] = [];
 
-    // Process each team to get their schedule
-    for (const team of teamsData.sports[0].leagues[0].teams.slice(0, 50)) { // Limit for performance
+    // Fetch schedules for major programs (limit to first 30 for performance)
+    for (const entry of teamEntries.slice(0, 30)) {
       try {
-        const teamId = team.team.id;
-        const teamName = team.team.displayName;
-        const conference = team.team.conferenceId || 'Independent';
+        const teamId = entry.id;
+        const teamName = entry.name;
+        const conference = entry.conference;
 
         // Fetch schedule for this specific team
         const scheduleResponse = await fetch(
