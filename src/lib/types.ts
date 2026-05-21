@@ -152,6 +152,8 @@ export interface League {
   description?: string;
   ownerId: string;
   ownerName: string;
+  joinCode?: string;
+  memberCount?: number;
   members: LeagueMember[];
   settings: LeagueSettings;
   createdAt: Date;
@@ -162,6 +164,7 @@ export interface LeagueMember {
   userId: string;
   username: string;
   avatarUrl?: string;
+  role?: 'owner' | 'member';
   joinedAt: Date;
   isActive: boolean;
   totalPoints: number;

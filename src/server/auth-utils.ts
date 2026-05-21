@@ -1,4 +1,7 @@
 import { SignJWT, jwtVerify } from 'jose';
+import { eq } from 'drizzle-orm';
+import { db } from './db';
+import { users } from './schema';
 
 const COOKIE_NAME = 'cgf-session';
 const PASSKEY_CHALLENGE_COOKIE = 'cgf-passkey-challenge';
@@ -79,4 +82,36 @@ export function clearPasskeyUserCookieHeader(): string {
 
 export function getPasskeyUserCookie(request: Request): string | null {
   return getCookie(request, PASSKEY_USER_COOKIE);
+}
+
+export async function requireUser(
+  request: Request,
+): Promise<{ id: string; email: string; displayName: string; avatarUrl?: string | null }> {
+  const cookie = getSessionCookie(request);
+  if (!cookie) {
+    throw new Error('Not authenticated');
+  }
+
+  const userId = await verifySessionToken(cookie);
+  if (!userId) {
+    throw new Error('Invalid session');
+  }
+
+  const rows = await db
+    .select({
+      id: users.id,
+      email: users.email,
+      displayName: users.displayName,
+      avatarUrl: users.avatarUrl,
+    })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  const user = rows[0];
+  if (!user) {
+    throw new Error('User not found');
+  }
+
+  return user;
 }

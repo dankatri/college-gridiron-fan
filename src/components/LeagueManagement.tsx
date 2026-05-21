@@ -1,104 +1,41 @@
 import { useState } from 'react';
-import { League, LeagueMember, LeagueInvite } from '@/lib/types';
-import { generateInviteId } from '@/lib/league-utils';
+import { League } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { 
   Users, 
-  Plus, 
   Crown, 
   Copy, 
   Check, 
   UserMinus,
   Gear as Settings,
-  User
+  User,
+  Trash,
 } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
 interface LeagueManagementProps {
   league: League;
   currentUserId: string;
-  onUpdateLeague: (league: League) => void;
-  onLeaveLeague?: () => void;
+  onRefreshLeague: () => Promise<void>;
+  onLeftLeague: () => void;
+  onDeletedLeague: () => void;
 }
 
 export function LeagueManagement({ 
   league, 
   currentUserId, 
-  onUpdateLeague,
-  onLeaveLeague 
+  onRefreshLeague,
+  onLeftLeague,
+  onDeletedLeague,
 }: LeagueManagementProps) {
-  const [inviteUsername, setInviteUsername] = useState('');
-  const [isInviting, setIsInviting] = useState(false);
   const [copiedInvite, setCopiedInvite] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const isOwner = league.ownerId === currentUserId;
-  const leagueJoinCode = league.id.slice(-8).toUpperCase();
-
-  const handleInviteMember = async () => {
-    if (!inviteUsername.trim()) {
-      toast.error('Please enter a username');
-      return;
-    }
-
-    if (league.members.some(m => m.username.toLowerCase() === inviteUsername.toLowerCase())) {
-      toast.error('User is already a member');
-      return;
-    }
-
-    if (league.members.length >= league.settings.maxMembers) {
-      toast.error('League is full');
-      return;
-    }
-
-    setIsInviting(true);
-
-    try {
-      // In a real app, you'd validate the username and send an invite
-      // For demo purposes, we'll simulate adding a user
-      const newMember: LeagueMember = {
-        userId: `user_${Date.now()}`,
-        username: inviteUsername.trim(),
-        avatarUrl: undefined,
-        joinedAt: new Date(),
-        isActive: true,
-        totalPoints: 0,
-        weeklyPoints: {},
-        rank: league.members.length + 1
-      };
-
-      const updatedLeague = {
-        ...league,
-        members: [...league.members, newMember]
-      };
-
-      onUpdateLeague(updatedLeague);
-      setInviteUsername('');
-      toast.success(`Invited ${inviteUsername} to the league!`);
-    } catch (error) {
-      toast.error('Failed to send invite');
-    } finally {
-      setIsInviting(false);
-    }
-  };
-
-  const handleRemoveMember = (memberId: string, memberUsername: string) => {
-    if (!isOwner) {
-      toast.error('Only the league owner can remove members');
-      return;
-    }
-
-    const updatedLeague = {
-      ...league,
-      members: league.members.filter(m => m.userId !== memberId)
-    };
-
-    onUpdateLeague(updatedLeague);
-    toast.success(`Removed ${memberUsername} from the league`);
-  };
+  const leagueJoinCode = league.joinCode ?? 'UNAVAILABLE';
 
   const handleCopyInviteCode = async () => {
     try {
@@ -111,14 +48,71 @@ export function LeagueManagement({
     }
   };
 
-  const handleLeaveLeague = () => {
-    if (isOwner) {
-      toast.error('League owners cannot leave. Transfer ownership first.');
+  const handleRemoveMember = async (memberId: string, memberUsername: string) => {
+    if (!isOwner) {
+      toast.error('Only the league owner can remove members');
       return;
     }
 
-    if (onLeaveLeague) {
-      onLeaveLeague();
+    setIsSaving(true);
+    try {
+      const response = await fetch(`/api/leagues/${league.id}/members?userId=${encodeURIComponent(memberId)}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to remove member');
+      }
+      toast.success(`Removed ${memberUsername} from the league`);
+      await onRefreshLeague();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to remove member';
+      toast.error(message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleLeaveLeague = async () => {
+    setIsSaving(true);
+    try {
+      const response = await fetch(`/api/leagues/${league.id}/members?userId=me`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to leave league');
+      }
+      toast.success('You left the league');
+      onLeftLeague();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to leave league';
+      toast.error(message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteLeague = async () => {
+    setIsSaving(true);
+    try {
+      const response = await fetch(`/api/leagues/${league.id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to delete league');
+      }
+      toast.success('League deleted');
+      onDeletedLeague();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to delete league';
+      toast.error(message);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -160,54 +154,26 @@ export function LeagueManagement({
         </CardContent>
       </Card>
 
-      {/* Invite Section */}
-      {isOwner && league.members.length < league.settings.maxMembers && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Plus size={16} />
-              Invite Members
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex gap-2">
-              <Input
-                placeholder="Enter username to invite..."
-                value={inviteUsername}
-                onChange={(e) => setInviteUsername(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleInviteMember()}
-              />
-              <Button 
-                onClick={handleInviteMember}
-                disabled={isInviting || !inviteUsername.trim()}
-              >
-                {isInviting ? 'Inviting...' : 'Invite'}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">League Join Code</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
+            <div className="flex-1">
+              <div className="text-xs text-muted-foreground">Share this code for others to join</div>
+            </div>
+            <div className="flex items-center gap-2">
+              <code className="px-2 py-1 bg-background rounded font-mono text-sm tracking-wider">
+                {leagueJoinCode}
+              </code>
+              <Button variant="outline" size="sm" onClick={handleCopyInviteCode}>
+                {copiedInvite ? <Check size={16} /> : <Copy size={16} />}
               </Button>
             </div>
-
-            <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
-              <div className="flex-1">
-                <div className="text-sm font-medium">League Join Code</div>
-                <div className="text-xs text-muted-foreground">
-                  Share this code for others to join
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <code className="px-2 py-1 bg-background rounded font-mono text-sm">
-                  {leagueJoinCode}
-                </code>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleCopyInviteCode}
-                >
-                  {copiedInvite ? <Check size={16} /> : <Copy size={16} />}
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Members List */}
       <Card>
@@ -258,6 +224,7 @@ export function LeagueManagement({
                   <Button
                     variant="outline"
                     size="sm"
+                    disabled={isSaving}
                     onClick={() => handleRemoveMember(member.userId, member.username)}
                   >
                     <UserMinus size={14} />
@@ -270,25 +237,38 @@ export function LeagueManagement({
       </Card>
 
       {/* Actions */}
-      {!isOwner && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Settings size={16} />
-              League Actions
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Settings size={16} />
+            League Actions
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {!isOwner && (
             <Button
               variant="destructive"
               onClick={handleLeaveLeague}
+              disabled={isSaving}
               className="w-full"
             >
               Leave League
             </Button>
-          </CardContent>
-        </Card>
-      )}
+          )}
+
+          {isOwner && (
+            <Button
+              variant="destructive"
+              onClick={handleDeleteLeague}
+              disabled={isSaving}
+              className="w-full"
+            >
+              <Trash size={16} className="mr-2" />
+              Delete League
+            </Button>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

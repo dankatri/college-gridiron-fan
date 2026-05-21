@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { League, LeagueSettings } from '@/lib/types';
-import { generateLeagueId, generateLeagueJoinCode } from '@/lib/league-utils';
+import { League } from '@/lib/types';
 import { SEASON_YEAR } from '@/lib/season-config';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,21 +8,17 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
-import { Plus, Users } from '@phosphor-icons/react';
+import { Plus } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
 interface CreateLeagueProps {
   onLeagueCreated: (league: League) => void;
   onCancel: () => void;
-  currentUserId: string;
-  currentUsername: string;
 }
 
 export function CreateLeague({ 
   onLeagueCreated, 
-  onCancel, 
-  currentUserId, 
-  currentUsername 
+  onCancel 
 }: CreateLeagueProps) {
   const [leagueName, setLeagueName] = useState('');
   const [description, setDescription] = useState('');
@@ -31,6 +26,41 @@ export function CreateLeague({
   const [isPublic, setIsPublic] = useState(false);
   const [allowLateJoins, setAllowLateJoins] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
+  const [createdJoinCode, setCreatedJoinCode] = useState<string | null>(null);
+
+  const parseLeagueFromApi = (payload: any): League => {
+    const league = payload.league;
+    return {
+      id: league.id,
+      name: league.name,
+      description: league.description ?? undefined,
+      ownerId: league.ownerId,
+      ownerName: league.ownerName ?? 'Owner',
+      joinCode: league.joinCode,
+      memberCount: league.memberCount ?? 1,
+      members: [
+        {
+          userId: league.ownerId,
+          username: league.ownerName ?? 'Owner',
+          avatarUrl: undefined,
+          role: 'owner',
+          joinedAt: new Date(league.createdAt),
+          isActive: true,
+          totalPoints: 0,
+          weeklyPoints: {},
+          rank: 1,
+        },
+      ],
+      settings: {
+        maxMembers: league.maxMembers,
+        isPublic: Boolean(league.isPublic),
+        allowLateJoins: Boolean(league.allowLateJoins),
+        scoringMultiplier: 1,
+      },
+      createdAt: new Date(league.createdAt),
+      season: league.season,
+    };
+  };
 
   const handleCreateLeague = async () => {
     if (!leagueName.trim()) {
@@ -41,39 +71,33 @@ export function CreateLeague({
     setIsCreating(true);
 
     try {
-      // Use props for current user identity
-      const settings: LeagueSettings = {
-        maxMembers: maxMembers[0],
-        isPublic,
-        allowLateJoins,
-        scoringMultiplier: 1.0
-      };
+      const response = await fetch('/api/leagues', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: leagueName.trim(),
+          description: description.trim() || undefined,
+          season: SEASON_YEAR,
+          maxMembers: maxMembers[0],
+          isPublic,
+          allowLateJoins,
+        }),
+      });
 
-      const league: League = {
-        id: generateLeagueId(),
-        name: leagueName.trim(),
-        description: description.trim() || undefined,
-        ownerId: currentUserId,
-        ownerName: currentUsername,
-        members: [{
-          userId: currentUserId,
-          username: currentUsername,
-          joinedAt: new Date(),
-          isActive: true,
-          totalPoints: 0,
-          weeklyPoints: {},
-          rank: 1
-        }],
-        settings,
-        createdAt: new Date(),
-        season: SEASON_YEAR
-      };
+      const payload = await response.json();
+      if (!response.ok || !payload.league) {
+        throw new Error(payload.error || 'Failed to create league');
+      }
 
+      const league = parseLeagueFromApi(payload);
+      setCreatedJoinCode(league.joinCode ?? null);
       onLeagueCreated(league);
-      toast.success(`League "${leagueName}" created successfully!`);
+      toast.success(`League "${league.name}" created successfully!`);
     } catch (error) {
       console.error('Error creating league:', error);
-      toast.error('Failed to create league. Please try again.');
+      const message = error instanceof Error ? error.message : 'Failed to create league. Please try again.';
+      toast.error(message);
     } finally {
       setIsCreating(false);
     }
@@ -88,6 +112,13 @@ export function CreateLeague({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
+        {createdJoinCode && (
+          <div className="rounded-lg border p-4 bg-muted/40">
+            <p className="text-sm text-muted-foreground mb-1">Share this join code:</p>
+            <p className="text-2xl font-mono font-semibold tracking-wider">{createdJoinCode}</p>
+          </div>
+        )}
+
         <div className="space-y-2">
           <Label htmlFor="league-name">League Name *</Label>
           <Input

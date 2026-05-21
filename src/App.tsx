@@ -586,6 +586,7 @@ function App() {
               currentWeek={currentWeek}
               weeklyLineups={weeklyLineups}
               currentUserId={currentUser?.id || ''}
+              currentUsername={currentUser?.displayName || ''}
             />
           </TabsContent>
         </Tabs>
