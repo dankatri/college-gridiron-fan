@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { db } from './../src/server/db';
-import { users } from './../src/server/schema';
+import { users, webauthnCredentials } from './../src/server/schema';
 import { getSessionCookie, verifySessionToken } from './../src/server/auth-utils';
 
 export const config = {
@@ -42,7 +42,22 @@ export default async function handler(request: Request): Promise<Response> {
       .limit(1);
 
     const user = rows[0] ?? null;
-    return jsonResponse({ user });
+    if (!user) {
+      return jsonResponse({ user: null });
+    }
+
+    const credentialRows = await db
+      .select({ credentialId: webauthnCredentials.credentialId })
+      .from(webauthnCredentials)
+      .where(eq(webauthnCredentials.userId, user.id))
+      .limit(1);
+
+    return jsonResponse({
+      user: {
+        ...user,
+        hasPasskey: credentialRows.length > 0,
+      },
+    });
   } catch (error) {
     console.error('[api/me] Failed to load current user', { error });
     return jsonResponse({ user: null });

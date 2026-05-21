@@ -33,8 +33,11 @@ export function PlayerTable({
   onPlayersUpdate,
   isLocked = false
 }: PlayerTableProps) {
+  const pageSizeOptions = ['10', '15', '20', '25'] as const;
   const [conferenceFilter, setConferenceFilter] = useState('All Conferences');
   const [teamFilter, setTeamFilter] = useState('All Teams');
+  const [pageSize, setPageSize] = useState<number>(15);
+  const [currentPage, setCurrentPage] = useState(1);
   const [conferences, setConferences] = useState<string[]>(['All Conferences']);
   const [teams, setTeams] = useState<string[]>(['All Teams']);
   const [isLoadingFilters, setIsLoadingFilters] = useState(true);
@@ -225,12 +228,31 @@ export function PlayerTable({
     return filtered.sort((a, b) => b.projectedPoints - a.projectedPoints);
   }, [enhancedPlayers, position, conferenceFilter, teamFilter]);
 
+  const totalPlayers = filteredPlayers.length;
+  const totalPages = Math.max(1, Math.ceil(totalPlayers / pageSize));
+  const paginatedPlayers = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredPlayers.slice(start, start + pageSize);
+  }, [filteredPlayers, currentPage, pageSize]);
+  const showingStart = totalPlayers === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const showingEnd = Math.min(currentPage * pageSize, totalPlayers);
+
   // Reset team filter when conference changes
   useEffect(() => {
     if (conferenceFilter !== 'All Conferences') {
       setTeamFilter('All Teams');
     }
   }, [conferenceFilter]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [conferenceFilter, teamFilter, position, pageSize]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   // Get relevant stats columns based on position
   const getStatsColumns = (position: 'QB' | 'RB' | 'WR') => {
@@ -339,6 +361,19 @@ export function PlayerTable({
             {(isLoadingPlayers || (isLoadingFilters && conferences.length <= 1)) && (
               <RefreshCw size={16} className="animate-spin text-muted-foreground" />
             )}
+
+            <Select value={String(pageSize)} onValueChange={(value) => setPageSize(Number(value))}>
+              <SelectTrigger className="w-[120px]">
+                <SelectValue placeholder="Per page" />
+              </SelectTrigger>
+              <SelectContent>
+                {pageSizeOptions.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {option} / page
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             
             {/* Status badges - only show if we have useful data */}
             {conferences.length > 1 && (
@@ -357,7 +392,7 @@ export function PlayerTable({
       
       <CardContent>
         <div className="space-y-2 md:hidden">
-          {filteredPlayers.map((player) => {
+          {paginatedPlayers.map((player) => {
             const playerStatus = getPlayerStatus(player);
             const canSelect = !isLocked && (playerStatus.status === 'available' || playerStatus.status === 'used');
 
@@ -436,7 +471,7 @@ export function PlayerTable({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredPlayers.map((player) => {
+              {paginatedPlayers.map((player) => {
                 const playerStatus = getPlayerStatus(player);
                 const canSelect = !isLocked && (playerStatus.status === 'available' || playerStatus.status === 'used');
 
@@ -516,8 +551,27 @@ export function PlayerTable({
             </TableBody>
           </Table>
         </div>
+
+        {totalPlayers > 0 && (
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-sm text-muted-foreground">
+              Showing {showingStart}-{showingEnd} of {totalPlayers}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setCurrentPage((previous) => previous - 1)} disabled={currentPage <= 1}>
+                Previous
+              </Button>
+              <div className="text-sm text-muted-foreground">
+                Page {currentPage} of {totalPages}
+              </div>
+              <Button variant="outline" size="sm" onClick={() => setCurrentPage((previous) => previous + 1)} disabled={currentPage >= totalPages}>
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
         
-        {filteredPlayers.length === 0 && !isLoadingPlayers && (
+        {totalPlayers === 0 && !isLoadingPlayers && (
           <div className="text-center py-8 text-muted-foreground">
             No players found matching your filters.
           </div>

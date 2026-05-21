@@ -28,6 +28,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Toaster } from '@/components/ui/sonner';
 import {
   Trophy,
@@ -62,6 +63,12 @@ type ApiLineup = {
   lockedAt: string | null;
 };
 
+type ApiMeResponse = {
+  user: {
+    hasPasskey?: boolean;
+  } | null;
+};
+
 function hydrateSlots(slots: ApiLineupSlot[], playersById: Map<string, Player>): LineupSlot[] {
   return [...slots]
     .sort((a, b) => a.slotIndex - b.slotIndex)
@@ -92,6 +99,8 @@ function App() {
   const [playerUsage, setPlayerUsage] = useState<PlayerUsage[]>([]);
   const [leagues, setLeagues] = useState<ApiLeagueSummary[]>([]);
   const [isLoadingLeagues, setIsLoadingLeagues] = useState(false);
+  const [hasPasskey, setHasPasskey] = useState(false);
+  const [playerSheetOpen, setPlayerSheetOpen] = useState(false);
 
   const { user: currentUser, isLoading, registerPasskey, signOut } = useAuth();
   const isAuthenticated = !!currentUser;
@@ -236,29 +245,64 @@ function App() {
     setCurrentLineup(hydrateSlots(currentWeekLineupRow.slots, playersById));
   }, [currentWeekLineupRow, playersById]);
 
-  const handlePlayerSelect = (player: Player) => {
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setHasPasskey(false);
+      return;
+    }
+
+    const loadPasskeyStatus = async () => {
+      try {
+        const response = await fetch('/api/me', {
+          method: 'GET',
+          credentials: 'include',
+        });
+        if (!response.ok) {
+          setHasPasskey(false);
+          return;
+        }
+        const payload = (await response.json()) as ApiMeResponse;
+        setHasPasskey(!!payload.user?.hasPasskey);
+      } catch (error) {
+        console.error('[App] Failed to load passkey status', { error });
+        setHasPasskey(false);
+      }
+    };
+
+    loadPasskeyStatus();
+  }, [isAuthenticated, currentUser?.id]);
+
+  const handlePlayerSelect = (player: Player): boolean => {
     if (!currentLeagueId) {
       toast.error('Choose a league first');
-      return;
+      return false;
     }
     if (isWeekLocked(currentWeek)) {
       toast.error(`Week ${currentWeek} lineup is locked and cannot be modified`);
-      return;
+      return false;
     }
     if (isPlayerInLineup(player.id, currentLineup)) {
       toast.error(`${player.name} is already in your lineup`);
-      return;
+      return false;
     }
 
     const availableSlot = currentLineup.find((slot) => slot.position === player.position && !slot.player);
     if (!availableSlot) {
       toast.error(`No available ${player.position} slots`);
-      return;
+      return false;
     }
 
     const newLineup = addPlayerToLineup(player, availableSlot.slotIndex, currentLineup);
     setCurrentLineup(newLineup);
     toast.success(`Added ${player.name} to lineup`);
+    return true;
+  };
+
+  const handlePlayerSelectFromSheet = (player: Player) => {
+    const wasAdded = handlePlayerSelect(player);
+    if (wasAdded) {
+      setPlayerSheetOpen(false);
+    }
   };
 
   const handleRemovePlayer = (slotIndex: number) => {
@@ -371,6 +415,8 @@ function App() {
 
   const handleLogout = async () => {
     await signOut();
+    setPlayerSheetOpen(false);
+    setHasPasskey(false);
     setPlayers([]);
     setCurrentLineup(createEmptyLineup());
     setCurrentWeek(1);
@@ -386,6 +432,7 @@ function App() {
   const handleAddPasskey = async () => {
     try {
       await registerPasskey();
+      setHasPasskey(true);
       toast.success('Passkey registered');
     } catch (error) {
       console.error('Failed to register passkey', { error });
@@ -446,13 +493,17 @@ function App() {
               </div>
               <div className="text-xs text-muted-foreground">{currentUser.email || ''}</div>
             </div>
-            <Button variant="outline" size="sm" onClick={handleAddPasskey} className="flex items-center justify-center gap-2 w-full sm:w-auto">
-              Add Passkey
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => void handleLogout()} className="flex items-center justify-center gap-2 w-full sm:w-auto">
-              <SignOut size={14} />
-              Logout
-            </Button>
+            {!hasPasskey && (
+              <Button variant="outline" size="sm" onClick={handleAddPasskey} className="flex items-center justify-center gap-2 w-full sm:w-auto">
+                Add Passkey
+              </Button>
+            )}
+            <div className="hidden md:flex">
+              <Button variant="outline" size="sm" onClick={() => void handleLogout()} className="flex items-center justify-center gap-2 w-full sm:w-auto">
+                <SignOut size={14} />
+                Logout
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -530,94 +581,30 @@ function App() {
                 </CardContent>
               </Card>
             ) : (
-              <div className="grid lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 space-y-4">
-                  <Card>
-                    <CardContent className="pt-6">
-                      <div className="flex flex-wrap items-center gap-3">
-                        <span className="text-sm text-muted-foreground">Current league</span>
-                        <Select value={currentLeagueId ?? ''} onValueChange={(value) => setCurrentLeagueId(value)}>
-                          <SelectTrigger className="w-full sm:w-[260px]">
-                            <SelectValue placeholder="Select league" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {leagues.map((league) => (
-                              <SelectItem key={league.id} value={league.id}>
-                                {league.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        {isLoadingLeagues && <span className="text-xs text-muted-foreground">Refreshing leagues...</span>}
-                        {currentLeagueName && <Badge variant="outline">{currentLeagueName}</Badge>}
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <h3 className="text-lg font-semibold">Available Players</h3>
-                      {isWeekLocked(currentWeek) && (
-                        <p className="text-sm text-orange-600 mt-1">Week {currentWeek} is locked - viewing only</p>
-                      )}
+              <div className="space-y-4">
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span className="text-sm text-muted-foreground">Current league</span>
+                      <Select value={currentLeagueId ?? ''} onValueChange={(value) => setCurrentLeagueId(value)}>
+                        <SelectTrigger className="w-full sm:w-[260px]">
+                          <SelectValue placeholder="Select league" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {leagues.map((league) => (
+                            <SelectItem key={league.id} value={league.id}>
+                              {league.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {isLoadingLeagues && <span className="text-xs text-muted-foreground">Refreshing leagues...</span>}
+                      {currentLeagueName && <Badge variant="outline">{currentLeagueName}</Badge>}
                     </div>
-                    <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleRefreshPlayers}
-                        disabled={isLoadingPlayers}
-                        className="flex items-center justify-center gap-2 w-full sm:w-auto"
-                      >
-                        <RefreshCw size={14} className={isLoadingPlayers ? 'animate-spin' : ''} />
-                        Refresh
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={handleForceSampleData}
-                        disabled={isLoadingPlayers}
-                        className="flex items-center justify-center gap-2 w-full sm:w-auto"
-                      >
-                        Reload Data
-                      </Button>
-                    </div>
-                  </div>
+                  </CardContent>
+                </Card>
 
-                  {isLoadingPlayers ? (
-                    <Card>
-                      <CardContent className="flex items-center justify-center py-12">
-                        <div className="flex items-center gap-3 text-muted-foreground">
-                          <RefreshCw size={20} className="animate-spin" />
-                          Loading {SEASON_YEAR} season players from ESPN...
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ) : (
-                    <Tabs value={selectedPosition} onValueChange={(value) => setSelectedPosition(value as 'QB' | 'RB' | 'WR')}>
-                      <TabsList className="grid w-full grid-cols-3">
-                        <TabsTrigger value="QB">Quarterbacks</TabsTrigger>
-                        <TabsTrigger value="RB">Running Backs</TabsTrigger>
-                        <TabsTrigger value="WR">Wide Receivers</TabsTrigger>
-                      </TabsList>
-
-                      <TabsContent value={selectedPosition} className="mt-4">
-                        <PlayerTable
-                          position={selectedPosition}
-                          players={players}
-                          playerUsage={playerUsage}
-                          currentLineup={currentLineup}
-                          currentWeek={currentWeek}
-                          onPlayerSelect={handlePlayerSelect}
-                          onPlayersUpdate={handlePlayersUpdate}
-                          isLocked={isWeekLocked(currentWeek)}
-                        />
-                      </TabsContent>
-                    </Tabs>
-                  )}
-                </div>
-
-                <div className="space-y-4">
+                <div className="md:hidden space-y-4">
                   <ByeWeekAlert lineup={currentLineup} currentWeek={currentWeek} />
 
                   <Card>
@@ -645,6 +632,80 @@ function App() {
                     </CardContent>
                   </Card>
 
+                  <div className="space-y-3">
+                    <div>
+                      <h3 className="text-lg font-semibold">Available Players</h3>
+                      {isWeekLocked(currentWeek) && (
+                        <p className="text-sm text-orange-600 mt-1">Week {currentWeek} is locked - viewing only</p>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleRefreshPlayers}
+                        disabled={isLoadingPlayers}
+                        className="flex items-center justify-center gap-2 w-full"
+                      >
+                        <RefreshCw size={14} className={isLoadingPlayers ? 'animate-spin' : ''} />
+                        Refresh
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={handleForceSampleData}
+                        disabled={isLoadingPlayers}
+                        className="flex items-center justify-center gap-2 w-full"
+                      >
+                        Reload Data
+                      </Button>
+                      <Button onClick={() => setPlayerSheetOpen(true)} className="w-full">
+                        Browse Available Players
+                      </Button>
+                    </div>
+                  </div>
+
+                  <Sheet open={playerSheetOpen} onOpenChange={setPlayerSheetOpen}>
+                    <SheetContent side="bottom" className="h-[85vh]">
+                      <SheetHeader>
+                        <SheetTitle>Available Players</SheetTitle>
+                      </SheetHeader>
+                      <div className="flex-1 overflow-y-auto px-4 pb-16">
+                        {isLoadingPlayers ? (
+                          <Card>
+                            <CardContent className="flex items-center justify-center py-12">
+                              <div className="flex items-center gap-3 text-muted-foreground">
+                                <RefreshCw size={20} className="animate-spin" />
+                                Loading {SEASON_YEAR} season players from ESPN...
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ) : (
+                          <Tabs value={selectedPosition} onValueChange={(value) => setSelectedPosition(value as 'QB' | 'RB' | 'WR')}>
+                            <TabsList className="grid w-full grid-cols-3">
+                              <TabsTrigger value="QB">Quarterbacks</TabsTrigger>
+                              <TabsTrigger value="RB">Running Backs</TabsTrigger>
+                              <TabsTrigger value="WR">Wide Receivers</TabsTrigger>
+                            </TabsList>
+
+                            <TabsContent value={selectedPosition} className="mt-4">
+                              <PlayerTable
+                                position={selectedPosition}
+                                players={players}
+                                playerUsage={playerUsage}
+                                currentLineup={currentLineup}
+                                currentWeek={currentWeek}
+                                onPlayerSelect={handlePlayerSelectFromSheet}
+                                onPlayersUpdate={handlePlayersUpdate}
+                                isLocked={isWeekLocked(currentWeek)}
+                              />
+                            </TabsContent>
+                          </Tabs>
+                        )}
+                      </div>
+                    </SheetContent>
+                  </Sheet>
+
                   <LineupSummary lineup={currentLineup} actualPoints={currentWeekLineup?.actualPoints} />
 
                   <Card>
@@ -664,6 +725,121 @@ function App() {
                       </div>
                     </CardContent>
                   </Card>
+                </div>
+
+                <div className="hidden md:grid md:grid-cols-3 gap-6">
+                  <div className="md:col-span-2 space-y-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <h3 className="text-lg font-semibold">Available Players</h3>
+                        {isWeekLocked(currentWeek) && (
+                          <p className="text-sm text-orange-600 mt-1">Week {currentWeek} is locked - viewing only</p>
+                        )}
+                      </div>
+                      <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleRefreshPlayers}
+                          disabled={isLoadingPlayers}
+                          className="flex items-center justify-center gap-2 w-full sm:w-auto"
+                        >
+                          <RefreshCw size={14} className={isLoadingPlayers ? 'animate-spin' : ''} />
+                          Refresh
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={handleForceSampleData}
+                          disabled={isLoadingPlayers}
+                          className="flex items-center justify-center gap-2 w-full sm:w-auto"
+                        >
+                          Reload Data
+                        </Button>
+                      </div>
+                    </div>
+
+                    {isLoadingPlayers ? (
+                      <Card>
+                        <CardContent className="flex items-center justify-center py-12">
+                          <div className="flex items-center gap-3 text-muted-foreground">
+                            <RefreshCw size={20} className="animate-spin" />
+                            Loading {SEASON_YEAR} season players from ESPN...
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      <Tabs value={selectedPosition} onValueChange={(value) => setSelectedPosition(value as 'QB' | 'RB' | 'WR')}>
+                        <TabsList className="grid w-full grid-cols-3">
+                          <TabsTrigger value="QB">Quarterbacks</TabsTrigger>
+                          <TabsTrigger value="RB">Running Backs</TabsTrigger>
+                          <TabsTrigger value="WR">Wide Receivers</TabsTrigger>
+                        </TabsList>
+
+                        <TabsContent value={selectedPosition} className="mt-4">
+                          <PlayerTable
+                            position={selectedPosition}
+                            players={players}
+                            playerUsage={playerUsage}
+                            currentLineup={currentLineup}
+                            currentWeek={currentWeek}
+                            onPlayerSelect={handlePlayerSelect}
+                            onPlayersUpdate={handlePlayersUpdate}
+                            isLocked={isWeekLocked(currentWeek)}
+                          />
+                        </TabsContent>
+                      </Tabs>
+                    )}
+                  </div>
+
+                  <div className="space-y-4">
+                    <ByeWeekAlert lineup={currentLineup} currentWeek={currentWeek} />
+
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <Target size={20} />
+                          Your Lineup
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        {currentLineup.map((slot) => (
+                          <LineupSlotCard
+                            key={slot.slotIndex}
+                            slot={slot}
+                            onRemovePlayer={handleRemovePlayer}
+                            onDropPlayer={handleDropPlayer}
+                            canDrop={!slot.player}
+                            isLocked={isWeekLocked(currentWeek)}
+                          />
+                        ))}
+
+                        <Button onClick={() => void handleSaveLineup()} className="w-full" disabled={!isLineupComplete(currentLineup) || isWeekLocked(currentWeek)}>
+                          {isWeekLocked(currentWeek) ? `Week ${currentWeek} Locked` : `Save Week ${currentWeek} Lineup`}
+                        </Button>
+                      </CardContent>
+                    </Card>
+
+                    <LineupSummary lineup={currentLineup} actualPoints={currentWeekLineup?.actualPoints} />
+
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-base">Season Stats</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Weeks Completed</span>
+                          <Badge variant="outline">
+                            {weeklyLineups.length}/{TOTAL_WEEKS}
+                          </Badge>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Players at Max Uses</span>
+                          <Badge variant="outline">{playerUsage.filter((entry) => entry.timesUsed >= MAX_PLAYER_USES).length}</Badge>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
                 </div>
               </div>
             )}
@@ -686,6 +862,17 @@ function App() {
             />
           </TabsContent>
         </Tabs>
+
+        <footer className="flex md:hidden items-center justify-between gap-3 border-t pt-4 text-sm">
+          <div className="min-w-0">
+            <div className="font-medium truncate">{currentUser.displayName}</div>
+            <div className="text-xs text-muted-foreground">{SEASON_YEAR} Season</div>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => void handleLogout()} className="flex items-center gap-2">
+            <SignOut size={14} />
+            Logout
+          </Button>
+        </footer>
       </div>
       <Toaster />
     </div>
