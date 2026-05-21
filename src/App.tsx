@@ -42,7 +42,7 @@ function App() {
   const [isLoadingPlayers, setIsLoadingPlayers] = useState(true);
   
   // Authentication via local profile
-  const { user: currentUser, signIn, signOut } = useAuth();
+  const { user: currentUser, isLoading, registerPasskey, signOut } = useAuth();
   const isAuthenticated = !!currentUser;
 
   // Load players only when authenticated
@@ -271,19 +271,24 @@ function App() {
     }
   };
 
-  const handleLoginSuccess = (login: string, email?: string) => {
-    signIn(login, email);
-    toast.success(`Welcome, ${login}!`);
-  };
-
-  const handleLogout = () => {
-    signOut();
+  const handleLogout = async () => {
+    await signOut();
     setPlayers([]);
     setCurrentLineup(createEmptyLineup());
     setCurrentWeek(1);
     setActiveTab('lineup');
     clearCache();
     toast.success('Logged out successfully');
+  };
+
+  const handleAddPasskey = async () => {
+    try {
+      await registerPasskey();
+      toast.success('Passkey registered');
+    } catch (error) {
+      console.error('Failed to register passkey', { error });
+      toast.error(error instanceof Error ? error.message : 'Failed to register passkey');
+    }
   };
 
   const handlePointsUpdate = (week: number, actualPoints: number) => {
@@ -297,9 +302,20 @@ function App() {
 
   const currentWeekLineup = weeklyLineups.find(w => w.week === currentWeek);
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="flex items-center gap-3 text-muted-foreground">
+          <RefreshCw size={20} className="animate-spin" />
+          Checking session...
+        </div>
+      </div>
+    );
+  }
+
   // Show login screen if not authenticated
   if (!isAuthenticated) {
-    return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
+    return <LoginScreen />;
   }
 
   return (
@@ -324,20 +340,28 @@ function App() {
                 {currentUser.avatarUrl && (
                   <img 
                     src={currentUser.avatarUrl} 
-                    alt={currentUser.login}
+                    alt={currentUser.displayName}
                     className="w-6 h-6 rounded-full"
                   />
                 )}
-                {currentUser.login}
+                {currentUser.displayName}
               </div>
               <div className="text-xs text-muted-foreground">
-                {currentUser.email}
+                {currentUser.email || ''}
               </div>
             </div>
             <Button
               variant="outline"
               size="sm"
-              onClick={handleLogout}
+              onClick={handleAddPasskey}
+              className="flex items-center gap-2"
+            >
+              Add Passkey
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void handleLogout()}
               className="flex items-center gap-2"
             >
               <SignOut size={14} />

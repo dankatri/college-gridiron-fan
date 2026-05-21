@@ -1,31 +1,170 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
-import { type LocalUser, getStoredUser, saveUser, clearUser, createLocalUser } from '@/lib/auth';
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
+
+export type User = {
+  id: string;
+  email: string;
+  displayName: string;
+  avatarUrl?: string | null;
+};
+
+type AuthResponse = {
+  user: User | null;
+  error?: string;
+};
 
 interface AuthContextValue {
-  user: LocalUser | null;
-  signIn: (login: string, email?: string) => void;
-  signOut: () => void;
+  user: User | null;
+  isLoading: boolean;
+  signIn: (email: string, password: string) => Promise<void>;
+  register: (email: string, password: string, displayName: string) => Promise<void>;
+  signInWithPasskey: (email: string) => Promise<void>;
+  registerPasskey: () => Promise<void>;
+  signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  // Synchronous init from localStorage — no async loading state needed
-  const [user, setUser] = useState<LocalUser | null>(() => getStoredUser());
+async function readJson<T>(response: Response): Promise<T> {
+  const payload = (await response.json()) as T;
+  return payload;
+}
 
-  const signIn = useCallback((login: string, email?: string) => {
-    const newUser = createLocalUser(login, email);
-    saveUser(newUser);
-    setUser(newUser);
+function toErrorMessage(message: unknown, fallback: string): string {
+  return typeof message === 'string' && message.length > 0 ? message : fallback;
+}
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const refreshSession = useCallback(async () => {
+    try {
+      const response = await fetch('/api/me', {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        setUser(null);
+        return;
+      }
+      const payload = await readJson<AuthResponse>(response);
+      setUser(payload.user ?? null);
+    } catch (error) {
+      console.error('[useAuth] Failed to check session', { error });
+      setUser(null);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
-  const signOut = useCallback(() => {
-    clearUser();
-    setUser(null);
+  useEffect(() => {
+    refreshSession();
+  }, [refreshSession]);
+
+  const signIn = useCallback(async (email: string, password: string) => {
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+
+    const payload = await readJson<AuthResponse>(response);
+    if (!response.ok || !payload.user) {
+      throw new Error(toErrorMessage(payload.error, 'Failed to sign in'));
+    }
+
+    setUser(payload.user);
+  }, []);
+
+  const register = useCallback(async (email: string, password: string, displayName: string) => {
+    const response = await fetch('/api/auth/register', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, displayName }),
+    });
+
+    const payload = await readJson<AuthResponse>(response);
+    if (!response.ok || !payload.user) {
+      throw new Error(toErrorMessage(payload.error, 'Failed to register account'));
+    }
+
+    setUser(payload.user);
+  }, []);
+
+  const signInWithPasskey = useCallback(async (email: string) => {
+    const optionsResponse = await fetch('/api/auth/passkey/login-options', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const optionsPayload = await readJson<{ options?: unknown; error?: string }>(optionsResponse);
+    if (!optionsResponse.ok || !optionsPayload.options) {
+      throw new Error(toErrorMessage(optionsPayload.error, 'Failed to start passkey login'));
+    }
+
+    const authenticationResponse = await startAuthentication({
+      optionsJSON: optionsPayload.options as Parameters<typeof startAuthentication>[0]['optionsJSON'],
+    });
+
+    const verifyResponse = await fetch('/api/auth/passkey/login-verify', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ response: authenticationResponse }),
+    });
+    const verifyPayload = await readJson<AuthResponse>(verifyResponse);
+    if (!verifyResponse.ok || !verifyPayload.user) {
+      throw new Error(toErrorMessage(verifyPayload.error, 'Passkey sign-in failed'));
+    }
+
+    setUser(verifyPayload.user);
+  }, []);
+
+  const registerPasskey = useCallback(async () => {
+    const optionsResponse = await fetch('/api/auth/passkey/register-options', {
+      method: 'GET',
+      credentials: 'include',
+    });
+    const optionsPayload = await readJson<{ options?: unknown; error?: string }>(optionsResponse);
+    if (!optionsResponse.ok || !optionsPayload.options) {
+      throw new Error(toErrorMessage(optionsPayload.error, 'Failed to start passkey registration'));
+    }
+
+    const registrationResponse = await startRegistration({
+      optionsJSON: optionsPayload.options as Parameters<typeof startRegistration>[0]['optionsJSON'],
+    });
+
+    const verifyResponse = await fetch('/api/auth/passkey/register-verify', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ response: registrationResponse }),
+    });
+    const verifyPayload = await readJson<{ ok?: boolean; error?: string }>(verifyResponse);
+    if (!verifyResponse.ok || !verifyPayload.ok) {
+      throw new Error(toErrorMessage(verifyPayload.error, 'Failed to register passkey'));
+    }
+  }, []);
+
+  const signOut = useCallback(async () => {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } catch (error) {
+      console.error('[useAuth] Failed to log out', { error });
+    } finally {
+      setUser(null);
+    }
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, isLoading, signIn, register, signInWithPasskey, registerPasskey, signOut }}>
       {children}
     </AuthContext.Provider>
   );
