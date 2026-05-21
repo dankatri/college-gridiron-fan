@@ -92,17 +92,12 @@ interface ESPNPlayerStats {
   }>;
 }
 
-// ESPN API request helper
+// ESPN API request helper — no custom headers to avoid CORS preflight
 const espnRequest = async (endpoint: string): Promise<any> => {
   console.log(`Making ESPN API request to: ${ESPN_BASE_URL}${endpoint}`);
   
   try {
-    const response = await fetch(`${ESPN_BASE_URL}${endpoint}`, {
-      headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'College Fantasy Football App',
-      },
-    });
+    const response = await fetch(`${ESPN_BASE_URL}${endpoint}`);
 
     if (!response.ok) {
       console.error(`ESPN API request failed: ${response.status} ${response.statusText}`);
