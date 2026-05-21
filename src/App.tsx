@@ -52,9 +52,6 @@ function App() {
     const loadPlayers = async () => {
       setIsLoadingPlayers(true);
       try {
-        // Clear cache on component mount to ensure fresh season data
-        clearCache();
-        
         const currentPlayers = await getPlayers();
         setPlayers(currentPlayers);
         

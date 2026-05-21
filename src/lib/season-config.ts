@@ -122,7 +122,7 @@ export const MAJOR_PROGRAMS: Record<string, Record<string, string>> = {
 };
 
 // Dev-mode assertion: validate week date spacing
-if (import.meta.env.DEV) {
+if (import.meta.env?.DEV) {
   const weeks = Object.keys(WEEK_START_DATES).map(Number).sort((a, b) => a - b);
   for (let i = 0; i < weeks.length - 1; i++) {
     const curr = WEEK_START_DATES[weeks[i]];

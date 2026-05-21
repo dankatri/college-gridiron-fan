@@ -405,6 +405,25 @@ const getCacheKey = (options?: { specificTeam?: string; specificConference?: str
   return `${options.specificTeam || 'all'}_${options.specificConference || 'all'}`;
 };
 
+const applyPlayerFilters = (
+  players: Player[],
+  options?: { specificTeam?: string; specificConference?: string }
+) => {
+  return players.filter((player) => {
+    const teamMatches =
+      !options?.specificTeam ||
+      options.specificTeam === 'All Teams' ||
+      player.team === options.specificTeam;
+
+    const conferenceMatches =
+      !options?.specificConference ||
+      options.specificConference === 'All Conferences' ||
+      player.conference === options.specificConference;
+
+    return teamMatches && conferenceMatches;
+  });
+};
+
 // Check if cache is valid
 const isCacheValid = (timestamp: number) => {
   return Date.now() - timestamp < CACHE_DURATION;
@@ -421,7 +440,7 @@ export const getPlayers = async (options?: {
   // Check if cached data is valid (has proper player names)
   if (cachedData && isCacheValid(cachedData.timestamp)) {
     const hasValidNames = cachedData.players.every(p => p.name && !p.name.includes('undefined') && p.name.trim() !== '');
-    if (hasValidNames && cachedData.players.length > 0) {
+    if (hasValidNames) {
       console.log(`Using cached players for ${cacheKey}:`, cachedData.players.length);
       return cachedData.players;
     } else {
@@ -431,6 +450,46 @@ export const getPlayers = async (options?: {
   }
 
   console.log(`Attempting to fetch players from ESPN with options:`, options);
+
+  try {
+    const response = await fetch('/api/players');
+    if (!response.ok) {
+      throw new Error(`/api/players failed: ${response.status} ${response.statusText}`);
+    }
+
+    const payload = await response.json();
+    const apiPlayers = Array.isArray(payload)
+      ? (payload as Player[])
+      : Array.isArray(payload?.players)
+        ? (payload.players as Player[])
+        : [];
+
+    const filteredApiPlayers = applyPlayerFilters(apiPlayers, options);
+    const validApiPlayers = filteredApiPlayers.filter(p =>
+      p.name &&
+      p.name.trim() !== '' &&
+      !p.name.includes('undefined') &&
+      !p.name.startsWith('Player ')
+    );
+
+    if (validApiPlayers.length > 0) {
+      playersCache.set(cacheKey, {
+        players: validApiPlayers,
+        timestamp: Date.now()
+      });
+      console.log(`Loaded ${validApiPlayers.length} players from /api/players for ${cacheKey}`);
+      return validApiPlayers;
+    }
+
+    console.warn('/api/players returned no cached players yet. Returning empty result.');
+    playersCache.set(cacheKey, {
+      players: [],
+      timestamp: Date.now()
+    });
+    return [];
+  } catch (error) {
+    console.warn('Server cache fetch failed, falling back to direct ESPN fetch:', error);
+  }
   
   try {
     console.log('Fetching current players from ESPN...');
