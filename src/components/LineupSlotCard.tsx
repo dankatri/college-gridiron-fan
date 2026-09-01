@@ -102,7 +102,10 @@ export function LineupSlotCard({
               </div>
             </div>
             
-            <div className="text-right">
+            <div className="flex items-baseline justify-end gap-1.5">
+              <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                Projected
+              </span>
               <span className="text-sm font-semibold text-accent-foreground">
                 {slot.player.projectedPoints.toFixed(1)} pts
               </span>

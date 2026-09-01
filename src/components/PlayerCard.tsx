@@ -53,8 +53,13 @@ export function PlayerCard({
               {usageText}
             </Badge>
           </div>
-          <div className="text-sm font-semibold text-accent-foreground">
-            {player.projectedPoints.toFixed(1)} pts
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              Projected
+            </span>
+            <span className="text-sm font-semibold text-accent-foreground">
+              {player.projectedPoints.toFixed(1)} pts
+            </span>
           </div>
         </div>
         

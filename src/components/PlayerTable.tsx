@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, type ReactNode } from 'react';
 import { Player, PlayerUsage } from '@/lib/types';
 import { getConferences, getTeams, getPlayers } from '@/lib/data';
 import { isPlayerAvailable, isPlayerInLineup } from '@/lib/utils-fantasy';
@@ -10,7 +10,21 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { LineupSlot } from '@/lib/types';
 import { ByeWeekIndicator } from '@/components/ByeWeekIndicator';
-import { Users, Funnel as Filter, Trophy, ArrowClockwise as RefreshCw, User } from '@phosphor-icons/react';
+import { WeekMatchup } from '@/components/WeekMatchup';
+import { useWeekMatchups } from '@/hooks/use-week-matchups';
+import {
+  Users,
+  Funnel as Filter,
+  Trophy,
+  ArrowClockwise as RefreshCw,
+  User,
+  CaretUp,
+  CaretDown,
+  CaretUpDown,
+} from '@phosphor-icons/react';
+
+type SortKey = 'projectedPoints' | keyof Player;
+type SortDirection = 'asc' | 'desc';
 
 interface PlayerTableProps {
   position: 'QB' | 'RB' | 'WR';
@@ -43,6 +57,9 @@ export function PlayerTable({
   const [isLoadingFilters, setIsLoadingFilters] = useState(true);
   const [isLoadingPlayers, setIsLoadingPlayers] = useState(false);
   const [enhancedPlayers, setEnhancedPlayers] = useState<Player[]>(players);
+  const [sortKey, setSortKey] = useState<SortKey>('projectedPoints');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const { matchups, isLoading: isLoadingMatchups } = useWeekMatchups(currentWeek);
 
   // Immediately set initial conference data from players if available
   useEffect(() => {
@@ -223,10 +240,23 @@ export function PlayerTable({
     if (teamFilter !== 'All Teams') {
       filtered = filtered.filter(p => p.team === teamFilter);
     }
-    
-    // Sort by projected points descending
-    return filtered.sort((a, b) => b.projectedPoints - a.projectedPoints);
-  }, [enhancedPlayers, position, conferenceFilter, teamFilter]);
+
+    // Missing stats sort last in both directions rather than counting as zero.
+    const direction = sortDirection === 'asc' ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const aValue = a[sortKey as keyof Player] as number | undefined;
+      const bValue = b[sortKey as keyof Player] as number | undefined;
+
+      const aMissing = typeof aValue !== 'number' || Number.isNaN(aValue);
+      const bMissing = typeof bValue !== 'number' || Number.isNaN(bValue);
+      if (aMissing && bMissing) return a.name.localeCompare(b.name);
+      if (aMissing) return 1;
+      if (bMissing) return -1;
+
+      if (aValue === bValue) return a.name.localeCompare(b.name);
+      return (aValue - bValue) * direction;
+    });
+  }, [enhancedPlayers, position, conferenceFilter, teamFilter, sortKey, sortDirection]);
 
   const totalPlayers = filteredPlayers.length;
   const totalPages = Math.max(1, Math.ceil(totalPlayers / pageSize));
@@ -246,7 +276,7 @@ export function PlayerTable({
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [conferenceFilter, teamFilter, position, pageSize]);
+  }, [conferenceFilter, teamFilter, position, pageSize, sortKey, sortDirection]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -287,6 +317,42 @@ export function PlayerTable({
   };
 
   const statsColumns = getStatsColumns(position);
+
+  // New column starts on the most useful direction (highest first), then toggles.
+  const handleSort = (key: SortKey) => {
+    if (key === sortKey) {
+      setSortDirection(current => (current === 'desc' ? 'asc' : 'desc'));
+    } else {
+      setSortKey(key);
+      setSortDirection('desc');
+    }
+  };
+
+  const renderSortableHeader = (key: SortKey, label: ReactNode) => {
+    const isActive = sortKey === key;
+    const ariaSort = isActive ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none';
+
+    return (
+      <TableHead key={String(key)} className="text-center" aria-sort={ariaSort}>
+        <button
+          type="button"
+          onClick={() => handleSort(key)}
+          className={`mx-auto flex items-center justify-center gap-1 rounded-sm px-1 py-0.5 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+            isActive ? 'text-foreground' : 'text-muted-foreground'
+          }`}
+          title={`Sort by ${typeof label === 'string' ? label : String(key)}`}
+        >
+          {label}
+          {isActive ? (
+            sortDirection === 'asc' ? <CaretUp size={12} weight="bold" /> : <CaretDown size={12} weight="bold" />
+          ) : (
+            <CaretUpDown size={12} className="opacity-50" />
+          )}
+        </button>
+      </TableHead>
+    );
+  };
+
   const positionName = position === 'QB' ? 'Quarterbacks' : position === 'RB' ? 'Running Backs' : 'Wide Receivers';
 
   const getUsageCount = (playerId: string) => {
@@ -443,8 +509,19 @@ export function PlayerTable({
                   </Button>
                 </div>
 
-                <div className="mt-2 text-xs text-muted-foreground">
-                  {player.team} • {player.conference} • {player.projectedPoints} pts
+                <div className="mt-2 flex flex-wrap items-center gap-x-1 gap-y-1 text-xs text-muted-foreground">
+                  <span>{player.team}</span>
+                  <span>•</span>
+                  <span>{player.conference}</span>
+                  <span>•</span>
+                  <span>Projected {player.projectedPoints} pts</span>
+                  <span>•</span>
+                  <WeekMatchup
+                    teamName={player.team}
+                    week={currentWeek}
+                    matchup={matchups.get(player.team.toLowerCase())}
+                    isLoading={isLoadingMatchups}
+                  />
                 </div>
               </div>
             );
@@ -459,15 +536,14 @@ export function PlayerTable({
                 <TableHead>Team</TableHead>
                 <TableHead>Conf</TableHead>
                 <TableHead className="text-center">Schedule</TableHead>
-                <TableHead className="text-center">
-                  <div className="flex items-center justify-center gap-1">
+                {renderSortableHeader(
+                  'projectedPoints',
+                  <span className="flex items-center gap-1">
                     <Trophy size={14} />
                     Proj
-                  </div>
-                </TableHead>
-                {statsColumns.map(col => (
-                  <TableHead key={col.key} className="text-center">{col.label}</TableHead>
-                ))}
+                  </span>,
+                )}
+                {statsColumns.map(col => renderSortableHeader(col.key as SortKey, col.label))}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -537,7 +613,15 @@ export function PlayerTable({
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">{player.conference}</TableCell>
                     <TableCell className="text-center">
-                      <ByeWeekIndicator player={player} currentWeek={currentWeek} />
+                      <div className="flex items-center justify-center gap-1">
+                        <WeekMatchup
+                          teamName={player.team}
+                          week={currentWeek}
+                          matchup={matchups.get(player.team.toLowerCase())}
+                          isLoading={isLoadingMatchups}
+                        />
+                        <ByeWeekIndicator player={player} currentWeek={currentWeek} />
+                      </div>
                     </TableCell>
                     <TableCell className="text-center font-medium">{player.projectedPoints}</TableCell>
                     {statsColumns.map(col => (
