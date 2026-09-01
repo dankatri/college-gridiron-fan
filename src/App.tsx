@@ -104,12 +104,26 @@ function App() {
 
   const { user: currentUser, isLoading, registerPasskey, signOut } = useAuth();
   const isAuthenticated = !!currentUser;
+  const [hasPasswordResetLink, setHasPasswordResetLink] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      window.location.pathname.replace(/\/+$/, '').endsWith('/reset-password') &&
+      new URL(window.location.href).searchParams.has('token'),
+  );
   const [currentLeagueId, setCurrentLeagueId] = useLocalStorage<string | null>(
     `current-league-${currentUser?.id || 'unknown'}`,
     null,
   );
 
   const playersById = useMemo(() => new Map(players.map((player) => [player.id, player])), [players]);
+
+  // The reset screen clears the token from the URL once the password is updated.
+  useEffect(() => {
+    if (!currentUser || typeof window === 'undefined') return;
+    if (!window.location.pathname.replace(/\/+$/, '').endsWith('/reset-password')) {
+      setHasPasswordResetLink(false);
+    }
+  }, [currentUser]);
 
   const weeklyLineups = useMemo<WeeklyLineup[]>(
     () =>
@@ -468,7 +482,7 @@ function App() {
     );
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || hasPasswordResetLink) {
     return <LoginScreen />;
   }
 

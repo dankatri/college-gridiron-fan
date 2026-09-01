@@ -11,7 +11,18 @@ export type User = {
 type AuthResponse = {
   user: User | null;
   error?: string;
+  code?: string;
 };
+
+export class AuthError extends Error {
+  code?: string;
+
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = 'AuthError';
+    this.code = code;
+  }
+}
 
 interface AuthContextValue {
   user: User | null;
@@ -20,6 +31,8 @@ interface AuthContextValue {
   register: (email: string, password: string, displayName: string) => Promise<void>;
   signInWithPasskey: (email: string) => Promise<void>;
   registerPasskey: () => Promise<void>;
+  requestPasswordReset: (email: string) => Promise<string>;
+  resetPassword: (token: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -88,7 +101,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const payload = await readJson<AuthResponse>(response);
     if (!response.ok || !payload.user) {
-      throw new Error(toErrorMessage(payload.error, 'Failed to register account'));
+      throw new AuthError(toErrorMessage(payload.error, 'Failed to register account'), payload.code);
+    }
+
+    setUser(payload.user);
+  }, []);
+
+  const requestPasswordReset = useCallback(async (email: string) => {
+    const response = await fetch('/api/auth/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+
+    const payload = await readJson<{ ok?: boolean; message?: string; error?: string }>(response);
+    if (!response.ok || !payload.ok) {
+      throw new AuthError(toErrorMessage(payload.error, 'Failed to send password reset email'));
+    }
+
+    return toErrorMessage(
+      payload.message,
+      'If an account exists for that email, we have sent a password reset link.',
+    );
+  }, []);
+
+  const resetPassword = useCallback(async (token: string, password: string) => {
+    const response = await fetch('/api/auth/reset-password', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, password }),
+    });
+
+    const payload = await readJson<AuthResponse>(response);
+    if (!response.ok || !payload.user) {
+      throw new AuthError(toErrorMessage(payload.error, 'Failed to reset password'), payload.code);
     }
 
     setUser(payload.user);
@@ -164,7 +211,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, signIn, register, signInWithPasskey, registerPasskey, signOut }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        isLoading,
+        signIn,
+        register,
+        signInWithPasskey,
+        registerPasskey,
+        requestPasswordReset,
+        resetPassword,
+        signOut,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

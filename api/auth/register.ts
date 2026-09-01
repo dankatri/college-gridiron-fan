@@ -1,4 +1,5 @@
 import { hashPassword } from '../../src/server/password';
+import { eq } from 'drizzle-orm';
 import { db } from '../../src/server/db';
 import { users } from '../../src/server/schema';
 import { createSessionToken, sessionCookieHeader } from '../../src/server/auth-utils';
@@ -20,6 +21,14 @@ function jsonResponse(body: unknown, status = 200, setCookie?: string): Response
   if (setCookie) headers.set('Set-Cookie', setCookie);
   return new Response(JSON.stringify(body), { status, headers });
 }
+
+// Deliberately does not confirm that the address is registered, while still
+// pointing the user at the two actions that will unblock them.
+const CONFLICT_RESPONSE = {
+  error:
+    "We couldn't create an account with those details. If you already have an account, try signing in or resetting your password.",
+  code: 'REGISTRATION_CONFLICT',
+};
 
 export default async function handler(request: Request): Promise<Response> {
   if (request.method !== 'POST') {
@@ -48,6 +57,16 @@ export default async function handler(request: Request): Promise<Response> {
   }
 
   try {
+    const existing = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1);
+
+    if (existing.length > 0) {
+      return jsonResponse(CONFLICT_RESPONSE, 409);
+    }
+
     const passwordHash = await hashPassword(password);
     const inserted = await db
       .insert(users)
@@ -79,7 +98,7 @@ export default async function handler(request: Request): Promise<Response> {
     console.error('[api/auth/register] Failed to register user', { error, email });
     const message = error instanceof Error ? error.message : '';
     if (message.includes('unique') || message.includes('users_email_unique')) {
-      return jsonResponse({ error: 'An account with this email already exists' }, 409);
+      return jsonResponse(CONFLICT_RESPONSE, 409);
     }
     return jsonResponse({ error: 'Failed to register user' }, 500);
   }
