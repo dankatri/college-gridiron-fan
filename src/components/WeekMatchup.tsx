@@ -95,6 +95,34 @@ export function WeekMatchup({ teamName, week, matchup, isLoading = false, classN
   const opponent = game.opponent ?? 'TBD';
   const kickoff = formatKickoff(game);
 
+  if (game.isCompleted && game.teamPoints !== undefined && game.opponentPoints !== undefined) {
+    const won = game.teamPoints > game.opponentPoints;
+    const tied = game.teamPoints === game.opponentPoints;
+    const result = tied ? 'T' : won ? 'W' : 'L';
+
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className={`inline-flex max-w-[10rem] items-baseline gap-1 text-xs ${className ?? ''}`}>
+              <span className={`font-semibold ${won ? 'text-accent' : tied ? '' : 'text-muted-foreground'}`}>
+                {result} {game.teamPoints}-{game.opponentPoints}
+              </span>
+              <span className="truncate text-muted-foreground">
+                {prefix} {opponent}
+              </span>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>
+              Final: {teamName} {game.teamPoints} - {game.opponentPoints} {opponent}
+            </p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
+
   return (
     <TooltipProvider>
       <Tooltip>

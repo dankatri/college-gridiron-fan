@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { LineupSlot } from '@/lib/types';
 import { ByeWeekIndicator } from '@/components/ByeWeekIndicator';
 import { WeekMatchup } from '@/components/WeekMatchup';
+import { PlayerDetailDialog } from '@/components/PlayerDetailDialog';
 import { useWeekMatchups } from '@/hooks/use-week-matchups';
 import {
   Users,
@@ -60,6 +61,7 @@ export function PlayerTable({
   const [sortKey, setSortKey] = useState<SortKey>('projectedPoints');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const { matchups, isLoading: isLoadingMatchups } = useWeekMatchups(currentWeek);
+  const [detailPlayer, setDetailPlayer] = useState<Player | null>(null);
 
   // Immediately set initial conference data from players if available
   useEffect(() => {
@@ -487,7 +489,13 @@ export function PlayerTable({
                   </div>
 
                   <div className="min-w-0 flex-1">
-                    <div className="font-semibold truncate">{player.name}</div>
+                    <button
+                      type="button"
+                      onClick={() => setDetailPlayer(player)}
+                      className="block max-w-full truncate text-left font-semibold hover:text-primary hover:underline"
+                    >
+                      {player.name}
+                    </button>
                     <div className="mt-1 flex items-center gap-2">
                       <Badge variant="outline" className="text-[10px] px-1.5 py-0">
                         {player.position}
@@ -577,7 +585,14 @@ export function PlayerTable({
                         </div>
 
                         <div className="min-w-0 flex-1">
-                          <div className="font-semibold truncate">{player.name}</div>
+                          <button
+                            type="button"
+                            onClick={() => setDetailPlayer(player)}
+                            className="block max-w-full truncate text-left font-semibold hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            title={`View ${player.name}'s season stats`}
+                          >
+                            {player.name}
+                          </button>
                           <div className="text-xs text-muted-foreground">{player.position}</div>
                         </div>
 
@@ -669,6 +684,14 @@ export function PlayerTable({
             </div>
           </div>
         )}
+
+        <PlayerDetailDialog
+          player={detailPlayer}
+          open={detailPlayer !== null}
+          onOpenChange={(open) => {
+            if (!open) setDetailPlayer(null);
+          }}
+        />
       </CardContent>
     </Card>
   );

@@ -72,35 +72,47 @@ export function ScheduleOverview({ currentWeek }: ScheduleOverviewProps) {
     }
   };
 
-  const getWeekGames = (week: number) => {
-    const games: { homeTeam: string; awayTeam: string; }[] = [];
+  type WeekGame = {
+    homeTeam: string;
+    awayTeam: string;
+    homePoints?: number;
+    awayPoints?: number;
+    isCompleted: boolean;
+    kickoff?: Date;
+  };
+
+  const getWeekGames = (week: number): WeekGame[] => {
+    const games: WeekGame[] = [];
     const processedGames = new Set<string>();
 
     schedules.forEach(schedule => {
       const weekGame = schedule.weeklyGames.find(game => game.week === week && !game.isByeWeek);
-      if (weekGame && weekGame.opponent) {
-        const gameKey = [schedule.teamName, weekGame.opponent].sort().join('-');
-        if (!processedGames.has(gameKey)) {
-          if (weekGame.isHomeGame) {
-            games.push({
-              homeTeam: schedule.teamName,
-              awayTeam: weekGame.opponent
-            });
-          } else {
-            games.push({
-              homeTeam: weekGame.opponent,
-              awayTeam: schedule.teamName
-            });
-          }
-          processedGames.add(gameKey);
-        }
-      }
+      if (!weekGame || !weekGame.opponent) return;
+
+      const gameKey = [schedule.teamName, weekGame.opponent].sort().join('-');
+      if (processedGames.has(gameKey)) return;
+      processedGames.add(gameKey);
+
+      // Scores are stored from this team's perspective, so flip them when the
+      // team we are iterating is the away side.
+      games.push({
+        homeTeam: weekGame.isHomeGame ? schedule.teamName : weekGame.opponent,
+        awayTeam: weekGame.isHomeGame ? weekGame.opponent : schedule.teamName,
+        homePoints: weekGame.isHomeGame ? weekGame.teamPoints : weekGame.opponentPoints,
+        awayPoints: weekGame.isHomeGame ? weekGame.opponentPoints : weekGame.teamPoints,
+        isCompleted: weekGame.isCompleted === true,
+        kickoff: weekGame.gameDate,
+      });
     });
 
-    return games;
+    return games.sort((a, b) => {
+      if (a.isCompleted !== b.isCompleted) return a.isCompleted ? -1 : 1;
+      return (a.kickoff?.getTime() ?? 0) - (b.kickoff?.getTime() ?? 0);
+    });
   };
 
   const weekGames = getWeekGames(selectedWeek);
+  const completedCount = weekGames.filter(game => game.isCompleted).length;
   const byeTeamsForWeek = schedules.filter(s => s.byeWeeks.includes(selectedWeek));
 
   return (
@@ -160,19 +172,60 @@ export function ScheduleOverview({ currentWeek }: ScheduleOverviewProps) {
                     <CardTitle className="text-base flex items-center gap-2">
                       <Users size={16} />
                       Games (Week {selectedWeek})
+                      {completedCount > 0 && (
+                        <Badge variant="secondary" className="text-xs font-normal">
+                          {completedCount} final
+                        </Badge>
+                      )}
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <ScrollArea className="h-64">
                       {weekGames.length > 0 ? (
                         <div className="space-y-2">
-                          {weekGames.map((game, index) => (
-                            <div key={index} className="flex items-center justify-between text-sm p-2 bg-muted/30 rounded">
-                              <span className="font-medium">{game.awayTeam}</span>
-                              <span className="text-muted-foreground">@</span>
-                              <span className="font-medium">{game.homeTeam}</span>
-                            </div>
-                          ))}
+                          {weekGames.map((game, index) => {
+                            const awayWon =
+                              game.isCompleted && (game.awayPoints ?? 0) > (game.homePoints ?? 0);
+                            const homeWon =
+                              game.isCompleted && (game.homePoints ?? 0) > (game.awayPoints ?? 0);
+
+                            return (
+                              <div key={index} className="rounded bg-muted/30 p-2 text-sm">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className={`min-w-0 flex-1 truncate ${awayWon ? 'font-semibold' : 'font-medium'}`}>
+                                    {game.awayTeam}
+                                  </span>
+                                  {game.isCompleted ? (
+                                    <span className={`tabular-nums ${awayWon ? 'font-semibold' : 'text-muted-foreground'}`}>
+                                      {game.awayPoints}
+                                    </span>
+                                  ) : null}
+                                  <span className="text-xs text-muted-foreground">@</span>
+                                  {game.isCompleted ? (
+                                    <span className={`tabular-nums ${homeWon ? 'font-semibold' : 'text-muted-foreground'}`}>
+                                      {game.homePoints}
+                                    </span>
+                                  ) : null}
+                                  <span className={`min-w-0 flex-1 truncate text-right ${homeWon ? 'font-semibold' : 'font-medium'}`}>
+                                    {game.homeTeam}
+                                  </span>
+                                </div>
+                                <div className="mt-1 text-center text-xs text-muted-foreground">
+                                  {game.isCompleted
+                                    ? 'Final'
+                                    : game.kickoff
+                                      ? game.kickoff.toLocaleString(undefined, {
+                                          weekday: 'short',
+                                          month: 'short',
+                                          day: 'numeric',
+                                          hour: 'numeric',
+                                          minute: '2-digit',
+                                        })
+                                      : 'Scheduled'}
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       ) : (
                         <div className="text-center text-muted-foreground py-4">

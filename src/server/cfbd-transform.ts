@@ -262,6 +262,13 @@ export function buildTeamSchedules(options: {
       const schedule = schedules.get(teamName);
       if (!schedule) continue;
 
+      const teamPoints = side === 'home' ? game.homePoints : game.awayPoints;
+      const opponentPoints = side === 'home' ? game.awayPoints : game.homePoints;
+      // CFBD flags a game completed before the scores land occasionally, so
+      // require both to treat it as final.
+      const isCompleted =
+        game.completed === true && typeof teamPoints === 'number' && typeof opponentPoints === 'number';
+
       schedule.weeklyGames.push({
         week,
         opponent: opponent ?? 'TBD',
@@ -270,6 +277,8 @@ export function buildTeamSchedules(options: {
         gameId: String(game.id),
         gameDate: new Date(game.startDate as string),
         gameTime: game.startTimeTBD ? 'TBD' : kickoff.toISOString().slice(11, 16),
+        isCompleted,
+        ...(isCompleted ? { teamPoints: teamPoints as number, opponentPoints: opponentPoints as number } : {}),
       });
     }
   }

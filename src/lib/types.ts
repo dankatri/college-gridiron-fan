@@ -79,6 +79,10 @@ export interface WeeklyGame {
   gameTime?: string;
   isByeWeek: boolean;
   gameId?: string;
+  /** Final score, present once the game is complete. */
+  isCompleted?: boolean;
+  teamPoints?: number;
+  opponentPoints?: number;
 }
 
 export interface LiveUpdate {
