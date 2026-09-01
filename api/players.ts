@@ -1,13 +1,15 @@
 import { eq } from 'drizzle-orm';
-import type { Player } from './../src/server/types';
+import type { Player } from '../src/lib/types';
 import { db } from './../src/server/db';
 import { dataCache } from './../src/server/schema';
+import { SEASON_YEAR } from '../src/lib/season-config';
+import { playersCacheKey } from '../src/server/cache-keys';
 
 export const config = {
   runtime: 'edge',
 };
 
-const CACHE_KEY = 'players-2026';
+const CACHE_KEY = playersCacheKey(SEASON_YEAR);
 const CACHE_CONTROL = 'public, s-maxage=3600, stale-while-revalidate=86400';
 
 export default async function handler(): Promise<Response> {
@@ -25,7 +27,7 @@ export default async function handler(): Promise<Response> {
       return new Response(
         JSON.stringify({
           players: [],
-          message: 'No cached player data found yet. Run /api/cron/refresh-players first.',
+          message: 'No cached player data found yet. Run `npm run refresh:players` (or the refresh-data workflow) first.',
         }),
         {
           status: 200,

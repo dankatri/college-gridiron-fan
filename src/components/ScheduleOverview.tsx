@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { getTeamSchedules, getTeamsOnBye } from '@/lib/schedule-data';
+import { getTeamSchedules, getTeamsOnBye, clearScheduleCache } from '@/lib/schedule-data';
 import { TeamSchedule, TOTAL_WEEKS } from '@/lib/types';
 import { WEEK_LABELS } from '@/lib/season-config';
 import { Calendar, CalendarX, ArrowClockwise as RefreshCw, Users } from '@phosphor-icons/react';
@@ -59,6 +59,8 @@ export function ScheduleOverview({ currentWeek }: ScheduleOverviewProps) {
   const handleRefresh = async () => {
     setIsLoading(true);
     try {
+      // Otherwise the hour-long client cache would serve the same data back.
+      clearScheduleCache();
       const scheduleData = await getTeamSchedules();
       setSchedules(scheduleData);
       const byeTeams = await getTeamsOnBye(selectedWeek);

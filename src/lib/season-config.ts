@@ -9,6 +9,13 @@ export const SEASON_YEAR = 2026;
 export const PROJECTION_YEAR = 2025;
 
 /**
+ * App weeks 1-14 are the regular season (13 = rivalry week, 14 = conference
+ * championships); 15-18 are the CFP rounds. Only regular-season gaps count as
+ * bye weeks — a missing playoff week just means the team did not qualify.
+ */
+export const REGULAR_SEASON_WEEKS = 14;
+
+/**
  * 2026 CFB Season Week Start Dates (Saturday-anchored).
  *
  * Each date is the Saturday that anchors the week's main slate of games.
@@ -41,6 +48,37 @@ export const WEEK_START_DATES: Record<number, Date> = {
   17: new Date('2027-01-09T00:00:00-06:00'), // CFP Semifinals (Jan 14-15: Orange & Sugar Bowls)
   18: new Date('2027-01-20T00:00:00-06:00'), // National Championship (Jan 25, Allegiant Stadium, Las Vegas)
 };
+
+/**
+ * The app week whose window contains `date`.
+ *
+ * Week N runs from WEEK_START_DATES[N] until WEEK_START_DATES[N + 1]; the final
+ * week is open-ended. This is the app's canonical week definition and the only
+ * safe way to place an upstream game, because CollegeFootballData numbers its
+ * own weeks differently (its 2026 week 1 spans two of our weeks, and its entire
+ * postseason is a single week).
+ *
+ * Returns null for dates before the season opens.
+ */
+export function weekForDate(date: Date): number | null {
+  const time = date.getTime();
+  if (Number.isNaN(time) || time < WEEK_START_DATES[1].getTime()) return null;
+
+  const weeks = Object.keys(WEEK_START_DATES).map(Number).sort((a, b) => a - b);
+  let match: number | null = null;
+  for (const week of weeks) {
+    if (time >= WEEK_START_DATES[week].getTime()) match = week;
+    else break;
+  }
+  return match;
+}
+
+/** Half-open [start, end) window for an app week; the last week has no end. */
+export function weekWindow(week: number): { start: Date; end: Date | null } | null {
+  const start = WEEK_START_DATES[week];
+  if (!start) return null;
+  return { start, end: WEEK_START_DATES[week + 1] ?? null };
+}
 
 /**
  * Week labels for display — customize postseason naming.
@@ -83,43 +121,6 @@ export const ALL_FBS_CONFERENCES = [
   ...GROUP_OF_FIVE_CONFERENCES,
   'Independent',
 ] as const;
-
-/**
- * Major programs with ESPN team IDs.
- * IDs allow direct roster fetches without the bulk /teams endpoint (which has CORS issues).
- * Updated for 2026 conference affiliations.
- */
-export const MAJOR_PROGRAMS: Record<string, Record<string, string>> = {
-  SEC: {
-    'Alabama': '333', 'Arkansas': '8', 'Auburn': '2', 'Florida': '57',
-    'Georgia': '61', 'Kentucky': '96', 'LSU': '99', 'Mississippi State': '344',
-    'Missouri': '142', 'Ole Miss': '145', 'Oklahoma': '201',
-    'South Carolina': '2579', 'Tennessee': '2633', 'Texas': '251',
-    'Texas A&M': '245', 'Vanderbilt': '238',
-  },
-  'Big Ten': {
-    'Illinois': '356', 'Indiana': '84', 'Iowa': '2294', 'Maryland': '120',
-    'Michigan': '130', 'Michigan State': '127', 'Minnesota': '135',
-    'Nebraska': '158', 'Northwestern': '77', 'Ohio State': '194',
-    'Oregon': '2483', 'Penn State': '213', 'Purdue': '2509', 'Rutgers': '164',
-    'UCLA': '26', 'USC': '30', 'Washington': '264', 'Wisconsin': '275',
-  },
-  'Big 12': {
-    'Arizona': '12', 'Arizona State': '9', 'Baylor': '239', 'BYU': '252',
-    'Cincinnati': '2132', 'Colorado': '38', 'Houston': '248', 'Iowa State': '66',
-    'Kansas': '2305', 'Kansas State': '2306', 'Oklahoma State': '197',
-    'TCU': '2628', 'Texas Tech': '2641', 'UCF': '2116', 'Utah': '254',
-    'West Virginia': '277',
-  },
-  ACC: {
-    'Boston College': '103', 'California': '25', 'Clemson': '228', 'Duke': '150',
-    'Florida State': '52', 'Georgia Tech': '59', 'Louisville': '97', 'Miami': '2390',
-    'NC State': '152', 'North Carolina': '153', 'Pittsburgh': '221', 'SMU': '2567',
-    'Stanford': '24', 'Syracuse': '183', 'Virginia': '258',
-    'Virginia Tech': '259', 'Wake Forest': '154',
-  },
-  Independent: { 'Notre Dame': '87' },
-};
 
 // Dev-mode assertion: validate week date spacing (Vite only)
 if (typeof globalThis !== 'undefined' && typeof (globalThis as any).process === 'undefined') {

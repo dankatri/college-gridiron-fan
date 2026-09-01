@@ -1,7 +1,6 @@
 import { Player } from './types';
-import { fetchESPNCurrentPlayers, getESPNConferences, getESPNTeams } from './espn-api';
-import { getTeamSchedules, isTeamOnBye, clearScheduleCache } from './schedule-data';
-import { SEASON_YEAR, ALL_FBS_CONFERENCES, MAJOR_PROGRAMS } from './season-config';
+import { getTeamSchedules, clearScheduleCache } from './schedule-data';
+import { ALL_FBS_CONFERENCES } from './season-config';
 
 // Minimal fallback sample data — used only when ESPN API is completely unavailable.
 // In production, prefer showing an error state over stale data.
@@ -429,6 +428,29 @@ const isCacheValid = (timestamp: number) => {
   return Date.now() - timestamp < CACHE_DURATION;
 };
 
+/**
+ * Annotates players with their team's first bye week from the cached schedules.
+ * Failures are non-fatal — bye weeks are advisory, players still render.
+ */
+const withByeWeeks = async (players: Player[]): Promise<Player[]> => {
+  try {
+    const schedules = await getTeamSchedules();
+    if (schedules.length === 0) return players;
+
+    const byeByTeam = new Map(
+      schedules.map(schedule => [schedule.teamName.toLowerCase(), schedule.byeWeeks[0]]),
+    );
+
+    return players.map(player => {
+      const byeWeek = byeByTeam.get(player.team.toLowerCase());
+      return byeWeek ? { ...player, hasByeWeek: true, byeWeek } : { ...player, hasByeWeek: false };
+    });
+  } catch (error) {
+    console.warn('Could not attach bye weeks:', error);
+    return players;
+  }
+};
+
 // Main function to get players (with caching and smart loading)
 export const getPlayers = async (options?: { 
   specificTeam?: string; 
@@ -449,7 +471,7 @@ export const getPlayers = async (options?: {
     }
   }
 
-  console.log(`Attempting to fetch players from ESPN with options:`, options);
+  console.log('Fetching players from /api/players with options:', options);
 
   try {
     const response = await fetch('/api/players');
@@ -465,11 +487,13 @@ export const getPlayers = async (options?: {
         : [];
 
     const filteredApiPlayers = applyPlayerFilters(apiPlayers, options);
-    const validApiPlayers = filteredApiPlayers.filter(p =>
-      p.name &&
-      p.name.trim() !== '' &&
-      !p.name.includes('undefined') &&
-      !p.name.startsWith('Player ')
+    const validApiPlayers = await withByeWeeks(
+      filteredApiPlayers.filter(p =>
+        p.name &&
+        p.name.trim() !== '' &&
+        !p.name.includes('undefined') &&
+        !p.name.startsWith('Player ')
+      )
     );
 
     if (validApiPlayers.length > 0) {
@@ -488,138 +512,19 @@ export const getPlayers = async (options?: {
     });
     return [];
   } catch (error) {
-    console.warn('Server cache fetch failed, falling back to direct ESPN fetch:', error);
+    console.error('Failed to load players from /api/players:', error);
   }
-  
-  try {
-    console.log('Fetching current players from ESPN...');
-    
-    // Convert filter options to ESPN API parameters
-    const apiOptions: {
-      specificTeam?: string;
-      specificConference?: string;
-    } = {};
-    
-    if (options?.specificTeam && options.specificTeam !== 'All Teams') {
-      apiOptions.specificTeam = options.specificTeam;
-    }
-    
-    if (options?.specificConference && options.specificConference !== 'All Conferences') {
-      apiOptions.specificConference = options.specificConference;
-    }
 
-    // Fetch from ESPN API
-    const allPlayers = await fetchESPNCurrentPlayers(apiOptions);
-    console.log(`ESPN API returned ${allPlayers.length} players`);
-    
-    // Fetch team schedules for bye week information
-    console.log('Fetching team schedules for bye week data...');
-    const teamSchedules = await getTeamSchedules();
-    const scheduleMap = new Map(teamSchedules.map(s => [s.teamName.toLowerCase(), s]));
-    
-    // Validate that we have good player data and add bye week information
-    const validPlayers = allPlayers.filter(p => 
-      p.name && 
-      p.name.trim() !== '' && 
-      !p.name.includes('undefined') &&
-      !p.name.startsWith('Player ')
-    ).map(player => {
-      // Try to find the team schedule
-      const teamKey = player.team.toLowerCase();
-      const schedule = scheduleMap.get(teamKey) || 
-                     Array.from(scheduleMap.values()).find(s => 
-                       s.teamName.toLowerCase().includes(teamKey) ||
-                       teamKey.includes(s.teamName.toLowerCase())
-                     );
-      
-      if (schedule && schedule.byeWeeks.length > 0) {
-        return {
-          ...player,
-          hasByeWeek: true,
-          byeWeek: schedule.byeWeeks[0] // Use first bye week if multiple
-        };
-      }
-      
-      return {
-        ...player,
-        hasByeWeek: false
-      };
-    });
-    
-    console.log(`Filtered to ${validPlayers.length} valid players for ${SEASON_YEAR} season`);
-    console.log(`✓ ESPN API filtering removed players who are NFL-bound, graduated, or otherwise ineligible for ${SEASON_YEAR}`);
-    
-    // Set minimum player count based on filter type - increased thresholds
-    const minExpectedPlayers = options?.specificTeam ? 15 : options?.specificConference ? 80 : 150;
-    
-    if (validPlayers.length >= minExpectedPlayers) {
-      // Cache the successful result
-      playersCache.set(cacheKey, {
-        players: validPlayers,
-        timestamp: Date.now()
-      });
-      
-      console.log(`Successfully cached ${validPlayers.length} players for ${cacheKey}`);
-      return validPlayers;
-    } else {
-      const combinedPlayers = [...validPlayers];
-      
-      // Add sample players that match the filter and aren't already included
-      const existingPlayerNames = new Set(validPlayers.map(p => p.name.toLowerCase()));
-      const filteredSamplePlayers = SAMPLE_PLAYERS.filter(samplePlayer => {
-        const matchesFilter = 
-          (!options?.specificTeam || options.specificTeam === 'All Teams' || samplePlayer.team === options.specificTeam) &&
-          (!options?.specificConference || options.specificConference === 'All Conferences' || samplePlayer.conference === options.specificConference);
-        
-        const notDuplicate = !existingPlayerNames.has(samplePlayer.name.toLowerCase());
-        
-        return matchesFilter && notDuplicate;
-      }).map(player => ({
-        ...player,
-        hasByeWeek: player.byeWeek ? true : false
-      }));
-      
-      combinedPlayers.push(...filteredSamplePlayers);
-      
-      console.log(`Combined result: ${combinedPlayers.length} players (${validPlayers.length} ESPN + ${filteredSamplePlayers.length} sample)`);
-      
-      playersCache.set(cacheKey, {
-        players: combinedPlayers,
-        timestamp: Date.now()
-      });
-      
-      return combinedPlayers;
-    }
-      
-  } catch (error) {
-    console.error('Error fetching players from ESPN:', error);
-    console.log('Falling back to sample data');
-    
-    let samplePlayers = [...SAMPLE_PLAYERS];
-    
-    if (options?.specificTeam && options.specificTeam !== 'All Teams') {
-      samplePlayers = samplePlayers.filter(p => p.team === options.specificTeam);
-    }
-    
-    if (options?.specificConference && options.specificConference !== 'All Conferences') {
-      samplePlayers = samplePlayers.filter(p => p.conference === options.specificConference);
-    }
-    
-    // Ensure sample players have bye week information
-    samplePlayers = samplePlayers.map(player => ({
-      ...player,
-      hasByeWeek: player.byeWeek ? true : false
-    }));
-    
-    playersCache.set(cacheKey, {
-      players: samplePlayers,
-      timestamp: Date.now()
-    });
-    
-    console.log(`Using ${samplePlayers.length} filtered sample players as fallback`);
-    return samplePlayers;
-  }
-}
+  // Offline/dev fallback only. The server cache is the sole real data source.
+  const samplePlayers = applyPlayerFilters(SAMPLE_PLAYERS, options).map(player => ({
+    ...player,
+    hasByeWeek: Boolean(player.byeWeek),
+  }));
+
+  playersCache.set(cacheKey, { players: samplePlayers, timestamp: Date.now() });
+  console.warn(`Using ${samplePlayers.length} sample players as fallback`);
+  return samplePlayers;
+};
 
 // Default fallback conferences — derived from season-config
 const DEFAULT_CONFERENCES = [
@@ -632,79 +537,59 @@ const DEFAULT_TEAMS_FROM_SAMPLE = [
   ...Array.from(new Set(SAMPLE_PLAYERS.map(p => p.team))).sort()
 ];
 
+type CachedTeam = { school: string; conference: string };
+
+let teamDirectoryPromise: Promise<CachedTeam[]> | null = null;
+
+/** Fetches the cached FBS team directory once and shares it between callers. */
+const getTeamDirectory = async (): Promise<CachedTeam[]> => {
+  if (!teamDirectoryPromise) {
+    teamDirectoryPromise = (async () => {
+      try {
+        const response = await fetch('/api/teams');
+        if (!response.ok) throw new Error(`/api/teams failed: ${response.status}`);
+        const payload = await response.json();
+        const teams = Array.isArray(payload?.teams) ? (payload.teams as CachedTeam[]) : [];
+        if (teams.length === 0) throw new Error('/api/teams returned no teams');
+        return teams;
+      } catch (error) {
+        console.warn('Falling back to configured team/conference lists:', error);
+        teamDirectoryPromise = null;
+        return [];
+      }
+    })();
+  }
+  return teamDirectoryPromise;
+};
+
 // Get conferences (with caching)
 export const getConferences = async (): Promise<string[]> => {
   if (conferencesCache.length > 0 && isCacheValid(cacheTimestamp)) {
     return conferencesCache;
   }
 
-  try {
-    const espnConferences = await getESPNConferences();
-    console.log(`ESPN conferences loaded: ${espnConferences.length}`, espnConferences);
-    
-    if (espnConferences.length > 10) {
-      conferencesCache = espnConferences;
-      cacheTimestamp = Date.now();
-      console.log('Successfully loaded ESPN conferences:', espnConferences);
-      return conferencesCache;
-    } else {
-      console.warn('ESPN returned insufficient conferences data, using enhanced defaults');
-      throw new Error('ESPN returned insufficient conferences data');
-    }
-  } catch (error) {
-    console.error('Failed to fetch conferences from ESPN, using comprehensive default list:', error);
-    
-    // Enhanced fallback conference list
-    const enhancedConferences = ['All Conferences', ...ALL_FBS_CONFERENCES];
-    
-    conferencesCache = enhancedConferences;
-    cacheTimestamp = Date.now();
-    return enhancedConferences;
-  }
+  const teams = await getTeamDirectory();
+  const conferences = Array.from(new Set(teams.map(team => team.conference).filter(Boolean))).sort();
+
+  conferencesCache = conferences.length > 0
+    ? ['All Conferences', ...conferences]
+    : DEFAULT_CONFERENCES;
+  cacheTimestamp = Date.now();
+  return conferencesCache;
 };
 
-// Get teams (with caching and comprehensive fallback)
+// Get teams (with caching)
 export const getTeams = async (): Promise<string[]> => {
-  if (teamsCache.length > 1 && isCacheValid(cacheTimestamp)) { // Must have more than just "All Teams"
+  if (teamsCache.length > 1 && isCacheValid(cacheTimestamp)) {
     return teamsCache;
   }
 
-  console.log('Loading teams from ESPN...');
-  
-  try {
-    const espnTeams = await getESPNTeams();
-    console.log(`ESPN teams loaded: ${espnTeams.length}`);
-    
-    if (espnTeams.length > 50) { // Should have many teams for comprehensive coverage
-      teamsCache = espnTeams;
-      cacheTimestamp = Date.now();
-      console.log('Successfully loaded ESPN teams:', espnTeams.length, 'teams');
-      return teamsCache;
-    } else {
-      console.warn('ESPN returned insufficient teams data, combining with sample data');
-      
-      // Combine what we got from ESPN with sample data
-      const sampleTeamNames = Array.from(new Set(SAMPLE_PLAYERS.map(p => p.team))).sort();
-      const combinedTeams = ['All Teams', ...new Set([...espnTeams.slice(1), ...sampleTeamNames])].sort();
-      
-      teamsCache = combinedTeams;
-      cacheTimestamp = Date.now();
-      console.log(`Using combined team list: ${combinedTeams.length} teams`);
-      return combinedTeams;
-    }
-  } catch (error) {
-    console.error('Failed to fetch teams from ESPN, using sample data teams:', error);
-    
-    // Enhanced fallback with major programs from season-config
-    const configTeams = Object.values(MAJOR_PROGRAMS).flatMap(conf => Object.keys(conf));
-    const sampleTeamNames = Array.from(new Set(SAMPLE_PLAYERS.map(p => p.team))).sort();
-    const enhancedTeams = ['All Teams', ...new Set([...sampleTeamNames, ...configTeams])].sort();
-    
-    teamsCache = enhancedTeams;
-    cacheTimestamp = Date.now();
-    console.log(`Using enhanced team fallback: ${enhancedTeams.length} teams`);
-    return enhancedTeams;
-  }
+  const teams = await getTeamDirectory();
+  const schools = Array.from(new Set(teams.map(team => team.school).filter(Boolean))).sort();
+
+  teamsCache = schools.length > 0 ? ['All Teams', ...schools] : DEFAULT_TEAMS_FROM_SAMPLE;
+  cacheTimestamp = Date.now();
+  return teamsCache;
 };
 
 // Clear cache (useful for refreshing data)

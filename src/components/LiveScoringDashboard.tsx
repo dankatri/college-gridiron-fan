@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { useLocalStorage as useKV } from '@/hooks/use-local-storage';
 import { PlayerStats, GameStatus, LiveUpdate, Player, WeeklyLineup } from '@/lib/types';
 import { generateLiveStats, generateGameStatuses, createLiveUpdate, calculateFantasyPoints } from '@/lib/stats-utils';
-import { SAMPLE_PLAYERS } from '@/lib/data';
+import { SAMPLE_PLAYERS, getPlayers } from '@/lib/data';
+import { getLiveData } from '@/lib/live-data';
 import { SEASON_YEAR } from '@/lib/season-config';
 import { LiveStatsCard } from '@/components/LiveStatsCard';
 import { GameStatusTracker } from '@/components/GameStatusTracker';
@@ -33,27 +34,68 @@ export function LiveScoringDashboard({
   const [gameStatuses, setGameStatuses] = useKV<GameStatus[]>(`game-statuses-${SEASON_YEAR}-week-${week}`, []);
   const [liveUpdates, setLiveUpdates] = useKV<LiveUpdate[]>(`live-updates-${SEASON_YEAR}-week-${week}`, []);
 
+  // Real CollegeFootballData box scores, when the worker has published them.
+  const [players, setPlayers] = useState<Player[]>(SAMPLE_PLAYERS);
+  const [hasRealData, setHasRealData] = useState(false);
+  const [lastSync, setLastSync] = useState<string | null>(null);
+
   const currentWeekLineup = weeklyLineups.find(w => w.week === week);
   const lineupPlayerIds = currentWeekLineup?.lineup
     .filter(slot => slot.player)
     .map(slot => slot.player!.id) || [];
 
-  // Initialize live data
   useEffect(() => {
-    if (liveStats.length === 0) {
-      const initialStats = generateLiveStats(SAMPLE_PLAYERS, week);
-      setLiveStats(initialStats);
-    }
-    
-    if (gameStatuses.length === 0) {
-      const initialGames = generateGameStatuses(week);
-      setGameStatuses(initialGames);
-    }
-  }, [week, liveStats.length, gameStatuses.length, setLiveStats, setGameStatuses]);
+    let cancelled = false;
+    getPlayers()
+      .then(loaded => {
+        if (!cancelled && loaded.length > 0) setPlayers(loaded);
+      })
+      .catch(error => console.warn('Could not load player pool:', error));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Prefer real data; simulation is only a fallback for out-of-season/dev use.
+  useEffect(() => {
+    let cancelled = false;
+
+    const sync = async () => {
+      const live = await getLiveData(week);
+      if (cancelled) return false;
+
+      if (live && live.week === week && live.stats.length > 0) {
+        setLiveStats(live.stats);
+        setGameStatuses(live.games);
+        setHasRealData(true);
+        setLastSync(live.updatedAt);
+        return true;
+      }
+
+      setHasRealData(false);
+      return false;
+    };
+
+    sync().then(gotRealData => {
+      if (cancelled || gotRealData) return;
+      // Functional updates: useLocalStorage re-reads asynchronously when the
+      // week key changes, so the captured values are still the previous week's.
+      setLiveStats(prev => (prev.length === 0 ? generateLiveStats(SAMPLE_PLAYERS, week) : prev));
+      setGameStatuses(prev => (prev.length === 0 ? generateGameStatuses(week) : prev));
+    });
+
+    // The worker republishes every few minutes during games.
+    const interval = setInterval(sync, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [week, setLiveStats, setGameStatuses]);
 
   // Live updates simulation
   useEffect(() => {
-    if (!isLiveMode) return;
+    if (!isLiveMode || hasRealData) return;
 
     const interval = setInterval(() => {
       // Randomly update a player's stats
@@ -110,7 +152,7 @@ export function LiveScoringDashboard({
     }, 3000); // Update every 3 seconds
 
     return () => clearInterval(interval);
-  }, [isLiveMode, liveStats, lineupPlayerIds, week, setLiveStats, setLiveUpdates]);
+  }, [isLiveMode, hasRealData, liveStats, lineupPlayerIds, week, setLiveStats, setLiveUpdates]);
 
   // Calculate actual lineup points when stats change
   useEffect(() => {
@@ -142,7 +184,7 @@ export function LiveScoringDashboard({
   };
 
   const getPlayerById = (id: string): Player | undefined => {
-    return SAMPLE_PLAYERS.find(p => p.id === id);
+    return players.find(p => p.id === id);
   };
 
   const lineupPlayers = currentWeekLineup?.lineup
@@ -159,6 +201,14 @@ export function LiveScoringDashboard({
   const totalProjectedPoints = lineupPlayers.reduce((sum, { player }) => {
     return sum + player.projectedPoints;
   }, 0);
+
+  // Rendering 3,700 players is unusable; show those with stats this week.
+  const statedPlayers = hasRealData
+    ? liveStats
+        .map(stat => players.find(p => p.id === stat.playerId))
+        .filter((player): player is Player => Boolean(player))
+        .slice(0, 100)
+    : SAMPLE_PLAYERS;
 
   if (!currentWeekLineup) {
     return (
@@ -183,25 +233,32 @@ export function LiveScoringDashboard({
             <CardTitle className="flex items-center gap-2">
               <Activity size={24} className="text-accent" />
               Live Scoring - Week {week}
+              {hasRealData && (
+                <Badge variant="secondary" className="ml-1 font-normal">
+                  Live data{lastSync ? ` · ${new Date(lastSync).toLocaleTimeString()}` : ''}
+                </Badge>
+              )}
             </CardTitle>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleToggleLiveMode}
-                className="flex items-center gap-2"
-              >
-                {isLiveMode ? <Pause size={16} /> : <Play size={16} />}
-                {isLiveMode ? 'Pause' : 'Start'} Live
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleGenerateNewStats}
-              >
-                Refresh Stats
-              </Button>
-            </div>
+            {!hasRealData && (
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleToggleLiveMode}
+                  className="flex items-center gap-2"
+                >
+                  {isLiveMode ? <Pause size={16} /> : <Play size={16} />}
+                  {isLiveMode ? 'Pause' : 'Start'} Live
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleGenerateNewStats}
+                >
+                  Refresh Stats
+                </Button>
+              </div>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -262,7 +319,7 @@ export function LiveScoringDashboard({
 
         <TabsContent value="all-players" className="mt-6">
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {SAMPLE_PLAYERS.map(player => {
+            {statedPlayers.map(player => {
               const stats = liveStats.find(s => s.playerId === player.id);
               const isInLineup = lineupPlayerIds.includes(player.id);
               

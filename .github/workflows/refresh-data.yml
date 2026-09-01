@@ -1,0 +1,73 @@
+name: Refresh data
+
+# CollegeFootballData cold responses can take ~30s, which does not fit inside a
+# Vercel edge function, so data pulls run here and write straight to Neon.
+
+on:
+  schedule:
+    # Rosters, teams and schedules once a day (07:15 UTC).
+    - cron: '15 7 * * *'
+    # Live box scores every 10 minutes during US game windows.
+    - cron: '*/10 16-23 * * 6'
+    - cron: '*/10 0-6 * * 0,3,4,5,6'
+  workflow_dispatch:
+    inputs:
+      job:
+        description: Which refresh to run
+        type: choice
+        options: [all, projections, players, schedules, live]
+        default: all
+      force:
+        description: Re-fetch projection stats even if already cached
+        type: boolean
+        default: false
+
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # The daily cron and manual runs rebuild the full dataset; the frequent
+      # crons only refresh live scoring.
+      - name: Decide scope
+        id: scope
+        run: |
+          job="${{ github.event.inputs.job }}"
+          if [ -z "$job" ]; then
+            if [ "${{ github.event.schedule }}" = "15 7 * * *" ]; then job=all; else job=live; fi
+          fi
+          echo "job=$job" >> "$GITHUB_OUTPUT"
+
+      - name: Refresh projection stats
+        if: steps.scope.outputs.job == 'all' || steps.scope.outputs.job == 'projections'
+        run: npm run refresh:projections
+        env:
+          FORCE: ${{ github.event.inputs.force == 'true' && '1' || '' }}
+
+      - name: Refresh players
+        if: steps.scope.outputs.job == 'all' || steps.scope.outputs.job == 'players'
+        run: npm run refresh:players
+
+      - name: Refresh schedules
+        if: steps.scope.outputs.job == 'all' || steps.scope.outputs.job == 'schedules'
+        run: npm run refresh:schedules
+
+      - name: Refresh live scoring
+        if: steps.scope.outputs.job == 'all' || steps.scope.outputs.job == 'live'
+        run: npm run refresh:live

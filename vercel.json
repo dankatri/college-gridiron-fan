@@ -1,14 +1,4 @@
 {
-  "crons": [
-    {
-      "path": "/api/cron/refresh-players",
-      "schedule": "0 9 * * *"
-    },
-    {
-      "path": "/api/cron/refresh-schedules",
-      "schedule": "0 10 * * *"
-    }
-  ],
   "rewrites": [
     {
       "source": "/((?!api/).*)",
