@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { getTeamSchedules, getTeamsOnBye, clearScheduleCache } from '@/lib/schedule-data';
-import { TeamSchedule, TOTAL_WEEKS } from '@/lib/types';
+import { TeamSchedule, ALL_WEEKS } from '@/lib/types';
 import { WEEK_LABELS } from '@/lib/season-config';
 import { Calendar, CalendarX, ArrowClockwise as RefreshCw, Users } from '@phosphor-icons/react';
 
@@ -128,7 +128,7 @@ export function ScheduleOverview({ currentWeek }: ScheduleOverviewProps) {
         <Tabs value={selectedWeek.toString()} onValueChange={(value) => setSelectedWeek(parseInt(value))}>
           <ScrollArea className="w-full">
             <TabsList className="flex w-max gap-1">
-              {Array.from({ length: TOTAL_WEEKS }, (_, i) => i + 1).map(week => (
+              {ALL_WEEKS.map(week => (
                 <TabsTrigger key={week} value={week.toString()} className="text-xs px-2">
                   {WEEK_LABELS[week] || `W${week}`}
                 </TabsTrigger>

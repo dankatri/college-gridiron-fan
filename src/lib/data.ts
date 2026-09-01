@@ -443,7 +443,10 @@ const withByeWeeks = async (players: Player[]): Promise<Player[]> => {
 
     return players.map(player => {
       const byeWeek = byeByTeam.get(player.team.toLowerCase());
-      return byeWeek ? { ...player, hasByeWeek: true, byeWeek } : { ...player, hasByeWeek: false };
+      // Week 0 is a valid bye week, so test for undefined rather than falsiness.
+      return byeWeek === undefined
+        ? { ...player, hasByeWeek: false }
+        : { ...player, hasByeWeek: true, byeWeek };
     });
   } catch (error) {
     console.warn('Could not attach bye weeks:', error);
@@ -518,7 +521,7 @@ export const getPlayers = async (options?: {
   // Offline/dev fallback only. The server cache is the sole real data source.
   const samplePlayers = applyPlayerFilters(SAMPLE_PLAYERS, options).map(player => ({
     ...player,
-    hasByeWeek: Boolean(player.byeWeek),
+    hasByeWeek: player.byeWeek !== undefined,
   }));
 
   playersCache.set(cacheKey, { players: samplePlayers, timestamp: Date.now() });

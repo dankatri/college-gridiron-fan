@@ -3,7 +3,7 @@ import { db } from '../src/server/db';
 import { dataCache } from '../src/server/schema';
 import { SEASON_YEAR } from '../src/lib/season-config';
 import { liveStatsCacheKey } from '../src/server/cache-keys';
-import { TOTAL_WEEKS } from '../src/lib/types';
+import { FIRST_WEEK, LAST_WEEK } from '../src/lib/types';
 
 export const config = {
   runtime: 'edge',
@@ -13,8 +13,11 @@ const EMPTY = { week: null, stats: [], games: [], updatedAt: null };
 
 export default async function handler(request: Request): Promise<Response> {
   try {
-    const week = Number(new URL(request.url).searchParams.get('week'));
-    if (!Number.isInteger(week) || week < 1 || week > TOTAL_WEEKS) {
+    const weekParam = new URL(request.url).searchParams.get('week');
+    const week = Number(weekParam);
+    // Week 0 is valid, so reject a missing param explicitly rather than
+    // relying on Number(null) === 0.
+    if (weekParam === null || !Number.isInteger(week) || week < FIRST_WEEK || week > LAST_WEEK) {
       return new Response(JSON.stringify(EMPTY), {
         status: 400,
         headers: { 'Content-Type': 'application/json' },

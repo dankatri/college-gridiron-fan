@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { db } from '../../../src/server/db';
 import { leagueMembers, lineups, playerUsage } from '../../../src/server/schema';
 import { requireUser } from '../../../src/server/auth-utils';
-import { LINEUP_REQUIREMENTS, MAX_PLAYER_USES, TOTAL_WEEKS } from '../../../src/lib/types';
+import { FIRST_WEEK, LAST_WEEK, LINEUP_REQUIREMENTS, MAX_PLAYER_USES } from '../../../src/lib/types';
 import { SEASON_YEAR } from '../../../src/lib/season-config';
 import { isWeekLocked } from '../../../src/lib/utils-fantasy';
 
@@ -120,8 +120,8 @@ export default async function handler(request: Request): Promise<Response> {
 
       if (weekParam) {
         const week = Number.parseInt(weekParam, 10);
-        if (!Number.isInteger(week) || week < 1 || week > TOTAL_WEEKS) {
-          return jsonResponse({ error: `Week must be between 1 and ${TOTAL_WEEKS}` }, 400);
+        if (!Number.isInteger(week) || week < FIRST_WEEK || week > LAST_WEEK) {
+          return jsonResponse({ error: `Week must be between ${FIRST_WEEK} and ${LAST_WEEK}` }, 400);
         }
 
         const lineupRows = await db
@@ -211,8 +211,8 @@ export default async function handler(request: Request): Promise<Response> {
       }
 
       const week = body.week;
-      if (!Number.isInteger(week) || !week || week < 1 || week > TOTAL_WEEKS) {
-        return jsonResponse({ error: `Week must be between 1 and ${TOTAL_WEEKS}` }, 400);
+      if (week === undefined || week === null || !Number.isInteger(week) || week < FIRST_WEEK || week > LAST_WEEK) {
+        return jsonResponse({ error: `Week must be between ${FIRST_WEEK} and ${LAST_WEEK}` }, 400);
       }
       if (isWeekLocked(week)) {
         return jsonResponse({ error: `Week ${week} lineup is locked` }, 409);

@@ -235,9 +235,9 @@ export function buildTeamSchedules(options: {
   teams: CfbdTeam[];
   games: CfbdGame[];
   weekForDate: (date: Date) => number | null;
-  regularSeasonWeeks: number;
+  regularSeasonLastWeek: number;
 }): TeamSchedule[] {
-  const { teams, games, weekForDate, regularSeasonWeeks } = options;
+  const { teams, games, weekForDate, regularSeasonLastWeek } = options;
   const schedules = new Map<string, TeamSchedule>();
 
   for (const team of teams) {
@@ -254,7 +254,7 @@ export function buildTeamSchedules(options: {
     const kickoff = effectiveKickoff(game);
     if (!kickoff) continue;
     const week = weekForDate(kickoff);
-    if (!week) continue;
+    if (week === null) continue; // Week 0 is valid, so compare against null.
 
     for (const side of ['home', 'away'] as const) {
       const teamName = side === 'home' ? game.homeTeam : game.awayTeam;
@@ -276,10 +276,17 @@ export function buildTeamSchedules(options: {
 
   for (const schedule of schedules.values()) {
     const scheduledWeeks = new Set(schedule.weeklyGames.map((game) => game.week));
+    const regularSeasonWeeks = [...scheduledWeeks].filter((week) => week <= regularSeasonLastWeek);
+    if (regularSeasonWeeks.length === 0) continue;
 
-    // Only regular-season gaps are byes; a missing playoff week just means the
-    // team did not qualify.
-    for (let week = 1; week <= regularSeasonWeeks; week++) {
+    // A bye is a gap inside a team's own season, so only look between its first
+    // and last regular-season game. Otherwise every team that sits out Week 0
+    // would be recorded as on bye then, and every team that misses its
+    // conference championship would be on bye in the final week.
+    const firstWeek = Math.min(...regularSeasonWeeks);
+    const lastWeek = Math.max(...regularSeasonWeeks);
+
+    for (let week = firstWeek; week <= lastWeek; week++) {
       if (!scheduledWeeks.has(week)) {
         schedule.byeWeeks.push(week);
         schedule.weeklyGames.push({ week, isHomeGame: false, isByeWeek: true });

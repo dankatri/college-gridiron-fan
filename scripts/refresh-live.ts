@@ -12,7 +12,7 @@
  */
 
 import { SEASON_YEAR, weekForDate, weekWindow } from '../src/lib/season-config';
-import { TOTAL_WEEKS } from '../src/lib/types';
+import { FIRST_WEEK, LAST_WEEK } from '../src/lib/types';
 import type { Player } from '../src/lib/types';
 import { liveStatsCacheKey, playersCacheKey } from '../src/server/cache-keys';
 import { buildGameStatuses, buildLiveStats, effectiveKickoff } from '../src/server/cfbd-transform';
@@ -45,10 +45,11 @@ await runScript('refresh-live', async () => {
   const { getCalendar, getGamePlayerStats, getGames } = await import('../src/server/cfbd');
 
   const now = new Date();
-  const forcedWeek = process.env.WEEK ? Number(process.env.WEEK) : undefined;
+  const forcedWeek = process.env.WEEK !== undefined ? Number(process.env.WEEK) : undefined;
   const appWeek = forcedWeek ?? weekForDate(now);
 
-  if (!appWeek || appWeek < 1 || appWeek > TOTAL_WEEKS) {
+  // Week 0 is a real week, so test for null rather than falsiness.
+  if (appWeek === null || appWeek === undefined || appWeek < FIRST_WEEK || appWeek > LAST_WEEK) {
     logStep('no app week in progress, nothing to refresh', { season: SEASON_YEAR });
     return;
   }

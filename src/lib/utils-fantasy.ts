@@ -81,7 +81,7 @@ export function addPlayerToLineup(player: Player, slotIndex: number, lineup: Lin
 
 // Week locking functionality — reads from season-config.ts
 import { WEEK_START_DATES, SEASON_YEAR } from './season-config';
-import { TOTAL_WEEKS } from './types';
+import { FIRST_WEEK, LAST_WEEK } from './types';
 
 export function isWeekLocked(week: number): boolean {
   const weekStart = WEEK_START_DATES[week];
@@ -93,27 +93,27 @@ export function isWeekLocked(week: number): boolean {
 
 export function getCurrentWeek(): number {
   const now = new Date();
-  const firstWeekStart = WEEK_START_DATES[1];
+  const firstWeekStart = WEEK_START_DATES[FIRST_WEEK];
 
-  // Before the season starts, return week 1
+  // Before the season starts, return the opening week
   if (now < firstWeekStart) {
-    return 1;
+    return FIRST_WEEK;
   }
 
   // Find the latest week whose start date has passed
-  for (let w = TOTAL_WEEKS; w >= 1; w--) {
+  for (let w = LAST_WEEK; w >= FIRST_WEEK; w--) {
     const start = WEEK_START_DATES[w];
     if (start && now >= start) {
       return w;
     }
   }
 
-  return 1;
+  return FIRST_WEEK;
 }
 
 export function getWeekStatus(week: number): 'upcoming' | 'current' | 'locked' | 'preseason' {
   const now = new Date();
-  const firstWeekStart = WEEK_START_DATES[1];
+  const firstWeekStart = WEEK_START_DATES[FIRST_WEEK];
 
   // Before season starts, everything is preseason / upcoming
   if (now < firstWeekStart) {

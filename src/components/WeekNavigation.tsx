@@ -1,6 +1,6 @@
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { TOTAL_WEEKS } from '@/lib/types';
+import { ALL_WEEKS } from '@/lib/types';
 import { getWeekStatus } from '@/lib/utils-fantasy';
 import { WEEK_LABELS } from '@/lib/season-config';
 
@@ -10,7 +10,7 @@ interface WeekNavigationProps {
 }
 
 export function WeekNavigation({ currentWeek, onWeekChange }: WeekNavigationProps) {
-  const weeks = Array.from({ length: TOTAL_WEEKS }, (_, i) => i + 1);
+  const weeks = ALL_WEEKS;
   
   const getWeekLabel = (week: number): string => {
     if (week <= 12) return `W${week}`;

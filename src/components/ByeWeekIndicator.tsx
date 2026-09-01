@@ -10,13 +10,16 @@ interface ByeWeekIndicatorProps {
 }
 
 export function ByeWeekIndicator({ player, currentWeek, className }: ByeWeekIndicatorProps) {
-  if (!player.hasByeWeek || !player.byeWeek) {
+  // Week numbers are zero-based, so compare against undefined rather than
+  // relying on truthiness.
+  if (!player.hasByeWeek || player.byeWeek === undefined) {
     return null;
   }
 
-  const isCurrentWeekBye = currentWeek === player.byeWeek;
-  const isUpcomingBye = currentWeek && player.byeWeek > currentWeek;
-  const isPastBye = currentWeek && player.byeWeek < currentWeek;
+  const byeWeek = player.byeWeek;
+  const isCurrentWeekBye = currentWeek === byeWeek;
+  const isUpcomingBye = currentWeek !== undefined && byeWeek > currentWeek;
+  const isPastBye = currentWeek !== undefined && byeWeek < currentWeek;
 
   const getVariant = () => {
     if (isCurrentWeekBye) return 'destructive';

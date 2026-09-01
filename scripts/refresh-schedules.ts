@@ -7,7 +7,7 @@
  * Usage: npm run refresh:schedules
  */
 
-import { REGULAR_SEASON_WEEKS, SEASON_YEAR, weekForDate } from '../src/lib/season-config';
+import { REGULAR_SEASON_LAST_WEEK, SEASON_YEAR, weekForDate } from '../src/lib/season-config';
 import { schedulesCacheKey } from '../src/server/cache-keys';
 import { buildTeamSchedules } from '../src/server/cfbd-transform';
 import { writeCache } from './lib/cache';
@@ -36,7 +36,7 @@ await runScript('refresh-schedules', async () => {
     teams,
     games,
     weekForDate,
-    regularSeasonWeeks: REGULAR_SEASON_WEEKS,
+    regularSeasonLastWeek: REGULAR_SEASON_LAST_WEEK,
   });
 
   const withGames = schedules.filter((schedule) =>

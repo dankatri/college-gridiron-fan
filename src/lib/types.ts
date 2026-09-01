@@ -143,7 +143,19 @@ export const LINEUP_REQUIREMENTS = {
 };
 
 export const MAX_PLAYER_USES = 3;
-export const TOTAL_WEEKS = 18; // Weeks 1-13 (regular season), 14 (rivalry + CCG), 15-18 (CFP rounds)
+/**
+ * The season runs Week 0 through Week 18: Week 0 is the late-August opening
+ * slate, 1-12 are the regular season, 13 is rivalry week, 14 the conference
+ * championships and 15-18 the CFP rounds.
+ *
+ * Weeks are zero-based, so never assume a week is >= 1 — use FIRST_WEEK.
+ */
+export const FIRST_WEEK = 0;
+export const LAST_WEEK = 18;
+export const TOTAL_WEEKS = LAST_WEEK - FIRST_WEEK + 1;
+
+/** Every week number in order, for rendering week pickers. */
+export const ALL_WEEKS = Array.from({ length: TOTAL_WEEKS }, (_, i) => i + FIRST_WEEK);
 
 // League and Competition Types
 export interface League {
