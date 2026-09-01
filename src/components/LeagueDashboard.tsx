@@ -3,6 +3,7 @@ import { League, LeaderboardEntry, WeeklyLineup } from '@/lib/types';
 import { CreateLeague } from '@/components/CreateLeague';
 import { LeagueList } from '@/components/LeagueList';
 import { LeagueManagement } from '@/components/LeagueManagement';
+import { LeagueAdmin } from '@/components/LeagueAdmin';
 import { Leaderboard } from '@/components/Leaderboard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,6 +17,7 @@ import {
   Crown,
   Target,
   Medal,
+  ShieldCheck,
 } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
@@ -230,6 +232,8 @@ export function LeagueDashboard({
   };
 
   if (selectedLeague) {
+    const isLeagueOwner = selectedLeague.ownerId === currentUserId;
+
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
@@ -254,7 +258,7 @@ export function LeagueDashboard({
         </div>
 
         <Tabs defaultValue="leaderboard" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className={`grid w-full ${isLeagueOwner ? 'grid-cols-3' : 'grid-cols-2'}`}>
             <TabsTrigger value="leaderboard" className="flex items-center gap-1 sm:gap-2">
               <Trophy size={16} />
               <span className="hidden sm:inline">Leaderboard</span>
@@ -263,6 +267,12 @@ export function LeagueDashboard({
               <Users size={16} />
               <span className="hidden sm:inline">Manage</span>
             </TabsTrigger>
+            {isLeagueOwner && (
+              <TabsTrigger value="admin" className="flex items-center gap-1 sm:gap-2">
+                <ShieldCheck size={16} />
+                <span className="hidden sm:inline">Admin</span>
+              </TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="leaderboard" className="mt-6">
@@ -288,6 +298,12 @@ export function LeagueDashboard({
               }}
             />
           </TabsContent>
+
+          {isLeagueOwner && (
+            <TabsContent value="admin" className="mt-6">
+              <LeagueAdmin leagueId={selectedLeague.id} currentWeek={currentWeek} isOwner={isLeagueOwner} />
+            </TabsContent>
+          )}
         </Tabs>
       </div>
     );

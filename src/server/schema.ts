@@ -110,3 +110,29 @@ export const playerUsage = pgTable(
     pk: primaryKey({ columns: [table.leagueId, table.userId, table.season, table.playerId] }),
   }),
 );
+
+/**
+ * Records every lineup change a league owner makes on a member's behalf, so
+ * members can see who altered their team and when.
+ */
+export const lineupAuditLog = pgTable('lineup_audit_log', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  leagueId: uuid('league_id')
+    .notNull()
+    .references(() => leagues.id, { onDelete: 'cascade' }),
+  subjectUserId: uuid('subject_user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  actorUserId: uuid('actor_user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  season: integer('season').notNull(),
+  week: integer('week').notNull(),
+  previousSlots: jsonb('previous_slots').$type<{ slotIndex: number; position: string; playerId: string | null }[]>(),
+  newSlots: jsonb('new_slots')
+    .$type<{ slotIndex: number; position: string; playerId: string | null }[]>()
+    .notNull(),
+  reason: text('reason'),
+  wasLocked: integer('was_locked').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});

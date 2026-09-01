@@ -2,18 +2,18 @@ import { and, eq } from 'drizzle-orm';
 import { db } from '../../../src/server/db';
 import { leagueMembers, lineups, playerUsage } from '../../../src/server/schema';
 import { requireUser } from '../../../src/server/auth-utils';
-import { FIRST_WEEK, LAST_WEEK, LINEUP_REQUIREMENTS, MAX_PLAYER_USES } from '../../../src/lib/types';
+import { FIRST_WEEK, LAST_WEEK, MAX_PLAYER_USES } from '../../../src/lib/types';
 import { SEASON_YEAR } from '../../../src/lib/season-config';
 import { isWeekLocked } from '../../../src/lib/utils-fantasy';
+import {
+  normalizeSlots,
+  toUsageMap,
+  validateLineupSlots,
+  type LineupSlotInput,
+} from '../../../src/server/lineup-utils';
 
 export const config = {
   runtime: 'edge',
-};
-
-type LineupSlotInput = {
-  slotIndex: number;
-  position: 'QB' | 'RB' | 'WR';
-  playerId: string | null;
 };
 
 type SaveLineupBody = {
@@ -34,53 +34,6 @@ function getLeagueId(request: Request): string | null {
   return leagueId || null;
 }
 
-function normalizeSlots(slots: LineupSlotInput[]): LineupSlotInput[] {
-  return [...slots].sort((a, b) => a.slotIndex - b.slotIndex);
-}
-
-function validateLineupSlots(slots: LineupSlotInput[]): { ok: true } | { ok: false; error: string } {
-  const requiredSlotCount = Object.values(LINEUP_REQUIREMENTS).reduce((sum, count) => sum + count, 0);
-  if (slots.length !== requiredSlotCount) {
-    return { ok: false, error: `Lineup must have exactly ${requiredSlotCount} slots` };
-  }
-
-  const positionCounts: Record<'QB' | 'RB' | 'WR', number> = { QB: 0, RB: 0, WR: 0 };
-  const slotIndices = new Set<number>();
-  const playerIds = new Set<string>();
-
-  for (const slot of slots) {
-    if (!['QB', 'RB', 'WR'].includes(slot.position)) {
-      return { ok: false, error: 'Lineup contains an invalid position' };
-    }
-
-    if (slotIndices.has(slot.slotIndex)) {
-      return { ok: false, error: 'Lineup contains duplicate slot indexes' };
-    }
-    slotIndices.add(slot.slotIndex);
-
-    positionCounts[slot.position] += 1;
-
-    if (!slot.playerId) {
-      return { ok: false, error: 'All lineup slots must have a player selected' };
-    }
-
-    if (playerIds.has(slot.playerId)) {
-      return { ok: false, error: 'Lineup cannot include duplicate players' };
-    }
-    playerIds.add(slot.playerId);
-  }
-
-  if (
-    positionCounts.QB !== LINEUP_REQUIREMENTS.QB ||
-    positionCounts.RB !== LINEUP_REQUIREMENTS.RB ||
-    positionCounts.WR !== LINEUP_REQUIREMENTS.WR
-  ) {
-    return { ok: false, error: 'Lineup must include exactly 2 QB, 2 RB, and 2 WR' };
-  }
-
-  return { ok: true };
-}
-
 async function assertLeagueMembership(leagueId: string, userId: string): Promise<boolean> {
   const membership = await db
     .select({ userId: leagueMembers.userId })
@@ -88,17 +41,6 @@ async function assertLeagueMembership(leagueId: string, userId: string): Promise
     .where(and(eq(leagueMembers.leagueId, leagueId), eq(leagueMembers.userId, userId)))
     .limit(1);
   return !!membership[0];
-}
-
-function toUsageMap(slotsByWeek: Array<{ slots: LineupSlotInput[] }>): Map<string, number> {
-  const usage = new Map<string, number>();
-  for (const row of slotsByWeek) {
-    for (const slot of row.slots) {
-      if (!slot.playerId) continue;
-      usage.set(slot.playerId, (usage.get(slot.playerId) ?? 0) + 1);
-    }
-  }
-  return usage;
 }
 
 export default async function handler(request: Request): Promise<Response> {
