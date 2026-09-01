@@ -4,6 +4,9 @@ import { getPlayers, clearCache } from '@/lib/data';
 import { SEASON_YEAR, WEEK_START_DATES } from '@/lib/season-config';
 import { useLocalStorage } from '@/hooks/use-local-storage';
 import { useAuth } from '@/hooks/use-auth';
+import { useWeekActuals } from '@/hooks/use-week-actuals';
+import { useWeekMatchups } from '@/hooks/use-week-matchups';
+import { describeWeekPoints, sumActualPoints } from '@/lib/week-actuals';
 import {
   createEmptyLineup,
   isLineupComplete,
@@ -116,6 +119,26 @@ function App() {
   );
 
   const playersById = useMemo(() => new Map(players.map((player) => [player.id, player])), [players]);
+
+  // Past weeks show what a lineup really scored instead of its projection.
+  const { actuals: weekActuals, hasStarted: weekHasStarted, isLoading: isLoadingActuals } =
+    useWeekActuals(currentWeek);
+  const { matchups: weekMatchups } = useWeekMatchups(currentWeek);
+  const showWeekActuals = weekHasStarted && !isLoadingActuals;
+  const weekName = `Week ${currentWeek}`;
+
+  const lineupSlotPoints = useCallback(
+    (slot: LineupSlot) =>
+      slot.player
+        ? describeWeekPoints(slot.player, {
+            showActuals: showWeekActuals,
+            stats: weekActuals.get(slot.player.id),
+            game: weekMatchups.get(slot.player.team.toLowerCase())?.game,
+            weekName,
+          })
+        : undefined,
+    [showWeekActuals, weekActuals, weekMatchups, weekName],
+  );
 
   // The reset screen clears the token from the URL once the password is updated.
   useEffect(() => {
@@ -468,6 +491,17 @@ function App() {
   };
 
   const currentWeekLineup = weeklyLineups.find((lineup) => lineup.week === currentWeek);
+
+  // Once the week has been played, score the lineup from the live box scores
+  // rather than waiting for the stored total to be backfilled.
+  const liveActualPoints = useMemo(() => {
+    if (!showWeekActuals) return undefined;
+    const playerIds = currentLineup.map((slot) => slot.player?.id);
+    if (!playerIds.some((playerId) => playerId && weekActuals.has(playerId))) return undefined;
+    return sumActualPoints(playerIds, weekActuals);
+  }, [showWeekActuals, currentLineup, weekActuals]);
+
+  const displayedActualPoints = liveActualPoints ?? currentWeekLineup?.actualPoints;
   const currentLeagueName = leagues.find((league) => league.id === currentLeagueId)?.name;
   const hasLeagues = leagues.length > 0;
 
@@ -637,6 +671,7 @@ function App() {
                           onDropPlayer={handleDropPlayer}
                           canDrop={!slot.player}
                           isLocked={isWeekLocked(currentWeek)}
+                          weekPoints={lineupSlotPoints(slot)}
                         />
                       ))}
 
@@ -720,7 +755,7 @@ function App() {
                     </SheetContent>
                   </Sheet>
 
-                  <LineupSummary lineup={currentLineup} actualPoints={currentWeekLineup?.actualPoints} />
+                  <LineupSummary lineup={currentLineup} actualPoints={displayedActualPoints} />
 
                   <Card>
                     <CardHeader>
@@ -825,6 +860,7 @@ function App() {
                             onDropPlayer={handleDropPlayer}
                             canDrop={!slot.player}
                             isLocked={isWeekLocked(currentWeek)}
+                            weekPoints={lineupSlotPoints(slot)}
                           />
                         ))}
 
@@ -834,7 +870,7 @@ function App() {
                       </CardContent>
                     </Card>
 
-                    <LineupSummary lineup={currentLineup} actualPoints={currentWeekLineup?.actualPoints} />
+                    <LineupSummary lineup={currentLineup} actualPoints={displayedActualPoints} />
 
                     <Card>
                       <CardHeader>

@@ -1,4 +1,5 @@
 import { LineupSlot, Player } from '@/lib/types';
+import type { WeekPointsDisplay } from '@/lib/week-actuals';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -11,6 +12,8 @@ interface LineupSlotCardProps {
   onDropPlayer?: (player: Player, slotIndex: number) => void;
   canDrop?: boolean;
   isLocked?: boolean;
+  /** Set for weeks that have been played, so the card shows the real score. */
+  weekPoints?: WeekPointsDisplay;
 }
 
 export function LineupSlotCard({ 
@@ -18,7 +21,8 @@ export function LineupSlotCard({
   onRemovePlayer,
   onDropPlayer,
   canDrop = false,
-  isLocked = false
+  isLocked = false,
+  weekPoints
 }: LineupSlotCardProps) {
   const handleRemove = () => {
     if (onRemovePlayer && !isLocked) {
@@ -102,12 +106,21 @@ export function LineupSlotCard({
               </div>
             </div>
             
-            <div className="flex items-baseline justify-end gap-1.5">
+            <div className="flex items-baseline justify-end gap-1.5" title={weekPoints?.title}>
               <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                Projected
+                {weekPoints?.label ?? 'Projected'}
               </span>
-              <span className="text-sm font-semibold text-accent-foreground">
-                {slot.player.projectedPoints.toFixed(1)} pts
+              <span
+                className={cn(
+                  'text-sm font-semibold',
+                  weekPoints?.muted ? 'text-muted-foreground' : 'text-accent-foreground',
+                )}
+              >
+                {weekPoints
+                  ? weekPoints.text === '-'
+                    ? 'no game'
+                    : `${weekPoints.text} pts`
+                  : `${slot.player.projectedPoints.toFixed(1)} pts`}
               </span>
             </div>
           </div>

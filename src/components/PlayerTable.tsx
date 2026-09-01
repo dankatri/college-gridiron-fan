@@ -3,6 +3,7 @@ import { Player, PlayerUsage } from '@/lib/types';
 import { getConferences, getTeams, getPlayers } from '@/lib/data';
 import { isPlayerAvailable, isPlayerInLineup } from '@/lib/utils-fantasy';
 import { MAX_PLAYER_USES } from '@/lib/types';
+import { describeWeekPoints, resolveWeekPoints, weekStatValue } from '@/lib/week-actuals';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -13,6 +14,7 @@ import { ByeWeekIndicator } from '@/components/ByeWeekIndicator';
 import { WeekMatchup } from '@/components/WeekMatchup';
 import { PlayerDetailDialog } from '@/components/PlayerDetailDialog';
 import { useWeekMatchups } from '@/hooks/use-week-matchups';
+import { useWeekActuals } from '@/hooks/use-week-actuals';
 import {
   Users,
   Funnel as Filter,
@@ -61,7 +63,15 @@ export function PlayerTable({
   const [sortKey, setSortKey] = useState<SortKey>('projectedPoints');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const { matchups, isLoading: isLoadingMatchups } = useWeekMatchups(currentWeek);
+  const { actuals, hasStarted, isLoading: isLoadingActuals } = useWeekActuals(currentWeek);
   const [detailPlayer, setDetailPlayer] = useState<Player | null>(null);
+
+  // Once a week has kicked off its real scores are more useful than the
+  // preseason projection, so the points and stat columns switch over to them.
+  const showActuals = hasStarted && !isLoadingActuals;
+
+  const weekPointsFor = (player: Player) =>
+    resolveWeekPoints(player, actuals.get(player.id), matchups.get(player.team.toLowerCase())?.game);
 
   // Immediately set initial conference data from players if available
   useEffect(() => {
@@ -245,9 +255,21 @@ export function PlayerTable({
 
     // Missing stats sort last in both directions rather than counting as zero.
     const direction = sortDirection === 'asc' ? 1 : -1;
+
+    // Sort on whatever the column is actually showing, so a week of real
+    // scores does not get ordered by last season's totals.
+    const sortValue = (player: Player): number | undefined => {
+      if (!showActuals) {
+        const value = player[sortKey as keyof Player];
+        return typeof value === 'number' ? value : undefined;
+      }
+      if (sortKey === 'projectedPoints') return weekPointsFor(player).points;
+      return weekStatValue(actuals.get(player.id), String(sortKey));
+    };
+
     return [...filtered].sort((a, b) => {
-      const aValue = a[sortKey as keyof Player] as number | undefined;
-      const bValue = b[sortKey as keyof Player] as number | undefined;
+      const aValue = sortValue(a);
+      const bValue = sortValue(b);
 
       const aMissing = typeof aValue !== 'number' || Number.isNaN(aValue);
       const bMissing = typeof bValue !== 'number' || Number.isNaN(bValue);
@@ -258,7 +280,7 @@ export function PlayerTable({
       if (aValue === bValue) return a.name.localeCompare(b.name);
       return (aValue - bValue) * direction;
     });
-  }, [enhancedPlayers, position, conferenceFilter, teamFilter, sortKey, sortDirection]);
+  }, [enhancedPlayers, position, conferenceFilter, teamFilter, sortKey, sortDirection, showActuals, actuals, matchups]);
 
   const totalPlayers = filteredPlayers.length;
   const totalPages = Math.max(1, Math.ceil(totalPlayers / pageSize));
@@ -278,7 +300,7 @@ export function PlayerTable({
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [conferenceFilter, teamFilter, position, pageSize, sortKey, sortDirection]);
+  }, [conferenceFilter, teamFilter, position, pageSize, sortKey, sortDirection, showActuals]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -373,8 +395,17 @@ export function PlayerTable({
     return { status: 'available', label: 'Available', variant: 'default' as const };
   };
 
-  const getPlayerCountDisplay = () => {
-    const baseCount = `${filteredPlayers.length}`;
+  const weekName = currentWeek === undefined ? 'this week' : `Week ${currentWeek}`;
+
+  const weekPointsDisplay = (player: Player) =>
+    describeWeekPoints(player, {
+      showActuals,
+      stats: actuals.get(player.id),
+      game: matchups.get(player.team.toLowerCase())?.game,
+      weekName,
+    });
+
+  const getPlayerCountDisplay = () => {    const baseCount = `${filteredPlayers.length}`;
     const isFiltered = conferenceFilter !== 'All Conferences' || teamFilter !== 'All Teams';
     
     if (isLoadingPlayers && isFiltered) {
@@ -390,6 +421,11 @@ export function PlayerTable({
         <CardTitle className="flex items-center gap-2">
           <Users size={20} />
           {positionName} ({getPlayerCountDisplay()})
+          {showActuals && (
+            <Badge variant="secondary" className="text-xs font-normal">
+              {weekName} actuals
+            </Badge>
+          )}
         </CardTitle>
         
         {/* Filters */}
@@ -463,6 +499,7 @@ export function PlayerTable({
           {paginatedPlayers.map((player) => {
             const playerStatus = getPlayerStatus(player);
             const canSelect = !isLocked && (playerStatus.status === 'available' || playerStatus.status === 'used');
+            const points = weekPointsDisplay(player);
 
             return (
               <div
@@ -522,7 +559,9 @@ export function PlayerTable({
                   <span>•</span>
                   <span>{player.conference}</span>
                   <span>•</span>
-                  <span>Projected {player.projectedPoints} pts</span>
+                  <span className={points.muted ? 'italic' : undefined} title={points.title}>
+                    {points.summary}
+                  </span>
                   <span>•</span>
                   <WeekMatchup
                     teamName={player.team}
@@ -548,7 +587,7 @@ export function PlayerTable({
                   'projectedPoints',
                   <span className="flex items-center gap-1">
                     <Trophy size={14} />
-                    Proj
+                    {showActuals ? 'Pts' : 'Proj'}
                   </span>,
                 )}
                 {statsColumns.map(col => renderSortableHeader(col.key as SortKey, col.label))}
@@ -558,6 +597,8 @@ export function PlayerTable({
               {paginatedPlayers.map((player) => {
                 const playerStatus = getPlayerStatus(player);
                 const canSelect = !isLocked && (playerStatus.status === 'available' || playerStatus.status === 'used');
+                const points = weekPointsDisplay(player);
+                const weekStats = actuals.get(player.id);
 
                 return (
                   <TableRow
@@ -638,10 +679,18 @@ export function PlayerTable({
                         <ByeWeekIndicator player={player} currentWeek={currentWeek} />
                       </div>
                     </TableCell>
-                    <TableCell className="text-center font-medium">{player.projectedPoints}</TableCell>
+                    <TableCell className="text-center font-medium">
+                      <span className={points.muted ? 'text-muted-foreground' : undefined} title={points.title}>
+                        {points.text}
+                      </span>
+                    </TableCell>
                     {statsColumns.map(col => (
                       <TableCell key={col.key} className="text-center">
-                        {col.format((player as any)[col.key])}
+                        {col.format(
+                          showActuals
+                            ? weekStatValue(weekStats, col.key)
+                            : ((player as any)[col.key] as number | undefined),
+                        )}
                       </TableCell>
                     ))}
                   </TableRow>
