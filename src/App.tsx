@@ -378,11 +378,6 @@ function App() {
       toast.error(`Week ${currentWeek} lineup is locked and cannot be modified`);
       return;
     }
-    if (!isLineupComplete(currentLineup)) {
-      toast.error('Please fill all lineup slots before saving');
-      return;
-    }
-
     try {
       const response = await fetch(`/api/leagues/${currentLeagueId}/lineups`, {
         method: 'PUT',
@@ -409,7 +404,15 @@ function App() {
         });
       }
       setPlayerUsage((payload.playerUsage ?? []) as PlayerUsage[]);
-      toast.success(`Week ${currentWeek} lineup saved!`);
+
+      // Half-finished lineups are saved on purpose, so say so rather than
+      // letting it look like the whole lineup went in.
+      const filled = currentLineup.filter((slot) => slot.player).length;
+      toast.success(
+        filled === currentLineup.length
+          ? `Week ${currentWeek} lineup saved!`
+          : `Week ${currentWeek} lineup saved with ${filled} of ${currentLineup.length} slots filled`,
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to save lineup';
       toast.error(message);
@@ -502,6 +505,14 @@ function App() {
   }, [showWeekActuals, currentLineup, weekActuals]);
 
   const displayedActualPoints = liveActualPoints ?? currentWeekLineup?.actualPoints;
+
+  // A lineup can be saved part-finished, so the button says how far along it is.
+  const filledSlotCount = currentLineup.filter((slot) => slot.player).length;
+  const saveButtonLabel = isWeekLocked(currentWeek)
+    ? `Week ${currentWeek} Locked`
+    : isLineupComplete(currentLineup)
+      ? `Save Week ${currentWeek} Lineup`
+      : `Save Week ${currentWeek} Lineup (${filledSlotCount}/${currentLineup.length})`;
   const currentLeagueName = leagues.find((league) => league.id === currentLeagueId)?.name;
   const hasLeagues = leagues.length > 0;
 
@@ -581,7 +592,7 @@ function App() {
               return (
                 <div className="flex flex-wrap items-center justify-center gap-2 text-sm text-green-600 bg-green-50 border border-green-200 rounded-lg p-2">
                   <Trophy size={16} />
-                  Week {currentWeek} lineup can be edited until the week starts
+                  Week {currentWeek} lineup can be edited until the week starts - save a partial lineup and finish it later
                 </div>
               );
             })()}
@@ -675,8 +686,8 @@ function App() {
                         />
                       ))}
 
-                      <Button onClick={() => void handleSaveLineup()} className="w-full" disabled={!isLineupComplete(currentLineup) || isWeekLocked(currentWeek)}>
-                        {isWeekLocked(currentWeek) ? `Week ${currentWeek} Locked` : `Save Week ${currentWeek} Lineup`}
+                      <Button onClick={() => void handleSaveLineup()} className="w-full" disabled={isWeekLocked(currentWeek)}>
+                        {saveButtonLabel}
                       </Button>
                     </CardContent>
                   </Card>
@@ -864,8 +875,8 @@ function App() {
                           />
                         ))}
 
-                        <Button onClick={() => void handleSaveLineup()} className="w-full" disabled={!isLineupComplete(currentLineup) || isWeekLocked(currentWeek)}>
-                          {isWeekLocked(currentWeek) ? `Week ${currentWeek} Locked` : `Save Week ${currentWeek} Lineup`}
+                        <Button onClick={() => void handleSaveLineup()} className="w-full" disabled={isWeekLocked(currentWeek)}>
+                          {saveButtonLabel}
                         </Button>
                       </CardContent>
                     </Card>

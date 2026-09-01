@@ -159,6 +159,7 @@ export function LeagueAdmin({ leagueId, currentWeek, isOwner }: LeagueAdminProps
 
   const draftPlayerIds = new Set(draftLineup.map((slot) => slot.player?.id).filter(Boolean) as string[]);
   const isComplete = draftLineup.every((slot) => slot.player);
+  const filledSlotCount = draftLineup.filter((slot) => slot.player).length;
   const projected = calculateProjectedPoints(draftLineup);
   const locked = isWeekLocked(week);
 
@@ -416,11 +417,13 @@ export function LeagueAdmin({ leagueId, currentWeek, isOwner }: LeagueAdminProps
 
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-xs text-muted-foreground">
-                      {isComplete ? 'Lineup is complete' : 'All 6 slots must be filled before saving'}
+                      {isComplete
+                        ? 'Lineup is complete'
+                        : `${filledSlotCount} of ${draftLineup.length} slots filled - partial lineups can be saved`}
                     </p>
                     <Button
                       onClick={() => void handleSave()}
-                      disabled={!isComplete || isSaving}
+                      disabled={isSaving}
                       className="flex items-center gap-2"
                     >
                       <FloppyDisk size={16} />

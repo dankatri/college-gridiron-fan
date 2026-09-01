@@ -7,9 +7,21 @@ export type LineupSlotInput = {
 };
 
 export function normalizeSlots(slots: LineupSlotInput[]): LineupSlotInput[] {
-  return [...slots].sort((a, b) => a.slotIndex - b.slotIndex);
+  return [...slots]
+    .sort((a, b) => a.slotIndex - b.slotIndex)
+    .map((slot) => ({ ...slot, playerId: slot.playerId ?? null }));
 }
 
+/** How many slots actually have a player in them. */
+export function countFilledSlots(slots: LineupSlotInput[]): number {
+  return slots.filter((slot) => !!slot.playerId).length;
+}
+
+/**
+ * Checks the shape of a lineup. Empty slots are allowed so a lineup can be
+ * saved half-finished and picked up again later; the only thing that has to
+ * hold is that the slot layout itself is intact.
+ */
 export function validateLineupSlots(slots: LineupSlotInput[]): { ok: true } | { ok: false; error: string } {
   const requiredSlotCount = Object.values(LINEUP_REQUIREMENTS).reduce((sum, count) => sum + count, 0);
   if (slots.length !== requiredSlotCount) {
@@ -32,14 +44,16 @@ export function validateLineupSlots(slots: LineupSlotInput[]): { ok: true } | { 
 
     positionCounts[slot.position] += 1;
 
-    if (!slot.playerId) {
-      return { ok: false, error: 'All lineup slots must have a player selected' };
+    if (slot.playerId !== null && typeof slot.playerId !== 'string') {
+      return { ok: false, error: 'Lineup contains an invalid player reference' };
     }
 
-    if (playerIds.has(slot.playerId)) {
-      return { ok: false, error: 'Lineup cannot include duplicate players' };
+    if (slot.playerId) {
+      if (playerIds.has(slot.playerId)) {
+        return { ok: false, error: 'Lineup cannot include duplicate players' };
+      }
+      playerIds.add(slot.playerId);
     }
-    playerIds.add(slot.playerId);
   }
 
   if (
