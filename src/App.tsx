@@ -533,7 +533,7 @@ function App() {
           <div className="text-center space-y-2 flex-1 lg:text-left">
             <h1 className="text-2xl sm:text-3xl font-bold flex items-center justify-center lg:justify-start gap-2">
               <Trophy size={32} className="text-accent" />
-              College Fantasy Football
+              College Football Pick 'Em
             </h1>
           </div>
 

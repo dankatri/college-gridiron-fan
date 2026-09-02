@@ -217,7 +217,7 @@ export function LoginScreen() {
           <div className="flex justify-center">
             <Trophy size={48} className="text-accent" />
           </div>
-          <h1 className="text-3xl font-bold">College Fantasy Football</h1>
+          <h1 className="text-3xl font-bold">College Football Pick 'Em</h1>
           <p className="text-muted-foreground">
             Sign in to save your fantasy lineup securely
           </p>
