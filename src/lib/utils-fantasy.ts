@@ -60,13 +60,18 @@ export function getAvailableSlots(lineup: LineupSlot[], position: 'QB' | 'RB' | 
 }
 
 export function isPlayerInLineup(playerId: string, lineup: LineupSlot[]): boolean {
-  return lineup.some(slot => slot.player?.id === playerId);
+  return lineup.some(slot => slotPlayerId(slot) === playerId);
+}
+
+/** The player in a slot, whether or not the full player record has loaded. */
+export function slotPlayerId(slot: LineupSlot): string | undefined {
+  return slot.player?.id ?? slot.playerId;
 }
 
 export function removePlayerFromLineup(playerId: string, lineup: LineupSlot[]): LineupSlot[] {
   return lineup.map(slot =>
-    slot.player?.id === playerId
-      ? { ...slot, player: undefined }
+    slotPlayerId(slot) === playerId
+      ? { ...slot, player: undefined, playerId: undefined }
       : slot
   );
 }
@@ -74,9 +79,30 @@ export function removePlayerFromLineup(playerId: string, lineup: LineupSlot[]): 
 export function addPlayerToLineup(player: Player, slotIndex: number, lineup: LineupSlot[]): LineupSlot[] {
   return lineup.map(slot =>
     slot.slotIndex === slotIndex
-      ? { ...slot, player }
+      ? { ...slot, player, playerId: player.id }
       : slot
   );
+}
+
+/**
+ * Fill in slots whose player record was not available when the lineup loaded.
+ * Only untouched slots are filled, so this never resurrects a player the user
+ * has since removed. Returns the original lineup when nothing changed.
+ */
+export function resolvePendingSlots(lineup: LineupSlot[], playersById: Map<string, Player>): LineupSlot[] {
+  let changed = false;
+
+  const resolved = lineup.map(slot => {
+    if (slot.player || !slot.playerId) return slot;
+
+    const player = playersById.get(slot.playerId);
+    if (!player) return slot;
+
+    changed = true;
+    return { ...slot, player };
+  });
+
+  return changed ? resolved : lineup;
 }
 
 // Week locking functionality — reads from season-config.ts

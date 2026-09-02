@@ -98,6 +98,11 @@ export interface LiveUpdate {
 export interface LineupSlot {
   position: 'QB' | 'RB' | 'WR';
   player?: Player;
+  /**
+   * The saved player id. Kept alongside `player` so a slot still knows who is
+   * in it while the player pool is loading, rather than looking empty.
+   */
+  playerId?: string;
   slotIndex: number;
 }
 

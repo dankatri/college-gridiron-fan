@@ -62,6 +62,7 @@ export function PlayerTable({
   const [enhancedPlayers, setEnhancedPlayers] = useState<Player[]>(players);
   const [sortKey, setSortKey] = useState<SortKey>('projectedPoints');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const isUnfiltered = conferenceFilter === 'All Conferences' && teamFilter === 'All Teams';
   const { matchups, isLoading: isLoadingMatchups } = useWeekMatchups(currentWeek);
   const { actuals, hasStarted, isLoading: isLoadingActuals } = useWeekActuals(currentWeek);
   const [detailPlayer, setDetailPlayer] = useState<Player | null>(null);
@@ -157,62 +158,59 @@ export function PlayerTable({
     loadFilters();
   }, [players]);
 
-  // Update enhanced players when base players change
+  // Show the full pool whenever nothing is narrowing it, including after a
+  // refresh. While a filter is applied the filtered result below owns the list.
   useEffect(() => {
-    setEnhancedPlayers(players);
-  }, [players]);
+    if (isUnfiltered) {
+      setEnhancedPlayers(players);
+    }
+  }, [players, isUnfiltered]);
 
-  // Load additional players when filters change
+  // Load the narrower set of players a filter asks for. This deliberately does
+  // not depend on `players`: the fetched players are merged into the parent
+  // pool, and re-running on that would refetch the same filter forever.
   useEffect(() => {
+    if (isUnfiltered) return;
+
+    let cancelled = false;
+
     const loadFilteredPlayers = async () => {
-      // Only load more players if a specific filter is applied
-      if (conferenceFilter === 'All Conferences' && teamFilter === 'All Teams') {
-        setEnhancedPlayers(players);
-        return;
-      }
-
       setIsLoadingPlayers(true);
       try {
         const filterOptions: { specificTeam?: string; specificConference?: string } = {};
-        
+
         if (teamFilter !== 'All Teams') {
           filterOptions.specificTeam = teamFilter;
         }
-        
+
         if (conferenceFilter !== 'All Conferences') {
           filterOptions.specificConference = conferenceFilter;
         }
 
-        console.log('Loading filtered players with options:', filterOptions);
         const newPlayers = await getPlayers(filterOptions);
-        
-        // Ensure we have a good mix of players for the filtered view
+        if (cancelled) return;
+
         if (newPlayers.length > 0) {
           setEnhancedPlayers(newPlayers);
-          
-          // Optionally notify parent component about the new players
-          if (onPlayersUpdate) {
-            onPlayersUpdate(newPlayers);
-          }
-          
-          console.log(`Loaded ${newPlayers.length} players for filtered view`);
+
+          // Let the parent widen its pool so selected players stay resolvable.
+          onPlayersUpdate?.(newPlayers);
         } else {
           console.warn('No players found for filter, keeping existing players');
-          // Keep existing players rather than showing empty results
-          setEnhancedPlayers(players);
         }
-        
       } catch (error) {
         console.error('Failed to load filtered players:', error);
-        // Fall back to original players
-        setEnhancedPlayers(players);
       } finally {
-        setIsLoadingPlayers(false);
+        if (!cancelled) setIsLoadingPlayers(false);
       }
     };
 
     loadFilteredPlayers();
-  }, [conferenceFilter, teamFilter, players, onPlayersUpdate]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [conferenceFilter, teamFilter, isUnfiltered, onPlayersUpdate]);
 
   // Get teams filtered by conference for dropdown
   const filteredTeams = useMemo(() => {

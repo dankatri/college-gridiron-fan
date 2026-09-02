@@ -8,6 +8,12 @@ import { useWeekActuals } from '@/hooks/use-week-actuals';
 import { useWeekMatchups } from '@/hooks/use-week-matchups';
 import { describeWeekPoints, sumActualPoints } from '@/lib/week-actuals';
 import {
+  hydrateSlots,
+  mergePlayerPool,
+  toSlotPayload,
+  type ApiLineupSlot,
+} from '@/lib/lineup-state';
+import {
   createEmptyLineup,
   isLineupComplete,
   removePlayerFromLineup,
@@ -16,6 +22,7 @@ import {
   calculateProjectedPoints,
   isWeekLocked,
   getCurrentWeek,
+  resolvePendingSlots,
 } from '@/lib/utils-fantasy';
 import { PlayerTable } from '@/components/PlayerTable';
 import { LineupSlotCard } from '@/components/LineupSlotCard';
@@ -50,12 +57,6 @@ type ApiLeagueSummary = {
   name: string;
 };
 
-type ApiLineupSlot = {
-  slotIndex: number;
-  position: 'QB' | 'RB' | 'WR';
-  playerId: string | null;
-};
-
 type ApiLineup = {
   id: string;
   week: number;
@@ -71,24 +72,6 @@ type ApiMeResponse = {
     hasPasskey?: boolean;
   } | null;
 };
-
-function hydrateSlots(slots: ApiLineupSlot[], playersById: Map<string, Player>): LineupSlot[] {
-  return [...slots]
-    .sort((a, b) => a.slotIndex - b.slotIndex)
-    .map((slot) => ({
-      slotIndex: slot.slotIndex,
-      position: slot.position,
-      player: slot.playerId ? playersById.get(slot.playerId) : undefined,
-    }));
-}
-
-function toSlotPayload(lineup: LineupSlot[]): ApiLineupSlot[] {
-  return lineup.map((slot) => ({
-    slotIndex: slot.slotIndex,
-    position: slot.position,
-    playerId: slot.player?.id ?? null,
-  }));
-}
 
 function App() {
   const [currentWeek, setCurrentWeek] = useState(getCurrentWeek());
@@ -274,13 +257,22 @@ function App() {
     fetchCurrentWeekLineup();
   }, [fetchCurrentWeekLineup]);
 
+  // Unsaved edits must survive anything that grows the player pool, so the
+  // lineup is only rebuilt from the stored row when that row itself changes.
   useEffect(() => {
-    if (!currentWeekLineupRow) {
-      setCurrentLineup(createEmptyLineup());
-      return;
-    }
-    setCurrentLineup(hydrateSlots(currentWeekLineupRow.slots, playersById));
-  }, [currentWeekLineupRow, playersById]);
+    setCurrentLineup(
+      currentWeekLineupRow
+        ? hydrateSlots(currentWeekLineupRow.slots, playersById)
+        : createEmptyLineup(),
+    );
+    // playersById is deliberately excluded; pending slots are filled in below.
+  }, [currentWeekLineupRow]);
+
+  // The stored lineup usually arrives before the player list does, so fill in
+  // any slot still waiting on its player record as the pool grows.
+  useEffect(() => {
+    setCurrentLineup((previous) => resolvePendingSlots(previous, playersById));
+  }, [playersById]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -434,9 +426,12 @@ function App() {
     }
   };
 
-  const handlePlayersUpdate = (newPlayers: Player[]) => {
-    setPlayers(newPlayers);
-  };
+  // Filtering the player table fetches a subset of the league's players. Merge
+  // it into the pool rather than replacing it, so narrowing a filter can never
+  // make an already-selected player unresolvable.
+  const handlePlayersUpdate = useCallback((newPlayers: Player[]) => {
+    setPlayers((previous) => mergePlayerPool(previous, newPlayers));
+  }, []);
 
   const handleForceSampleData = async () => {
     setIsLoadingPlayers(true);
