@@ -107,15 +107,8 @@ export function resolvePendingSlots(lineup: LineupSlot[], playersById: Map<strin
 
 // Week locking functionality — reads from season-config.ts
 import { weekBoundary, SEASON_YEAR } from './season-config';
+import { hasWeekStarted, isWeekComplete } from './week-lock';
 import { FIRST_WEEK, LAST_WEEK } from './types';
-
-export function isWeekLocked(week: number): boolean {
-  const weekStart = weekBoundary(week);
-  if (!weekStart) {
-    return true; // Lock unknown weeks
-  }
-  return new Date() >= weekStart;
-}
 
 export function getCurrentWeek(): number {
   const now = new Date();
@@ -148,10 +141,12 @@ export function getWeekStatus(week: number): 'upcoming' | 'current' | 'locked' |
 
   const currentWeek = getCurrentWeek();
 
-  if (week < currentWeek) {
+  // 'locked' means the week is finished; a week that is merely under way is
+  // still 'current', because its unplayed slots can still be changed.
+  if (isWeekComplete(week)) {
     return 'locked';
-  } else if (week === currentWeek) {
-    return isWeekLocked(week) ? 'locked' : 'current';
+  } else if (week === currentWeek || hasWeekStarted(week)) {
+    return 'current';
   } else {
     return 'upcoming';
   }

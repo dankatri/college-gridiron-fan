@@ -3,7 +3,7 @@ import { db } from '../../../src/server/db';
 import { dataCache, leagueMembers, lineups, users } from '../../../src/server/schema';
 import { requireUser } from '../../../src/server/auth-utils';
 import { SEASON_YEAR } from '../../../src/lib/season-config';
-import { isWeekLocked } from '../../../src/lib/utils-fantasy';
+import { hasWeekStarted } from '../../../src/lib/week-lock';
 import type { LineupSlotInput } from '../../../src/server/lineup-utils';
 import type { PlayerStats } from '../../../src/lib/types';
 
@@ -120,7 +120,7 @@ export default async function handler(request: Request): Promise<Response> {
 
       // A week only contributes to the standings once its games have started.
       // Before that everyone is on zero, rather than on their projection.
-      if (isWeekLocked(row.week)) {
+      if (hasWeekStarted(row.week)) {
         const weekScores = weeklyScores.get(row.week);
         const points = ((row.slots ?? []) as LineupSlotInput[]).reduce((sum, slot) => {
           if (!slot.playerId) return sum;

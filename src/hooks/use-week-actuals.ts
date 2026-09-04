@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getWeekPlayerStats } from '@/lib/live-data';
 import type { PlayerStats } from '@/lib/types';
-import { isWeekLocked } from '@/lib/utils-fantasy';
+import { hasWeekStarted } from '@/lib/week-lock';
 
 export interface WeekActuals {
   isLoading: boolean;
@@ -19,7 +19,7 @@ const EMPTY = new Map<string, PlayerStats>();
  * never fetched, since there is nothing to show.
  */
 export function useWeekActuals(week?: number): WeekActuals {
-  const hasStarted = week !== undefined && isWeekLocked(week);
+  const hasStarted = week !== undefined && hasWeekStarted(week);
   const [state, setState] = useState<{ week?: number; actuals: Map<string, PlayerStats> } | null>(null);
 
   useEffect(() => {

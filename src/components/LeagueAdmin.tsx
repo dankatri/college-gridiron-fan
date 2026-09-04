@@ -3,7 +3,8 @@ import { LineupSlot, MAX_PLAYER_USES, Player } from '@/lib/types';
 import { ALL_WEEKS } from '@/lib/types';
 import { WEEK_LABELS } from '@/lib/season-config';
 import { getPlayers } from '@/lib/data';
-import { calculateProjectedPoints, createEmptyLineup, isWeekLocked } from '@/lib/utils-fantasy';
+import { calculateProjectedPoints, createEmptyLineup } from '@/lib/utils-fantasy';
+import { hasWeekStarted } from '@/lib/week-lock';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -161,7 +162,7 @@ export function LeagueAdmin({ leagueId, currentWeek, isOwner }: LeagueAdminProps
   const isComplete = draftLineup.every((slot) => slot.player);
   const filledSlotCount = draftLineup.filter((slot) => slot.player).length;
   const projected = calculateProjectedPoints(draftLineup);
-  const locked = isWeekLocked(week);
+  const locked = hasWeekStarted(week);
 
   const handleSave = async () => {
     if (!selectedMember || !isComplete) return;
@@ -241,7 +242,7 @@ export function LeagueAdmin({ leagueId, currentWeek, isOwner }: LeagueAdminProps
             {locked && (
               <Badge variant="destructive" className="mb-2 flex items-center gap-1">
                 <LockSimple size={12} />
-                Week locked — edits are overrides
+                Week under way — edits are overrides
               </Badge>
             )}
           </div>

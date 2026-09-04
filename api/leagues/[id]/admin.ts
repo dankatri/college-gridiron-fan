@@ -4,7 +4,7 @@ import { leagueMembers, leagues, lineupAuditLog, lineups, playerUsage, users } f
 import { requireUser } from '../../../src/server/auth-utils';
 import { FIRST_WEEK, LAST_WEEK, MAX_PLAYER_USES } from '../../../src/lib/types';
 import { SEASON_YEAR } from '../../../src/lib/season-config';
-import { isWeekLocked } from '../../../src/lib/utils-fantasy';
+import { isWeekComplete } from '../../../src/lib/week-lock';
 import {
   normalizeSlots,
   toUsageMap,
@@ -160,7 +160,7 @@ export default async function handler(request: Request): Promise<Response> {
       return jsonResponse({
         week,
         season: SEASON_YEAR,
-        isWeekLocked: isWeekLocked(week),
+        isWeekLocked: isWeekComplete(week),
         members: memberPayload,
         auditLog: await loadAuditLog(leagueId),
       });
@@ -233,7 +233,7 @@ export default async function handler(request: Request): Promise<Response> {
       const projectedPoints = Number.isFinite(body.projectedPoints) ? Number(body.projectedPoints).toFixed(2) : '0';
       // Owners are explicitly allowed past the lock - fixing a locked week is
       // the main reason this page exists - but the override is always logged.
-      const locked = isWeekLocked(week);
+      const locked = isWeekComplete(week);
 
       const upserted = await db
         .insert(lineups)

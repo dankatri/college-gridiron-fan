@@ -37,7 +37,10 @@ interface PlayerTableProps {
   currentWeek?: number;
   onPlayerSelect: (player: Player) => void;
   onPlayersUpdate?: (players: Player[]) => void; // New callback to update parent's player list
+  /** The whole week is over; nothing can be selected. */
   isLocked?: boolean;
+  /** Lower-cased teams whose game has kicked off, so their players are frozen. */
+  lockedTeams?: Set<string>;
 }
 
 export function PlayerTable({ 
@@ -48,7 +51,8 @@ export function PlayerTable({
   currentWeek,
   onPlayerSelect,
   onPlayersUpdate,
-  isLocked = false
+  isLocked = false,
+  lockedTeams
 }: PlayerTableProps) {
   const pageSizeOptions = ['10', '15', '20', '25'] as const;
   const [conferenceFilter, setConferenceFilter] = useState('All Conferences');
@@ -388,6 +392,11 @@ export function PlayerTable({
     const usageCount = getUsageCount(player.id);
 
     if (inLineup) return { status: 'in-lineup', label: 'In Lineup', variant: 'secondary' as const };
+    // A player whose game has begun is settled for the week, whether or not
+    // they are in a lineup, so they cannot be picked up now.
+    if (lockedTeams?.has(player.team.toLowerCase())) {
+      return { status: 'kicked-off', label: 'Kicked Off', variant: 'outline' as const };
+    }
     if (!isAvailable) return { status: 'maxed', label: 'Max Uses', variant: 'destructive' as const };
     if (usageCount > 0) return { status: 'used', label: `Used ${usageCount}x`, variant: 'outline' as const };
     return { status: 'available', label: 'Available', variant: 'default' as const };

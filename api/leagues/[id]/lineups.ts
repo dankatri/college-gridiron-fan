@@ -4,7 +4,8 @@ import { leagueMembers, lineups, playerUsage } from '../../../src/server/schema'
 import { requireUser } from '../../../src/server/auth-utils';
 import { FIRST_WEEK, LAST_WEEK, MAX_PLAYER_USES } from '../../../src/lib/types';
 import { SEASON_YEAR } from '../../../src/lib/season-config';
-import { isWeekLocked } from '../../../src/lib/utils-fantasy';
+import { isWeekComplete } from '../../../src/lib/week-lock';
+import { findLockedSlotChange, loadLockedPlayers } from '../../../src/server/lineup-lock';
 import {
   normalizeSlots,
   toUsageMap,
@@ -156,8 +157,8 @@ export default async function handler(request: Request): Promise<Response> {
       if (week === undefined || week === null || !Number.isInteger(week) || week < FIRST_WEEK || week > LAST_WEEK) {
         return jsonResponse({ error: `Week must be between ${FIRST_WEEK} and ${LAST_WEEK}` }, 400);
       }
-      if (isWeekLocked(week)) {
-        return jsonResponse({ error: `Week ${week} lineup is locked` }, 409);
+      if (isWeekComplete(week)) {
+        return jsonResponse({ error: `Week ${week} is over and can no longer be changed` }, 409);
       }
       if (!Array.isArray(body.slots)) {
         return jsonResponse({ error: 'Slots are required' }, 400);
@@ -176,6 +177,15 @@ export default async function handler(request: Request): Promise<Response> {
         })
         .from(lineups)
         .where(and(eq(lineups.leagueId, leagueId), eq(lineups.userId, user.id), eq(lineups.season, SEASON_YEAR)));
+
+      // Players lock one at a time, as their own game kicks off, so the rest
+      // of the week's slots stay editable around them.
+      const previousSlots = (seasonLineups.find((row) => row.week === week)?.slots as LineupSlotInput[]) ?? [];
+      const lockedPlayers = await loadLockedPlayers(week);
+      const lockConflict = findLockedSlotChange(previousSlots, slots, lockedPlayers);
+      if (lockConflict) {
+        return jsonResponse({ error: lockConflict }, 409);
+      }
 
       const usageCandidates = seasonLineups
         .filter((row) => row.week !== week)
@@ -202,7 +212,7 @@ export default async function handler(request: Request): Promise<Response> {
           week,
           slots,
           projectedPoints,
-          lockedAt: isWeekLocked(week) ? new Date() : null,
+          lockedAt: isWeekComplete(week) ? new Date() : null,
           updatedAt: new Date(),
         })
         .onConflictDoUpdate({
