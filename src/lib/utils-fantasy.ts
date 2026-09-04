@@ -106,11 +106,11 @@ export function resolvePendingSlots(lineup: LineupSlot[], playersById: Map<strin
 }
 
 // Week locking functionality — reads from season-config.ts
-import { WEEK_START_DATES, SEASON_YEAR } from './season-config';
+import { weekBoundary, SEASON_YEAR } from './season-config';
 import { FIRST_WEEK, LAST_WEEK } from './types';
 
 export function isWeekLocked(week: number): boolean {
-  const weekStart = WEEK_START_DATES[week];
+  const weekStart = weekBoundary(week);
   if (!weekStart) {
     return true; // Lock unknown weeks
   }
@@ -119,7 +119,7 @@ export function isWeekLocked(week: number): boolean {
 
 export function getCurrentWeek(): number {
   const now = new Date();
-  const firstWeekStart = WEEK_START_DATES[FIRST_WEEK];
+  const firstWeekStart = weekBoundary(FIRST_WEEK)!;
 
   // Before the season starts, return the opening week
   if (now < firstWeekStart) {
@@ -128,7 +128,7 @@ export function getCurrentWeek(): number {
 
   // Find the latest week whose start date has passed
   for (let w = LAST_WEEK; w >= FIRST_WEEK; w--) {
-    const start = WEEK_START_DATES[w];
+    const start = weekBoundary(w);
     if (start && now >= start) {
       return w;
     }
@@ -139,7 +139,7 @@ export function getCurrentWeek(): number {
 
 export function getWeekStatus(week: number): 'upcoming' | 'current' | 'locked' | 'preseason' {
   const now = new Date();
-  const firstWeekStart = WEEK_START_DATES[FIRST_WEEK];
+  const firstWeekStart = weekBoundary(FIRST_WEEK)!;
 
   // Before season starts, everything is preseason / upcoming
   if (now < firstWeekStart) {

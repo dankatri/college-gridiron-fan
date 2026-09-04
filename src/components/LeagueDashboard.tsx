@@ -157,9 +157,12 @@ export function LeagueDashboard({
       avatarUrl?: string | null;
       totalPoints: number;
       weeklyPoints: Record<number, number>;
+      weeksScored?: number;
     }>).map((entry) => {
+      // The server only reports weeks whose games have started, so these
+      // averages never blend a real score with an unplayed week's projection.
       const weekPoints = Object.values(entry.weeklyPoints ?? {});
-      const weeksPlayed = weekPoints.length;
+      const weeksPlayed = entry.weeksScored ?? weekPoints.length;
       const weeklyAverage = weeksPlayed > 0 ? entry.totalPoints / weeksPlayed : 0;
       const pointsThisWeek = entry.weeklyPoints?.[currentWeek] ?? 0;
       return {

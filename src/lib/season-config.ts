@@ -55,25 +55,52 @@ export const WEEK_START_DATES: Record<number, Date> = {
 };
 
 /**
+ * How far before its Saturday anchor a week actually opens.
+ *
+ * A week's slate starts on the Thursday night before the anchor Saturday, so
+ * the boundary sits three days earlier, on the Wednesday. Anchoring on the
+ * Saturday itself pushed every Thursday and Friday game into the week before
+ * it — that is how Sep 3-4 games ended up in Week 0 instead of Week 1.
+ */
+const WEEK_LEAD_IN_DAYS = 3;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The instant week `week` opens — the canonical boundary for every week
+ * calculation in the app (which games belong to it, when it locks, which week
+ * is current).
+ *
+ * Returns undefined for weeks outside the season.
+ */
+export function weekBoundary(week: number): Date | undefined {
+  const anchor = WEEK_START_DATES[week];
+  if (!anchor) return undefined;
+  return new Date(anchor.getTime() - WEEK_LEAD_IN_DAYS * DAY_MS);
+}
+
+/**
  * The app week whose window contains `date`.
  *
- * Week N runs from WEEK_START_DATES[N] until WEEK_START_DATES[N + 1]; the final
- * week is open-ended. This is the app's canonical week definition and the only
- * safe way to place an upstream game, because CollegeFootballData numbers its
- * own weeks differently (its weeks do not align with ours, and its entire
- * postseason is a single week).
+ * Week N runs from its boundary until week N+1's; the final week is
+ * open-ended. Thursday and Friday games therefore fall inside the week they
+ * precede, and Sunday/Monday games (Labor Day) stay with the Saturday they
+ * follow. This is the app's canonical week definition and the only safe way to
+ * place an upstream game, because CollegeFootballData numbers its own weeks
+ * differently (its weeks do not align with ours, and its entire postseason is
+ * a single week).
  *
  * Returns null for dates before the season opens. Week 0 is a valid result, so
  * callers must test for null rather than falsiness.
  */
 export function weekForDate(date: Date): number | null {
   const time = date.getTime();
-  if (Number.isNaN(time) || time < WEEK_START_DATES[FIRST_WEEK].getTime()) return null;
+  if (Number.isNaN(time) || time < weekBoundary(FIRST_WEEK)!.getTime()) return null;
 
   const weeks = Object.keys(WEEK_START_DATES).map(Number).sort((a, b) => a - b);
   let match: number | null = null;
   for (const week of weeks) {
-    if (time >= WEEK_START_DATES[week].getTime()) match = week;
+    if (time >= weekBoundary(week)!.getTime()) match = week;
     else break;
   }
   return match;
@@ -81,9 +108,9 @@ export function weekForDate(date: Date): number | null {
 
 /** Half-open [start, end) window for an app week; the last week has no end. */
 export function weekWindow(week: number): { start: Date; end: Date | null } | null {
-  const start = WEEK_START_DATES[week];
+  const start = weekBoundary(week);
   if (!start) return null;
-  return { start, end: WEEK_START_DATES[week + 1] ?? null };
+  return { start, end: weekBoundary(week + 1) ?? null };
 }
 
 /**

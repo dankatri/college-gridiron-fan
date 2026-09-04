@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Player, LineupSlot, WeeklyLineup, PlayerUsage, MAX_PLAYER_USES, TOTAL_WEEKS } from '@/lib/types';
 import { getPlayers, clearCache } from '@/lib/data';
-import { SEASON_YEAR, WEEK_START_DATES } from '@/lib/season-config';
+import { SEASON_YEAR, weekBoundary } from '@/lib/season-config';
 import { useLocalStorage } from '@/hooks/use-local-storage';
 import { useAuth } from '@/hooks/use-auth';
 import { useWeekActuals } from '@/hooks/use-week-actuals';
@@ -565,7 +565,7 @@ function App() {
           <WeekNavigation currentWeek={currentWeek} onWeekChange={setCurrentWeek} />
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             {(() => {
-              const seasonStart = WEEK_START_DATES[1];
+              const seasonStart = weekBoundary(1)!;
               const now = new Date();
               if (now < seasonStart) {
                 const daysUntil = Math.ceil((seasonStart.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));

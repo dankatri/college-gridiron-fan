@@ -1,8 +1,42 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, like } from 'drizzle-orm';
 import { db } from '../../../src/server/db';
-import { leagueMembers, lineups, users } from '../../../src/server/schema';
+import { dataCache, leagueMembers, lineups, users } from '../../../src/server/schema';
 import { requireUser } from '../../../src/server/auth-utils';
 import { SEASON_YEAR } from '../../../src/lib/season-config';
+import { isWeekLocked } from '../../../src/lib/utils-fantasy';
+import type { LineupSlotInput } from '../../../src/server/lineup-utils';
+import type { PlayerStats } from '../../../src/lib/types';
+
+type LiveCachePayload = { week?: number; stats?: PlayerStats[] };
+
+/**
+ * Fantasy points actually scored, keyed by week then player id.
+ *
+ * Live stats are cached one row per week by the refresh job, which is the only
+ * record of what players really scored — lineups.actual_points is never
+ * written, so scoring from the box scores is what keeps a leaderboard honest.
+ */
+async function loadWeeklyScores(): Promise<Map<number, Map<string, number>>> {
+  const rows = await db
+    .select({ data: dataCache.data })
+    .from(dataCache)
+    .where(like(dataCache.key, `live-stats-${SEASON_YEAR}-week-%`));
+
+  const byWeek = new Map<number, Map<string, number>>();
+
+  for (const row of rows) {
+    const payload = row.data as LiveCachePayload;
+    if (typeof payload?.week !== 'number') continue;
+
+    const points = new Map<string, number>();
+    for (const stat of payload.stats ?? []) {
+      points.set(stat.playerId, stat.fantasyPoints ?? 0);
+    }
+    byWeek.set(payload.week, points);
+  }
+
+  return byWeek;
+}
 
 export const config = {
   runtime: 'edge',
@@ -56,40 +90,75 @@ export default async function handler(request: Request): Promise<Response> {
       .select({
         userId: lineups.userId,
         week: lineups.week,
+        slots: lineups.slots,
         projectedPoints: lineups.projectedPoints,
-        actualPoints: lineups.actualPoints,
       })
       .from(lineups)
       .where(and(eq(lineups.leagueId, leagueId), eq(lineups.season, SEASON_YEAR)));
 
-    const totals = new Map<string, { totalPoints: number; weeklyPoints: Record<number, number> }>();
+    const weeklyScores = await loadWeeklyScores();
+
+    type Totals = {
+      totalPoints: number;
+      weeklyPoints: Record<number, number>;
+      projectedPoints: Record<number, number>;
+      weeksScored: number;
+    };
+
+    const totals = new Map<string, Totals>();
+    const scoredWeeks = new Set<number>();
 
     for (const row of lineupRows) {
-      const points = Number.parseFloat(row.actualPoints ?? row.projectedPoints ?? '0') || 0;
-      const existing = totals.get(row.userId) ?? { totalPoints: 0, weeklyPoints: {} };
-      existing.totalPoints += points;
-      existing.weeklyPoints[row.week] = points;
+      const existing = totals.get(row.userId) ?? {
+        totalPoints: 0,
+        weeklyPoints: {},
+        projectedPoints: {},
+        weeksScored: 0,
+      };
+
+      existing.projectedPoints[row.week] = Number.parseFloat(row.projectedPoints ?? '0') || 0;
+
+      // A week only contributes to the standings once its games have started.
+      // Before that everyone is on zero, rather than on their projection.
+      if (isWeekLocked(row.week)) {
+        const weekScores = weeklyScores.get(row.week);
+        const points = ((row.slots ?? []) as LineupSlotInput[]).reduce((sum, slot) => {
+          if (!slot.playerId) return sum;
+          return sum + (weekScores?.get(slot.playerId) ?? 0);
+        }, 0);
+
+        existing.totalPoints += points;
+        existing.weeklyPoints[row.week] = Number(points.toFixed(2));
+        existing.weeksScored += 1;
+        scoredWeeks.add(row.week);
+      }
+
       totals.set(row.userId, existing);
     }
 
     const leaderboard = members
       .map((member) => {
-        const score = totals.get(member.userId) ?? { totalPoints: 0, weeklyPoints: {} };
+        const score = totals.get(member.userId);
         return {
           userId: member.userId,
           username: member.username,
           avatarUrl: member.avatarUrl,
-          totalPoints: Number(score.totalPoints.toFixed(2)),
-          weeklyPoints: score.weeklyPoints,
+          totalPoints: Number((score?.totalPoints ?? 0).toFixed(2)),
+          weeklyPoints: score?.weeklyPoints ?? {},
+          projectedPoints: score?.projectedPoints ?? {},
+          weeksScored: score?.weeksScored ?? 0,
         };
       })
-      .sort((a, b) => b.totalPoints - a.totalPoints)
+      .sort((a, b) => b.totalPoints - a.totalPoints || a.username.localeCompare(b.username))
       .map((entry, index) => ({
         ...entry,
         rank: index + 1,
       }));
 
-    return jsonResponse({ leaderboard });
+    return jsonResponse({
+      leaderboard,
+      scoredWeeks: Array.from(scoredWeeks).sort((a, b) => a - b),
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to fetch leaderboard';
     const status = message === 'Not authenticated' || message === 'Invalid session' ? 401 : 500;

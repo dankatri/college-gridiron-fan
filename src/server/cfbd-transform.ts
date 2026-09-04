@@ -215,6 +215,12 @@ export function buildPlayers(options: {
  * games are nudged to midday on their own local date. Games with a real kickoff
  * are used as-is, which correctly keeps Friday-night games in the prior week.
  */
+/**
+ * When a kickoff time is still TBD, CFBD stores a midnight placeholder rather
+ * than a real time. Nudging it to midday keeps the game on its intended
+ * calendar day once local timezones are applied, instead of slipping into the
+ * evening before — which in November (CST) would file it a week early.
+ */
 export function effectiveKickoff(game: Pick<CfbdGame, 'startDate' | 'startTimeTBD'>): Date | null {
   if (!game.startDate) return null;
   const kickoff = new Date(game.startDate);
@@ -275,7 +281,7 @@ export function buildTeamSchedules(options: {
         isHomeGame: side === 'home' && !game.neutralSite,
         isByeWeek: false,
         gameId: String(game.id),
-        gameDate: new Date(game.startDate as string),
+        gameDate: kickoff,
         gameTime: game.startTimeTBD ? 'TBD' : kickoff.toISOString().slice(11, 16),
         isCompleted,
         ...(isCompleted ? { teamPoints: teamPoints as number, opponentPoints: opponentPoints as number } : {}),
