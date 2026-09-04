@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { League, LeaderboardEntry, WeeklyLineup } from '@/lib/types';
 import { CreateLeague } from '@/components/CreateLeague';
 import { LeagueList } from '@/components/LeagueList';
 import { LeagueManagement } from '@/components/LeagueManagement';
 import { LeagueAdmin } from '@/components/LeagueAdmin';
 import { Leaderboard } from '@/components/Leaderboard';
+import { MemberLineupDialog } from '@/components/MemberLineupDialog';
+import { isWeekComplete } from '@/lib/week-lock';
+import { FIRST_WEEK } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -98,6 +101,16 @@ export function LeagueDashboard({
   const [selectedLeague, setSelectedLeague] = useState<League | null>(null);
   const [myLeagues, setMyLeagues] = useState<League[]>([]);
   const [leaderboardEntries, setLeaderboardEntries] = useState<LeaderboardEntry[]>([]);
+  const [viewedMember, setViewedMember] = useState<{ userId: string; username: string; avatarUrl?: string } | null>(null);
+
+  // Lineups are only revealed once a week is over, so the most recent finished
+  // week is what a member's name opens by default. Null means none yet.
+  const lastCompletedWeek = useMemo(() => {
+    for (let candidate = currentWeek; candidate >= FIRST_WEEK; candidate--) {
+      if (isWeekComplete(candidate)) return candidate;
+    }
+    return null;
+  }, [currentWeek]);
   const [joinCode, setJoinCode] = useState('');
   const [isLoadingLeagues, setIsLoadingLeagues] = useState(false);
   const [isJoiningLeague, setIsJoiningLeague] = useState(false);
@@ -279,7 +292,21 @@ export function LeagueDashboard({
           </TabsList>
 
           <TabsContent value="leaderboard" className="mt-6">
-            <Leaderboard entries={leaderboardEntries} currentWeek={currentWeek} currentUserId={currentUserId} />
+            <Leaderboard
+              entries={leaderboardEntries}
+              currentWeek={currentWeek}
+              currentUserId={currentUserId}
+              onSelectMember={lastCompletedWeek === null ? undefined : (entry) => setViewedMember({
+                userId: entry.userId,
+                username: entry.username,
+                avatarUrl: entry.avatarUrl,
+              })}
+            />
+            {lastCompletedWeek === null && (
+              <p className="mt-3 text-center text-xs text-muted-foreground">
+                Lineups stay hidden until a week finishes — once Week {currentWeek} is over you can open anyone's name to see what they picked.
+              </p>
+            )}
           </TabsContent>
 
           <TabsContent value="manage" className="mt-6">
@@ -308,6 +335,14 @@ export function LeagueDashboard({
             </TabsContent>
           )}
         </Tabs>
+
+        <MemberLineupDialog
+          leagueId={selectedLeague.id}
+          member={viewedMember}
+          week={lastCompletedWeek ?? currentWeek}
+          open={viewedMember !== null}
+          onOpenChange={(next) => { if (!next) setViewedMember(null); }}
+        />
       </div>
     );
   }

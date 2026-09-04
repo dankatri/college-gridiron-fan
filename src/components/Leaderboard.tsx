@@ -21,6 +21,8 @@ interface LeaderboardProps {
   currentUserId?: string;
   showWeeklyView?: boolean;
   onWeekChange?: (week: number) => void;
+  /** Opens a member's lineup. Absent while no week has finished yet. */
+  onSelectMember?: (entry: LeaderboardEntry) => void;
 }
 
 export function Leaderboard({ 
@@ -28,7 +30,8 @@ export function Leaderboard({
   currentWeek, 
   currentUserId,
   showWeeklyView = false,
-  onWeekChange 
+  onWeekChange,
+  onSelectMember
 }: LeaderboardProps) {
   const [viewMode, setViewMode] = useState<'season' | 'weekly'>('season');
   const [selectedWeek, setSelectedWeek] = useState(currentWeek);
@@ -128,9 +131,20 @@ export function Leaderboard({
                   
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium truncate">
-                        {entry.username}
-                      </span>
+                      {onSelectMember ? (
+                        <button
+                          type="button"
+                          onClick={() => onSelectMember(entry)}
+                          className="font-medium truncate underline-offset-4 hover:underline focus-visible:underline focus-visible:outline-none"
+                          title={`View ${entry.username}'s lineup`}
+                        >
+                          {entry.username}
+                        </button>
+                      ) : (
+                        <span className="font-medium truncate">
+                          {entry.username}
+                        </span>
+                      )}
                       {isCurrentUser(entry.userId) && (
                         <Badge variant="secondary" className="text-xs">
                           You
