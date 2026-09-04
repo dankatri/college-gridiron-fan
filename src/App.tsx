@@ -491,18 +491,21 @@ function App() {
     }
   };
 
-  const handlePointsUpdate = (week: number, actualPoints: number) => {
-    setSavedLineupRows((previous) =>
-      previous.map((lineup) =>
-        lineup.week === week
-          ? {
-              ...lineup,
-              actualPoints: actualPoints.toString(),
-            }
-          : lineup,
-      ),
-    );
-  };
+  // Stable identity, and a no-op when the total has not moved. The live
+  // dashboard reports its running total from an effect, so an unstable
+  // callback or an always-new array here would re-render it forever.
+  const handlePointsUpdate = useCallback((week: number, actualPoints: number) => {
+    const next = actualPoints.toString();
+    setSavedLineupRows((previous) => {
+      let changed = false;
+      const updated = previous.map((lineup) => {
+        if (lineup.week !== week || lineup.actualPoints === next) return lineup;
+        changed = true;
+        return { ...lineup, actualPoints: next };
+      });
+      return changed ? updated : previous;
+    });
+  }, []);
 
   const currentWeekLineup = weeklyLineups.find((lineup) => lineup.week === currentWeek);
 

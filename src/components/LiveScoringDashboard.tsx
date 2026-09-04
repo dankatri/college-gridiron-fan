@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useLocalStorage as useKV } from '@/hooks/use-local-storage';
 import { PlayerStats, GameStatus, LiveUpdate, Player, WeeklyLineup } from '@/lib/types';
 import { generateLiveStats, generateGameStatuses, createLiveUpdate, calculateFantasyPoints } from '@/lib/stats-utils';
@@ -40,9 +40,13 @@ export function LiveScoringDashboard({
   const [lastSync, setLastSync] = useState<string | null>(null);
 
   const currentWeekLineup = weeklyLineups.find(w => w.week === week);
-  const lineupPlayerIds = currentWeekLineup?.lineup
-    .filter(slot => slot.player)
-    .map(slot => slot.player!.id) || [];
+
+  // Memoised because effects depend on it; a fresh array each render would
+  // tear down and rebuild the simulation interval before it could ever fire.
+  const lineupPlayerIds = useMemo(
+    () => currentWeekLineup?.lineup.filter(slot => slot.player).map(slot => slot.player!.id) ?? [],
+    [currentWeekLineup],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -154,22 +158,27 @@ export function LiveScoringDashboard({
     return () => clearInterval(interval);
   }, [isLiveMode, hasRealData, liveStats, lineupPlayerIds, week, setLiveStats, setLiveUpdates]);
 
-  // Calculate actual lineup points when stats change
+  // Report the lineup's running total upward when it changes.
+  //
+  // Reporting on every run would spin: the parent stores the total, which
+  // re-renders this component, which reports again. Remembering what was last
+  // sent breaks that cycle regardless of how stable the callback happens to be.
+  const lastReported = useRef<string | null>(null);
+
   useEffect(() => {
-    if (currentWeekLineup && liveStats.length > 0) {
-      let totalActualPoints = 0;
-      
-      currentWeekLineup.lineup.forEach(slot => {
-        if (slot.player) {
-          const playerStats = liveStats.find(s => s.playerId === slot.player!.id);
-          if (playerStats) {
-            totalActualPoints += playerStats.fantasyPoints;
-          }
-        }
-      });
-      
-      onPointsUpdate(week, Math.round(totalActualPoints * 10) / 10);
-    }
+    if (!currentWeekLineup || liveStats.length === 0) return;
+
+    const total = currentWeekLineup.lineup.reduce((sum, slot) => {
+      if (!slot.player) return sum;
+      return sum + (liveStats.find(stat => stat.playerId === slot.player!.id)?.fantasyPoints ?? 0);
+    }, 0);
+
+    const rounded = Math.round(total * 10) / 10;
+    const signature = `${week}:${rounded}`;
+    if (lastReported.current === signature) return;
+
+    lastReported.current = signature;
+    onPointsUpdate(week, rounded);
   }, [liveStats, currentWeekLineup, week, onPointsUpdate]);
 
   const handleGenerateNewStats = () => {
