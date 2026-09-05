@@ -7,6 +7,7 @@ import { describeWeekPoints, resolveWeekPoints, weekStatValue } from '@/lib/week
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { LineupSlot } from '@/lib/types';
@@ -24,10 +25,52 @@ import {
   CaretUp,
   CaretDown,
   CaretUpDown,
+  MagnifyingGlass,
+  X,
 } from '@phosphor-icons/react';
 
 type SortKey = 'projectedPoints' | keyof Player;
 type SortDirection = 'asc' | 'desc';
+
+/**
+ * A name reduced for searching: its words concatenated, plus where each word
+ * begins.
+ *
+ * Names in the pool carry punctuation, initials and suffixes — "L.J. Phillips
+ * Jr.", "Ja'Marr Chase", "Alonza Barnett III" — so comparing raw strings makes
+ * exactly those players reachable only by typing the punctuation exactly.
+ * Dropping the separators lets any spelling of them match; keeping the offsets
+ * is what stops a query running across the join between two words, which would
+ * otherwise let "hardy" match "Ric|hard Y|oung".
+ */
+function nameIndex(value: string): { compact: string; wordStarts: Set<number> } {
+  const words = value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+
+  const wordStarts = new Set<number>();
+  let offset = 0;
+  for (const word of words) {
+    wordStarts.add(offset);
+    offset += word.length;
+  }
+
+  return { compact: words.join(''), wordStarts };
+}
+
+/** Whether a search matches a name, anchored to the start of any of its words. */
+function nameMatches(index: { compact: string; wordStarts: Set<number> }, query: string): boolean {
+  if (!query) return true;
+
+  for (let at = index.compact.indexOf(query); at !== -1; at = index.compact.indexOf(query, at + 1)) {
+    if (index.wordStarts.has(at)) return true;
+  }
+
+  return false;
+}
 
 interface PlayerTableProps {
   position: 'QB' | 'RB' | 'WR';
@@ -41,6 +84,8 @@ interface PlayerTableProps {
   isLocked?: boolean;
   /** Lower-cased teams whose game has kicked off, so their players are frozen. */
   lockedTeams?: Set<string>;
+  /** Those of `lockedTeams` whose game is over, which reads differently. */
+  finishedTeams?: Set<string>;
 }
 
 export function PlayerTable({ 
@@ -52,10 +97,12 @@ export function PlayerTable({
   onPlayerSelect,
   onPlayersUpdate,
   isLocked = false,
-  lockedTeams
+  lockedTeams,
+  finishedTeams
 }: PlayerTableProps) {
   const pageSizeOptions = ['10', '15', '20', '25'] as const;
   const [conferenceFilter, setConferenceFilter] = useState('All Conferences');
+  const [searchTerm, setSearchTerm] = useState('');
   const [teamFilter, setTeamFilter] = useState('All Teams');
   const [pageSize, setPageSize] = useState<number>(15);
   const [currentPage, setCurrentPage] = useState(1);
@@ -255,6 +302,16 @@ export function PlayerTable({
       filtered = filtered.filter(p => p.team === teamFilter);
     }
 
+    // Search matches anywhere in the name rather than parsing out a surname:
+    // hundreds of players carry suffixes ("Demond Williams Jr."), so treating
+    // the last word as the surname would miss exactly those. Deliberately kept
+    // local to this memo — routing it through the filter refetch above would
+    // request the whole pool again on every keystroke.
+    const query = nameIndex(searchTerm).compact;
+    if (query) {
+      filtered = filtered.filter(p => nameMatches(nameIndex(p.name), query));
+    }
+
     // Missing stats sort last in both directions rather than counting as zero.
     const direction = sortDirection === 'asc' ? 1 : -1;
 
@@ -282,7 +339,7 @@ export function PlayerTable({
       if (aValue === bValue) return a.name.localeCompare(b.name);
       return (aValue - bValue) * direction;
     });
-  }, [enhancedPlayers, position, conferenceFilter, teamFilter, sortKey, sortDirection, showActuals, actuals, matchups]);
+  }, [enhancedPlayers, position, conferenceFilter, teamFilter, searchTerm, sortKey, sortDirection, showActuals, actuals, matchups]);
 
   const totalPlayers = filteredPlayers.length;
   const totalPages = Math.max(1, Math.ceil(totalPlayers / pageSize));
@@ -302,7 +359,7 @@ export function PlayerTable({
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [conferenceFilter, teamFilter, position, pageSize, sortKey, sortDirection, showActuals]);
+  }, [conferenceFilter, teamFilter, searchTerm, position, pageSize, sortKey, sortDirection, showActuals]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -393,9 +450,12 @@ export function PlayerTable({
 
     if (inLineup) return { status: 'in-lineup', label: 'In Lineup', variant: 'secondary' as const };
     // A player whose game has begun is settled for the week, whether or not
-    // they are in a lineup, so they cannot be picked up now.
+    // they are in a lineup, so they cannot be picked up now. A game that is
+    // over says so, rather than sounding like it is still being played.
     if (lockedTeams?.has(player.team.toLowerCase())) {
-      return { status: 'kicked-off', label: 'Kicked Off', variant: 'outline' as const };
+      return finishedTeams?.has(player.team.toLowerCase())
+        ? { status: 'finished', label: 'Finished', variant: 'outline' as const }
+        : { status: 'kicked-off', label: 'Kicked Off', variant: 'outline' as const };
     }
     if (!isAvailable) return { status: 'maxed', label: 'Max Uses', variant: 'destructive' as const };
     if (usageCount > 0) return { status: 'used', label: `Used ${usageCount}x`, variant: 'outline' as const };
@@ -412,13 +472,14 @@ export function PlayerTable({
       weekName,
     });
 
-  const getPlayerCountDisplay = () => {    const baseCount = `${filteredPlayers.length}`;
+  const getPlayerCountDisplay = () => {
+    const baseCount = `${filteredPlayers.length}`;
     const isFiltered = conferenceFilter !== 'All Conferences' || teamFilter !== 'All Teams';
-    
+
     if (isLoadingPlayers && isFiltered) {
       return `${baseCount} (loading more...)`;
     }
-    
+
     return baseCount;
   };
 
@@ -437,6 +498,31 @@ export function PlayerTable({
         
         {/* Filters */}
         <div className="flex gap-4 items-center flex-wrap">
+          <div className="relative w-full sm:w-[220px]">
+            <MagnifyingGlass
+              size={16}
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"
+            />
+            <Input
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Search by name"
+              aria-label={`Search ${positionName} by name`}
+              className="pl-8 pr-8"
+            />
+            {searchTerm && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSearchTerm('')}
+                aria-label="Clear search"
+                className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 p-0"
+              >
+                <X size={12} />
+              </Button>
+            )}
+          </div>
+
           <div className="flex items-center gap-2 flex-wrap">
             <Filter size={16} className="text-muted-foreground" />
             <Select 
@@ -728,7 +814,16 @@ export function PlayerTable({
         
         {totalPlayers === 0 && !isLoadingPlayers && (
           <div className="text-center py-8 text-muted-foreground">
-            No players found matching your filters.
+            {searchTerm ? (
+              <>
+                <p>No {positionName.toLowerCase()} matching "{searchTerm}".</p>
+                {(conferenceFilter !== 'All Conferences' || teamFilter !== 'All Teams') && (
+                  <p className="text-xs mt-1">A conference or team filter is also narrowing this list.</p>
+                )}
+              </>
+            ) : (
+              'No players found matching your filters.'
+            )}
           </div>
         )}
         

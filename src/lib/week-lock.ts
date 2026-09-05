@@ -77,6 +77,27 @@ export function lockedTeamsForWeek(
   return locked;
 }
 
+/**
+ * Lower-cased names of every team whose game in `week` has finished.
+ *
+ * A strict subset of `lockedTeamsForWeek`: a finished game has necessarily
+ * kicked off. Kept separate because "locked" and "over" read very differently
+ * to a user — a game that ended on Saturday should not still be described as
+ * having just kicked off.
+ */
+export function finishedTeamsForWeek(schedules: TeamSchedule[], week: number): Set<string> {
+  const finished = new Set<string>();
+
+  for (const schedule of schedules) {
+    const game = schedule.weeklyGames.find((entry) => entry.week === week && !entry.isByeWeek);
+    if (game?.isCompleted) {
+      finished.add(schedule.teamName.toLowerCase());
+    }
+  }
+
+  return finished;
+}
+
 /** Whether a player is frozen for the week because their game has begun. */
 export function isPlayerLocked(
   lockedTeams: Set<string>,

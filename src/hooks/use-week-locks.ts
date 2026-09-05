@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getTeamSchedules } from '@/lib/schedule-data';
-import { isWeekComplete, lockedTeamsForWeek } from '@/lib/week-lock';
+import { finishedTeamsForWeek, isWeekComplete, lockedTeamsForWeek } from '@/lib/week-lock';
 import type { TeamSchedule } from '@/lib/types';
 
 export interface WeekLocks {
   isLoading: boolean;
   /** Lower-cased names of teams whose game this week has kicked off. */
   lockedTeams: Set<string>;
+  /** Those of `lockedTeams` whose game is over rather than still being played. */
+  finishedTeams: Set<string>;
   /** True once the week is over and nothing in it can change. */
   isComplete: boolean;
   /** Whether this player is frozen because their own game has begun. */
@@ -54,6 +56,7 @@ export function useWeekLocks(week?: number): WeekLocks {
       return {
         isLoading: schedules === null,
         lockedTeams: NO_TEAMS,
+        finishedTeams: NO_TEAMS,
         isComplete: week === undefined ? false : isWeekComplete(week, new Date(now)),
         isPlayerLocked: () => false,
       };
@@ -64,6 +67,7 @@ export function useWeekLocks(week?: number): WeekLocks {
     return {
       isLoading: false,
       lockedTeams,
+      finishedTeams: finishedTeamsForWeek(schedules, week),
       isComplete: isWeekComplete(week, new Date(now)),
       isPlayerLocked: (team?: string | null) => (team ? lockedTeams.has(team.toLowerCase()) : false),
     };

@@ -4,18 +4,20 @@ import { cn } from '@/lib/utils';
 
 interface PlayerAvatarProps {
   player: Player;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'xs' | 'sm' | 'md' | 'lg';
   className?: string;
 }
 
 export function PlayerAvatar({ player, size = 'md', className }: PlayerAvatarProps) {
   const sizeClasses = {
+    xs: 'w-6 h-6',
     sm: 'w-8 h-8',
     md: 'w-10 h-10', 
     lg: 'w-12 h-12'
   };
 
   const iconSizes = {
+    xs: 10,
     sm: 12,
     md: 16,
     lg: 20

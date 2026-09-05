@@ -23,10 +23,11 @@ import {
   isPlayerInLineup,
   calculateProjectedPoints,
   getCurrentWeek,
+  groupLineupByPosition,
   resolvePendingSlots,
 } from '@/lib/utils-fantasy';
 import { PlayerTable } from '@/components/PlayerTable';
-import { LineupSlotCard } from '@/components/LineupSlotCard';
+import { LineupPositionGroup } from '@/components/LineupPositionGroup';
 import { LineupSummary } from '@/components/LineupSummary';
 import { WeekNavigation } from '@/components/WeekNavigation';
 import { LiveScoringDashboard } from '@/components/LiveScoringDashboard';
@@ -359,24 +360,6 @@ function App() {
     }
   };
 
-  const handleDropPlayer = (player: Player, slotIndex: number) => {
-    if (weekLocks.isComplete) {
-      toast.error(`Week ${currentWeek} is over and cannot be modified`);
-      return;
-    }
-    if (weekLocks.isPlayerLocked(player.team)) {
-      toast.error(`${player.name}'s game has already started`);
-      return;
-    }
-    if (isPlayerInLineup(player.id, currentLineup)) {
-      toast.error(`${player.name} is already in your lineup`);
-      return;
-    }
-
-    setCurrentLineup(addPlayerToLineup(player, slotIndex, currentLineup));
-    toast.success(`Added ${player.name} to lineup`);
-  };
-
   const handleSaveLineup = async () => {
     if (!currentLeagueId) {
       toast.error('Choose a league first');
@@ -523,6 +506,24 @@ function App() {
   // A lineup can be saved part-finished, so the button says how far along it is.
   const filledSlotCount = currentLineup.filter((slot) => slot.player).length;
   const lockedSlotCount = currentLineup.filter((slot) => weekLocks.isPlayerLocked(slot.player?.team)).length;
+  const finishedSlotCount = currentLineup.filter(
+    (slot) => slot.player?.team && weekLocks.finishedTeams.has(slot.player.team.toLowerCase()),
+  ).length;
+
+  // Said the same way everywhere, and honest about whether those games are
+  // still being played or already over.
+  const lineupGroups = useMemo(() => groupLineupByPosition(currentLineup), [currentLineup]);
+  const isSlotLocked = useCallback(
+    (slot: LineupSlot) => weekLocks.isComplete || weekLocks.isPlayerLocked(slot.player?.team),
+    [weekLocks],
+  );
+
+  const lockedSlotSummary = (() => {
+    const subject = `${lockedSlotCount} of your ${lockedSlotCount === 1 ? 'players has' : 'players have'}`;
+    if (finishedSlotCount === lockedSlotCount) return `${subject} finished`;
+    if (finishedSlotCount === 0) return `${subject} kicked off`;
+    return `${subject} started (${finishedSlotCount} finished)`;
+  })();
   const saveButtonLabel = weekLocks.isComplete
     ? `Week ${currentWeek} Closed`
     : isLineupComplete(currentLineup)
@@ -608,7 +609,7 @@ function App() {
                 return (
                   <div className="flex flex-wrap items-center justify-center gap-2 text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-lg p-2">
                     <Trophy size={16} />
-                    Week {currentWeek} is under way - {lockedSlotCount} of your players {lockedSlotCount === 1 ? 'has' : 'have'} kicked off and {lockedSlotCount === 1 ? 'is' : 'are'} locked in
+                    Week {currentWeek} is under way - {lockedSlotSummary} and {lockedSlotCount === 1 ? 'is' : 'are'} locked in
                   </div>
                 );
               }
@@ -697,15 +698,14 @@ function App() {
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-3">
-                      {currentLineup.map((slot) => (
-                        <LineupSlotCard
-                          key={slot.slotIndex}
-                          slot={slot}
+                      {lineupGroups.map((group) => (
+                        <LineupPositionGroup
+                          key={group.position}
+                          position={group.position}
+                          slots={group.slots}
                           onRemovePlayer={handleRemovePlayer}
-                          onDropPlayer={handleDropPlayer}
-                          canDrop={!slot.player}
-                          isLocked={weekLocks.isComplete || weekLocks.isPlayerLocked(slot.player?.team)}
-                          weekPoints={lineupSlotPoints(slot)}
+                          isSlotLocked={isSlotLocked}
+                          weekPointsFor={lineupSlotPoints}
                         />
                       ))}
 
@@ -722,7 +722,7 @@ function App() {
                         <p className="text-sm text-orange-600 mt-1">Week {currentWeek} is over - viewing only</p>
                       ) : lockedSlotCount > 0 ? (
                         <p className="text-sm text-orange-600 mt-1">
-                          {lockedSlotCount} of your players {lockedSlotCount === 1 ? 'has' : 'have'} kicked off and can no longer be changed
+                          {lockedSlotSummary} and can no longer be changed
                         </p>
                       ) : null}
                     </div>
@@ -786,6 +786,7 @@ function App() {
                                 onPlayersUpdate={handlePlayersUpdate}
                                 isLocked={weekLocks.isComplete}
                                 lockedTeams={weekLocks.lockedTeams}
+                                finishedTeams={weekLocks.finishedTeams}
                               />
                             </TabsContent>
                           </Tabs>
@@ -824,7 +825,7 @@ function App() {
                           <p className="text-sm text-orange-600 mt-1">Week {currentWeek} is over - viewing only</p>
                         ) : lockedSlotCount > 0 ? (
                           <p className="text-sm text-orange-600 mt-1">
-                            {lockedSlotCount} of your players {lockedSlotCount === 1 ? 'has' : 'have'} kicked off and can no longer be changed
+                            {lockedSlotSummary} and can no longer be changed
                           </p>
                         ) : null}
                       </div>
@@ -879,6 +880,7 @@ function App() {
                             onPlayersUpdate={handlePlayersUpdate}
                             isLocked={weekLocks.isComplete}
                             lockedTeams={weekLocks.lockedTeams}
+                                finishedTeams={weekLocks.finishedTeams}
                           />
                         </TabsContent>
                       </Tabs>
@@ -896,15 +898,14 @@ function App() {
                         </CardTitle>
                       </CardHeader>
                       <CardContent className="space-y-3">
-                        {currentLineup.map((slot) => (
-                          <LineupSlotCard
-                            key={slot.slotIndex}
-                            slot={slot}
+                        {lineupGroups.map((group) => (
+                          <LineupPositionGroup
+                            key={group.position}
+                            position={group.position}
+                            slots={group.slots}
                             onRemovePlayer={handleRemovePlayer}
-                            onDropPlayer={handleDropPlayer}
-                            canDrop={!slot.player}
-                            isLocked={weekLocks.isComplete || weekLocks.isPlayerLocked(slot.player?.team)}
-                            weekPoints={lineupSlotPoints(slot)}
+                            isSlotLocked={isSlotLocked}
+                            weekPointsFor={lineupSlotPoints}
                           />
                         ))}
 

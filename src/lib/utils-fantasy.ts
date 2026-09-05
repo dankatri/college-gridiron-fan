@@ -151,3 +151,21 @@ export function getWeekStatus(week: number): 'upcoming' | 'current' | 'locked' |
     return 'upcoming';
   }
 }
+export interface LineupPositionGroup {
+  position: 'QB' | 'RB' | 'WR';
+  slots: LineupSlot[];
+}
+
+/**
+ * The lineup split into one group per position.
+ *
+ * Group order follows LINEUP_REQUIREMENTS rather than the slot order, so
+ * changing the roster shape in one place reshapes the lineup UI with it.
+ * Slots keep their original slotIndex, which is what edits are keyed on.
+ */
+export function groupLineupByPosition(lineup: LineupSlot[]): LineupPositionGroup[] {
+  return Object.keys(LINEUP_REQUIREMENTS).map((position) => ({
+    position: position as 'QB' | 'RB' | 'WR',
+    slots: lineup.filter((slot) => slot.position === position),
+  }));
+}

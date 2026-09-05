@@ -14,13 +14,6 @@ export function LineupSummary({ lineup, actualPoints }: LineupSummaryProps) {
   const filledSlots = lineup.filter(slot => slot.player).length;
   const totalSlots = lineup.length;
   
-  const positionCounts = lineup.reduce((acc, slot) => {
-    if (slot.player) {
-      acc[slot.position] = (acc[slot.position] || 0) + 1;
-    }
-    return acc;
-  }, {} as Record<string, number>);
-
   const pointsDifference = actualPoints ? actualPoints - projectedPoints : 0;
   const hasActualPoints = actualPoints !== undefined;
 
@@ -75,23 +68,6 @@ export function LineupSummary({ lineup, actualPoints }: LineupSummaryProps) {
           </span>
         </div>
         
-        <div className="space-y-2">
-          <h4 className="text-sm font-medium">Positions Filled</h4>
-          <div className="grid grid-cols-3 gap-2 text-xs">
-            <div className="text-center">
-              <div className="font-medium">QB</div>
-              <div className="text-muted-foreground">{positionCounts.QB || 0}/2</div>
-            </div>
-            <div className="text-center">
-              <div className="font-medium">RB</div>
-              <div className="text-muted-foreground">{positionCounts.RB || 0}/2</div>
-            </div>
-            <div className="text-center">
-              <div className="font-medium">WR</div>
-              <div className="text-muted-foreground">{positionCounts.WR || 0}/2</div>
-            </div>
-          </div>
-        </div>
       </CardContent>
     </Card>
   );
