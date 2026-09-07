@@ -4,7 +4,11 @@ import { TeamSchedule, WeeklyGame } from './types';
 const scheduleCache: Map<string, TeamSchedule> = new Map();
 let cacheTimestamp: number = 0;
 let inFlight: Promise<TeamSchedule[]> | null = null;
-const CACHE_DURATION = 1000 * 60 * 60; // 1 hour
+// Schedules carry completion flags that change during play, so this is short
+// enough for a page left open to notice games finishing. Deliberately under the
+// 60s useWeekLocks poll: at exactly 60s the cache can still be marginally valid
+// when the timer fires, silently stretching the refresh to two minutes.
+const CACHE_DURATION = 1000 * 45; // 45 seconds
 
 /**
  * Clear the schedule cache to force fresh data

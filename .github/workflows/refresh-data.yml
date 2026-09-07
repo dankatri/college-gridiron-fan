@@ -7,7 +7,9 @@ on:
   schedule:
     # Rosters, teams and schedules once a day (07:15 UTC).
     - cron: '15 7 * * *'
-    # Live box scores every 10 minutes during US game windows.
+    # Live box scores and schedules every 10 minutes during US game windows.
+    # Schedules carry the isCompleted flag, so they have to keep pace with the
+    # games rather than wait for the next daily run.
     - cron: '*/10 16-23 * * 6'
     - cron: '*/10 0-6 * * 0,3,4,5,6'
   workflow_dispatch:
@@ -15,7 +17,7 @@ on:
       job:
         description: Which refresh to run
         type: choice
-        options: [all, projections, players, schedules, live]
+        options: [all, projections, players, schedules, live, gameday]
         default: all
       force:
         description: Re-fetch projection stats even if already cached
@@ -44,13 +46,14 @@ jobs:
       - run: npm ci
 
       # The daily cron and manual runs rebuild the full dataset; the frequent
-      # crons only refresh live scoring.
+      # crons refresh live scoring plus schedules, which is where a game's
+      # completion status lands.
       - name: Decide scope
         id: scope
         run: |
           job="${{ github.event.inputs.job }}"
           if [ -z "$job" ]; then
-            if [ "${{ github.event.schedule }}" = "15 7 * * *" ]; then job=all; else job=live; fi
+            if [ "${{ github.event.schedule }}" = "15 7 * * *" ]; then job=all; else job=gameday; fi
           fi
           echo "job=$job" >> "$GITHUB_OUTPUT"
 
@@ -65,9 +68,9 @@ jobs:
         run: npm run refresh:players
 
       - name: Refresh schedules
-        if: steps.scope.outputs.job == 'all' || steps.scope.outputs.job == 'schedules'
+        if: steps.scope.outputs.job == 'all' || steps.scope.outputs.job == 'schedules' || steps.scope.outputs.job == 'gameday'
         run: npm run refresh:schedules
 
       - name: Refresh live scoring
-        if: steps.scope.outputs.job == 'all' || steps.scope.outputs.job == 'live'
+        if: steps.scope.outputs.job == 'all' || steps.scope.outputs.job == 'live' || steps.scope.outputs.job == 'gameday'
         run: npm run refresh:live

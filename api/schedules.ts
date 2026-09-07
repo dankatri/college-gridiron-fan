@@ -29,7 +29,11 @@ export default async function handler(): Promise<Response> {
         status: 200,
         headers: {
           'Content-Type': 'application/json',
-          'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=86400',
+          // Schedules look static but carry live completion flags and scores,
+          // which turn over every few hours on a game day. Cached as fixtures
+          // (an hour fresh, then a day of stale-while-revalidate) a finished
+          // game could keep reporting as merely kicked off for a whole day.
+          'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
         },
       },
     );

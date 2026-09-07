@@ -21,9 +21,11 @@ const NO_TEAMS = new Set<string>();
  * Which players are frozen for a week.
  *
  * Locks are per player, not per week: a slot settles the moment that player's
- * game kicks off, while everyone still waiting to play stays editable. The
- * schedule is re-read on a timer so a lineup left open on screen locks itself
- * as kickoffs pass, rather than only on reload.
+ * game kicks off, while everyone still waiting to play stays editable. Both the
+ * clock and the schedule are re-read on a timer, so a lineup left open locks
+ * itself as kickoffs pass and notices games finishing, rather than only on
+ * reload. Kickoff is a question about the clock, but completion is a fact that
+ * only arrives with fresh data, so advancing the clock alone is not enough.
  */
 export function useWeekLocks(week?: number): WeekLocks {
   const [schedules, setSchedules] = useState<TeamSchedule[] | null>(null);
@@ -32,23 +34,26 @@ export function useWeekLocks(week?: number): WeekLocks {
   useEffect(() => {
     let cancelled = false;
 
-    getTeamSchedules()
-      .then((loaded) => {
-        if (!cancelled) setSchedules(loaded);
-      })
-      .catch((error) => {
-        console.error('useWeekLocks: failed to load schedules', error);
-        if (!cancelled) setSchedules([]);
-      });
+    const refresh = () => {
+      getTeamSchedules()
+        .then((loaded) => {
+          if (cancelled) return;
+          setSchedules(loaded);
+          setNow(Date.now());
+        })
+        .catch((error) => {
+          console.error('useWeekLocks: failed to load schedules', error);
+          if (!cancelled) setSchedules((previous) => previous ?? []);
+        });
+    };
+
+    refresh();
+    const timer = window.setInterval(refresh, 60_000);
 
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
-  }, []);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
-    return () => window.clearInterval(timer);
   }, []);
 
   return useMemo(() => {
