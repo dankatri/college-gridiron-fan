@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { WEEK_LABELS } from '@/lib/season-config';
+import { WEEK_LABELS, weekBoundary } from '@/lib/season-config';
+import { isWeekComplete } from '@/lib/week-lock';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Lock, User } from '@phosphor-icons/react';
@@ -32,7 +32,9 @@ interface MemberLineup {
 interface MemberLineupDialogProps {
   leagueId: string;
   member: { userId: string; username: string; avatarUrl?: string } | null;
+  /** The week selected at the top of the page — the dialog follows it. */
   week: number;
+  currentUserId?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -40,20 +42,45 @@ interface MemberLineupDialogProps {
 const weekLabel = (week: number) => WEEK_LABELS[week] ?? `Week ${week}`;
 
 /**
+ * When a week's lineups become public: the moment its window closes, which is
+ * the start of the next week. The final week of the season is open-ended and
+ * has no such moment.
+ */
+function revealDate(week: number): Date | undefined {
+  return weekBoundary(week + 1);
+}
+
+const formatRevealDate = (date: Date) =>
+  date.toLocaleDateString(undefined, {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  });
+
+/**
  * Another league member's lineup for a finished week.
  *
  * The server is what enforces the reveal; this only ever shows what it was
  * willing to hand over, and surfaces its refusal verbatim when it declines.
  */
-export function MemberLineupDialog({ leagueId, member, week, open, onOpenChange }: MemberLineupDialogProps) {
-  const [viewWeek, setViewWeek] = useState(week);
+export function MemberLineupDialog({
+  leagueId,
+  member,
+  week,
+  currentUserId,
+  open,
+  onOpenChange,
+}: MemberLineupDialogProps) {
   const [lineup, setLineup] = useState<MemberLineup | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  useEffect(() => {
-    if (open) setViewWeek(week);
-  }, [open, week, member?.userId]);
+  // Your own lineup is yours to look at whenever; everyone else's waits for the
+  // week to finish. Checked here as well as on the server so the dialog can
+  // explain the wait instead of firing a request it knows will be refused.
+  const isOwnLineup = member !== null && member.userId === currentUserId;
+  const isHidden = !isOwnLineup && !isWeekComplete(week);
+  const revealsAt = revealDate(week);
 
   const load = useCallback(async () => {
     if (!member) return;
@@ -62,7 +89,7 @@ export function MemberLineupDialog({ leagueId, member, week, open, onOpenChange 
 
     try {
       const response = await fetch(
-        `/api/leagues/${leagueId}/member-lineup?userId=${encodeURIComponent(member.userId)}&week=${viewWeek}`,
+        `/api/leagues/${leagueId}/member-lineup?userId=${encodeURIComponent(member.userId)}&week=${week}`,
         { credentials: 'include' },
       );
       const payload = await response.json();
@@ -78,12 +105,16 @@ export function MemberLineupDialog({ leagueId, member, week, open, onOpenChange 
     } finally {
       setIsLoading(false);
     }
-  }, [leagueId, member, viewWeek]);
+  }, [leagueId, member, week]);
 
   useEffect(() => {
-    if (!open || !member) return;
+    if (!open || !member || isHidden) {
+      setLineup(null);
+      setError(null);
+      return;
+    }
     void load();
-  }, [open, member, load]);
+  }, [open, member, isHidden, load]);
 
   const filledSlots = lineup?.slots.filter((slot) => slot.playerId) ?? [];
 
@@ -99,26 +130,26 @@ export function MemberLineupDialog({ leagueId, member, week, open, onOpenChange 
             {member?.username}
           </DialogTitle>
           <DialogDescription>
-            {weekLabel(viewWeek)} lineup
+            {weekLabel(week)} lineup
           </DialogDescription>
         </DialogHeader>
 
-        {(lineup?.availableWeeks.length ?? 0) > 1 && (
-          <div className="flex flex-wrap gap-1">
-            {lineup!.availableWeeks.map((candidate) => (
-              <Button
-                key={candidate}
-                size="sm"
-                variant={candidate === viewWeek ? 'default' : 'outline'}
-                onClick={() => setViewWeek(candidate)}
-              >
-                {weekLabel(candidate)}
-              </Button>
-            ))}
+        {isHidden ? (
+          <div className="flex flex-col items-center gap-3 py-8 text-center">
+            <Lock size={32} className="text-muted-foreground opacity-50" />
+            <div className="space-y-1">
+              <p className="font-medium">{weekLabel(week)} is not finished yet</p>
+              <p className="text-sm text-muted-foreground">
+                {revealsAt
+                  ? <>Come back on {formatRevealDate(revealsAt)} to see everyone's lineups for this week.</>
+                  : <>Lineups for this week are revealed once it is over.</>}
+              </p>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Use the week selector at the top of the page to look at a finished week.
+            </p>
           </div>
-        )}
-
-        {isLoading ? (
+        ) : isLoading ? (
           <p className="py-8 text-center text-sm text-muted-foreground">Loading lineup…</p>
         ) : error ? (
           <div className="flex flex-col items-center gap-2 py-8 text-center text-muted-foreground">
@@ -127,7 +158,7 @@ export function MemberLineupDialog({ leagueId, member, week, open, onOpenChange 
           </div>
         ) : filledSlots.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">
-            {member?.username} did not set a lineup for {weekLabel(viewWeek)}.
+            {member?.username} did not set a lineup for {weekLabel(week)}.
           </p>
         ) : (
           <>
