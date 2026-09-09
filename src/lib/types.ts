@@ -217,6 +217,7 @@ export interface LeaderboardEntry {
   username: string;
   avatarUrl?: string;
   totalPoints: number;
+  winningWeeks: number;
   weeklyAverage: number;
   bestWeek: number;
   worstWeek: number;

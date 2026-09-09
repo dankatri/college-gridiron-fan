@@ -1,9 +1,7 @@
-import { eq } from 'drizzle-orm';
-import { db } from '../src/server/db';
-import { dataCache } from '../src/server/schema';
 import { SEASON_YEAR } from '../src/lib/season-config';
 import { liveStatsCacheKey } from '../src/server/cache-keys';
 import { FIRST_WEEK, LAST_WEEK } from '../src/lib/types';
+import { readPublishedCache } from '../src/server/read-published-cache';
 
 export const config = {
   runtime: 'edge',
@@ -14,7 +12,7 @@ const EMPTY = { week: null, stats: [], games: [], updatedAt: null };
 export default async function handler(request: Request): Promise<Response> {
   try {
     const weekParam = new URL(request.url).searchParams.get('week');
-    const week = Number(weekParam);
+    const week = weekParam !== null && /^\d+$/.test(weekParam) ? Number(weekParam) : NaN;
     // Week 0 is valid, so reject a missing param explicitly rather than
     // relying on Number(null) === 0.
     if (weekParam === null || !Number.isInteger(week) || week < FIRST_WEEK || week > LAST_WEEK) {
@@ -24,16 +22,10 @@ export default async function handler(request: Request): Promise<Response> {
       });
     }
 
-    const rows = await db
-      .select()
-      .from(dataCache)
-      .where(eq(dataCache.key, liveStatsCacheKey(SEASON_YEAR, week)))
-      .limit(1);
-
-    const payload = rows[0]?.data ?? null;
+    const { data: payload, ...metadata } = await readPublishedCache<Record<string, unknown>>(liveStatsCacheKey(SEASON_YEAR, week));
 
     return new Response(
-      JSON.stringify(payload ?? EMPTY),
+      JSON.stringify({ ...(payload ?? EMPTY), ...metadata }),
       {
         status: 200,
         headers: {

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useMinuteClock } from '@/hooks/use-minute-clock';
 import { WEEK_LABELS, weekBoundary } from '@/lib/season-config';
 import { isWeekComplete } from '@/lib/week-lock';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -43,8 +44,7 @@ const weekLabel = (week: number) => WEEK_LABELS[week] ?? `Week ${week}`;
 
 /**
  * When a week's lineups become public: the moment its window closes, which is
- * the start of the next week. The final week of the season is open-ended and
- * has no such moment.
+ * the start of the next week, including the terminal season boundary.
  */
 function revealDate(week: number): Date | undefined {
   return weekBoundary(week + 1);
@@ -73,48 +73,48 @@ export function MemberLineupDialog({
 }: MemberLineupDialogProps) {
   const [lineup, setLineup] = useState<MemberLineup | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const now = useMinuteClock();
 
   // Your own lineup is yours to look at whenever; everyone else's waits for the
   // week to finish. Checked here as well as on the server so the dialog can
   // explain the wait instead of firing a request it knows will be refused.
   const isOwnLineup = member !== null && member.userId === currentUserId;
-  const isHidden = !isOwnLineup && !isWeekComplete(week);
+  const isHidden = !isOwnLineup && !isWeekComplete(week, new Date(now));
   const revealsAt = revealDate(week);
 
-  const load = useCallback(async () => {
-    if (!member) return;
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const response = await fetch(
-        `/api/leagues/${leagueId}/member-lineup?userId=${encodeURIComponent(member.userId)}&week=${week}`,
-        { credentials: 'include' },
-      );
-      const payload = await response.json();
-      if (!response.ok) {
-        setLineup(null);
-        setError(payload.error || 'Could not load that lineup');
-        return;
-      }
-      setLineup(payload as MemberLineup);
-    } catch {
-      setLineup(null);
-      setError('Could not load that lineup');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [leagueId, member, week]);
-
   useEffect(() => {
-    if (!open || !member || isHidden) {
-      setLineup(null);
-      setError(null);
-      return;
-    }
+    setLineup(null);
+    setError(null);
+    if (!open || !member || isHidden) return;
+    const controller = new AbortController();
+    let cancelled = false;
+    setIsLoading(true);
+    const load = async () => {
+      try {
+        const response = await fetch(
+          `/api/leagues/${leagueId}/member-lineup?userId=${encodeURIComponent(member.userId)}&week=${week}`,
+          { credentials: 'include', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)]) },
+        );
+        const payload = await response.json();
+        if (cancelled) return;
+        if (!response.ok) {
+          setLineup(null);
+          setError(payload.error || 'Could not load that lineup');
+          return;
+        }
+        setLineup(payload as MemberLineup);
+      } catch (error) {
+        if (cancelled) return;
+        setLineup(null);
+        setError(error instanceof Error ? error.message : 'Could not load that lineup');
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    };
     void load();
-  }, [open, member, isHidden, load]);
+    return () => { cancelled = true; controller.abort(); };
+  }, [leagueId, member, week, open, isHidden]);
 
   const filledSlots = lineup?.slots.filter((slot) => slot.playerId) ?? [];
 

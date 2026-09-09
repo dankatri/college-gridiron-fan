@@ -67,7 +67,7 @@ export function validateLineupSlots(slots: LineupSlotInput[]): { ok: true } | { 
   return { ok: true };
 }
 
-export function toUsageMap(slotsByWeek: Array<{ slots: LineupSlotInput[] }>): Map<string, number> {
+export function toUsageMap(slotsByWeek: Array<{ slots: Array<{ playerId: string | null }> }>): Map<string, number> {
   const usage = new Map<string, number>();
   for (const row of slotsByWeek) {
     for (const slot of row.slots) {

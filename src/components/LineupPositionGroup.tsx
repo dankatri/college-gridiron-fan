@@ -32,7 +32,7 @@ export function LineupPositionGroup({
   isSlotLocked,
   weekPointsFor,
 }: LineupPositionGroupProps) {
-  const filled = slots.filter((slot) => slot.player).length;
+  const filled = slots.filter((slot) => slot.player || slot.playerId).length;
 
   return (
     <div className="rounded-lg border bg-card overflow-hidden">
@@ -74,7 +74,9 @@ function LineupSlotRow({ slot, onRemovePlayer, isLocked, weekPoints }: LineupSlo
   if (!slot.player) {
     return (
       <div className="rounded-md border-2 border-dashed border-muted-foreground/25 px-2 py-2.5 text-center">
-        <p className="text-xs text-muted-foreground">Empty {slot.position} slot</p>
+        <p className="text-xs text-muted-foreground">
+          {slot.playerId ? `Saved ${slot.position} - player details unavailable` : `Empty ${slot.position} slot`}
+        </p>
       </div>
     );
   }

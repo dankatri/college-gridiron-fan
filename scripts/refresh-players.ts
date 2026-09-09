@@ -13,63 +13,70 @@ import { playersCacheKey, seasonStatsCacheKey, teamsCacheKey } from '../src/serv
 import { buildPlayers } from '../src/server/cfbd-transform';
 import type { StatLine } from '../src/server/cfbd-transform';
 import type { ProjectionCache } from './refresh-projections';
-import { readCache, writeCache } from './lib/cache';
+import { beginCacheRun, readCache, refreshCache, IncompleteSourceError } from './lib/cache';
 import { logStep, requireEnv, runScript } from './lib/runner';
 
 await runScript('refresh-players', async () => {
   requireEnv('CFBD_API_KEY');
   requireEnv('DATABASE_URL');
+  const run = await beginCacheRun();
+  await refreshCache(playersCacheKey(SEASON_YEAR), run, async () => {
 
-  const { getFbsTeams, getRoster } = await import('../src/server/cfbd');
+    const { getFbsTeams, getRoster } = await import('../src/server/cfbd');
 
-  logStep('fetching teams and roster', { season: SEASON_YEAR });
-  const [teams, roster] = await Promise.all([
-    getFbsTeams(SEASON_YEAR),
-    getRoster(SEASON_YEAR),
-  ]);
-  logStep('fetched', { teams: teams.length, rosterRows: roster.length });
+    logStep('fetching teams and roster', { season: SEASON_YEAR });
+    const [teams, roster] = await Promise.all([
+      getFbsTeams(SEASON_YEAR),
+      getRoster(SEASON_YEAR),
+    ]);
+    logStep('fetched', { teams: teams.length, rosterRows: roster.length });
 
-  if (teams.length === 0 || roster.length === 0) {
-    throw new Error(`CFBD returned no teams/roster for ${SEASON_YEAR}; refusing to overwrite cache`);
-  }
+    if (teams.length === 0 || roster.length === 0) {
+      throw new Error(`CFBD returned no teams/roster for ${SEASON_YEAR}; refusing to overwrite cache`);
+    }
 
-  const projections = await readCache<ProjectionCache>(seasonStatsCacheKey(PROJECTION_YEAR));
-  if (!projections) {
-    logStep('WARNING: no cached projection stats; run refresh:projections first', {
-      year: PROJECTION_YEAR,
+    const projections = await readCache<ProjectionCache>(seasonStatsCacheKey(PROJECTION_YEAR));
+    if (!projections) {
+      logStep('WARNING: no cached projection stats; run refresh:projections first', {
+        year: PROJECTION_YEAR,
+      });
+    }
+
+    const statsByPlayer = new Map<string, StatLine>(
+      Object.entries(projections?.statsByPlayer ?? {}),
+    );
+    const gamesPlayed = new Map<string, number>(Object.entries(projections?.gamesPlayed ?? {}));
+
+    const players = buildPlayers({ teams, roster, statsByPlayer, gamesPlayed });
+
+    if (players.length === 0) {
+      throw new Error('Player build produced 0 players; refusing to overwrite cache');
+    }
+
+    const teamSummaries = teams
+      .map((team) => ({
+        id: String(team.id),
+        school: team.school,
+        conference: team.conference ?? 'Independent',
+        logo: team.logos?.find((entry) => entry && !entry.includes('logos-dark')) ?? null,
+        color: team.color ?? null,
+        alternateColor: team.alternateColor ?? null,
+      }))
+      .sort((a, b) => a.school.localeCompare(b.school));
+
+    const previous = await readCache<unknown[]>(playersCacheKey(SEASON_YEAR));
+    if (previous?.length && players.length < previous.length / 2) {
+      throw new IncompleteSourceError('The player pool unexpectedly lost more than half its rows');
+    }
+    await refreshCache(teamsCacheKey(SEASON_YEAR), run, async () => teamSummaries);
+
+    const withProjection = players.filter((player) => player.projectedPoints > 0).length;
+    logStep('players cached', {
+      players: players.length,
+      teams: teamSummaries.length,
+      withProjection,
+      approxBytes: JSON.stringify(players).length,
     });
-  }
-
-  const statsByPlayer = new Map<string, StatLine>(
-    Object.entries(projections?.statsByPlayer ?? {}),
-  );
-  const gamesPlayed = new Map<string, number>(Object.entries(projections?.gamesPlayed ?? {}));
-
-  const players = buildPlayers({ teams, roster, statsByPlayer, gamesPlayed });
-
-  if (players.length === 0) {
-    throw new Error('Player build produced 0 players; refusing to overwrite cache');
-  }
-
-  const teamSummaries = teams
-    .map((team) => ({
-      id: String(team.id),
-      school: team.school,
-      conference: team.conference ?? 'Independent',
-      logo: team.logos?.find((entry) => entry && !entry.includes('logos-dark')) ?? null,
-      color: team.color ?? null,
-      alternateColor: team.alternateColor ?? null,
-    }))
-    .sort((a, b) => a.school.localeCompare(b.school));
-
-  await writeCache(teamsCacheKey(SEASON_YEAR), teamSummaries);
-  await writeCache(playersCacheKey(SEASON_YEAR), players);
-
-  const withProjection = players.filter((player) => player.projectedPoints > 0).length;
-  logStep('players cached', {
-    players: players.length,
-    teams: teamSummaries.length,
-    withProjection,
-    approxBytes: JSON.stringify(players).length,
+    return players;
   });
 });

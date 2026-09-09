@@ -1,10 +1,10 @@
 import { Player } from './types';
-import { getTeamSchedules, clearScheduleCache } from './schedule-data';
-import { ALL_FBS_CONFERENCES } from './season-config';
+import { clearScheduleCache } from './schedule-data';
+import { z } from 'zod';
+import { createResource } from './async-resource';
+import { sourceMetadataFields, resourceSource } from './source-metadata';
 
-// Minimal fallback sample data — used only when ESPN API is completely unavailable.
-// In production, prefer showing an error state over stale data.
-// This tiny fixture ensures the app can render something in dev/offline mode.
+// Development simulation fixtures. Production never substitutes these for a failed API response.
 export const SAMPLE_PLAYERS: Player[] = [
   // Quarterbacks
   {
@@ -391,215 +391,34 @@ export const SAMPLE_PLAYERS: Player[] = [
   },
 ];
 
-// Cache for API data - now supports multiple cache entries based on filters
-const playersCache = new Map<string, { players: Player[], timestamp: number }>();
-let conferencesCache: string[] = [];
-let teamsCache: string[] = [];
-let cacheTimestamp = 0;
+// One canonical catalogue; filters never create another network/cache entry.
 const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
 
-// Generate cache key based on filter options
-const getCacheKey = (options?: { specificTeam?: string; specificConference?: string }) => {
-  if (!options) return 'default';
-  return `${options.specificTeam || 'all'}_${options.specificConference || 'all'}`;
-};
+const playerSchema = z.object({
+  id: z.string().min(1), name: z.string().min(1), team: z.string().min(1),
+  position: z.enum(['QB', 'RB', 'WR']), conference: z.string(), projectedPoints: z.number(),
+  passingYards: z.number().optional(), passingTDs: z.number().optional(),
+  completions: z.number().optional(), attempts: z.number().optional(),
+  interceptions: z.number().optional(), rushingYards: z.number().optional(),
+  rushingTDs: z.number().optional(), receivingYards: z.number().optional(),
+  receptions: z.number().optional(), receivingTDs: z.number().optional(),
+  returnYards: z.number().optional(), headshotUrl: z.string().optional(),
+  teamLogoUrl: z.string().optional(), teamColorPrimary: z.string().optional(),
+  teamColorSecondary: z.string().optional(),
+}).passthrough();
 
-const applyPlayerFilters = (
-  players: Player[],
-  options?: { specificTeam?: string; specificConference?: string }
-) => {
-  return players.filter((player) => {
-    const teamMatches =
-      !options?.specificTeam ||
-      options.specificTeam === 'All Teams' ||
-      player.team === options.specificTeam;
-
-    const conferenceMatches =
-      !options?.specificConference ||
-      options.specificConference === 'All Conferences' ||
-      player.conference === options.specificConference;
-
-    return teamMatches && conferenceMatches;
-  });
-};
-
-// Check if cache is valid
-const isCacheValid = (timestamp: number) => {
-  return Date.now() - timestamp < CACHE_DURATION;
-};
-
-/**
- * Annotates players with their team's first bye week from the cached schedules.
- * Failures are non-fatal — bye weeks are advisory, players still render.
- */
-const withByeWeeks = async (players: Player[]): Promise<Player[]> => {
-  try {
-    const schedules = await getTeamSchedules();
-    if (schedules.length === 0) return players;
-
-    const byeByTeam = new Map(
-      schedules.map(schedule => [schedule.teamName.toLowerCase(), schedule.byeWeeks[0]]),
-    );
-
-    return players.map(player => {
-      const byeWeek = byeByTeam.get(player.team.toLowerCase());
-      // Week 0 is a valid bye week, so test for undefined rather than falsiness.
-      return byeWeek === undefined
-        ? { ...player, hasByeWeek: false }
-        : { ...player, hasByeWeek: true, byeWeek };
-    });
-  } catch (error) {
-    console.warn('Could not attach bye weeks:', error);
-    return players;
-  }
-};
-
-// Main function to get players (with caching and smart loading)
-export const getPlayers = async (options?: { 
-  specificTeam?: string; 
-  specificConference?: string;
-}): Promise<Player[]> => {
-  const cacheKey = getCacheKey(options);
-  const cachedData = playersCache.get(cacheKey);
-  
-  // Check if cached data is valid (has proper player names)
-  if (cachedData && isCacheValid(cachedData.timestamp)) {
-    const hasValidNames = cachedData.players.every(p => p.name && !p.name.includes('undefined') && p.name.trim() !== '');
-    if (hasValidNames) {
-      console.log(`Using cached players for ${cacheKey}:`, cachedData.players.length);
-      return cachedData.players;
-    } else {
-      console.warn('Cached data has invalid names or is empty, clearing cache for', cacheKey);
-      playersCache.delete(cacheKey);
-    }
-  }
-
-  console.log('Fetching players from /api/players with options:', options);
-
-  try {
-    const response = await fetch('/api/players');
-    if (!response.ok) {
-      throw new Error(`/api/players failed: ${response.status} ${response.statusText}`);
-    }
-
-    const payload = await response.json();
-    const apiPlayers = Array.isArray(payload)
-      ? (payload as Player[])
-      : Array.isArray(payload?.players)
-        ? (payload.players as Player[])
-        : [];
-
-    const filteredApiPlayers = applyPlayerFilters(apiPlayers, options);
-    const validApiPlayers = await withByeWeeks(
-      filteredApiPlayers.filter(p =>
-        p.name &&
-        p.name.trim() !== '' &&
-        !p.name.includes('undefined') &&
-        !p.name.startsWith('Player ')
-      )
-    );
-
-    if (validApiPlayers.length > 0) {
-      playersCache.set(cacheKey, {
-        players: validApiPlayers,
-        timestamp: Date.now()
-      });
-      console.log(`Loaded ${validApiPlayers.length} players from /api/players for ${cacheKey}`);
-      return validApiPlayers;
-    }
-
-    console.warn('/api/players returned no cached players yet. Returning empty result.');
-    playersCache.set(cacheKey, {
-      players: [],
-      timestamp: Date.now()
-    });
-    return [];
-  } catch (error) {
-    console.error('Failed to load players from /api/players:', error);
-  }
-
-  // Offline/dev fallback only. The server cache is the sole real data source.
-  const samplePlayers = applyPlayerFilters(SAMPLE_PLAYERS, options).map(player => ({
-    ...player,
-    hasByeWeek: player.byeWeek !== undefined,
-  }));
-
-  playersCache.set(cacheKey, { players: samplePlayers, timestamp: Date.now() });
-  console.warn(`Using ${samplePlayers.length} sample players as fallback`);
-  return samplePlayers;
-};
-
-// Default fallback conferences — derived from season-config
-const DEFAULT_CONFERENCES = [
-  'All Conferences', 
-  ...ALL_FBS_CONFERENCES,
-];
-
-const DEFAULT_TEAMS_FROM_SAMPLE = [
-  'All Teams',
-  ...Array.from(new Set(SAMPLE_PLAYERS.map(p => p.team))).sort()
-];
-
-type CachedTeam = { school: string; conference: string };
-
-let teamDirectoryPromise: Promise<CachedTeam[]> | null = null;
-
-/** Fetches the cached FBS team directory once and shares it between callers. */
-const getTeamDirectory = async (): Promise<CachedTeam[]> => {
-  if (!teamDirectoryPromise) {
-    teamDirectoryPromise = (async () => {
-      try {
-        const response = await fetch('/api/teams');
-        if (!response.ok) throw new Error(`/api/teams failed: ${response.status}`);
-        const payload = await response.json();
-        const teams = Array.isArray(payload?.teams) ? (payload.teams as CachedTeam[]) : [];
-        if (teams.length === 0) throw new Error('/api/teams returned no teams');
-        return teams;
-      } catch (error) {
-        console.warn('Falling back to configured team/conference lists:', error);
-        teamDirectoryPromise = null;
-        return [];
-      }
-    })();
-  }
-  return teamDirectoryPromise;
-};
-
-// Get conferences (with caching)
-export const getConferences = async (): Promise<string[]> => {
-  if (conferencesCache.length > 0 && isCacheValid(cacheTimestamp)) {
-    return conferencesCache;
-  }
-
-  const teams = await getTeamDirectory();
-  const conferences = Array.from(new Set(teams.map(team => team.conference).filter(Boolean))).sort();
-
-  conferencesCache = conferences.length > 0
-    ? ['All Conferences', ...conferences]
-    : DEFAULT_CONFERENCES;
-  cacheTimestamp = Date.now();
-  return conferencesCache;
-};
-
-// Get teams (with caching)
-export const getTeams = async (): Promise<string[]> => {
-  if (teamsCache.length > 1 && isCacheValid(cacheTimestamp)) {
-    return teamsCache;
-  }
-
-  const teams = await getTeamDirectory();
-  const schools = Array.from(new Set(teams.map(team => team.school).filter(Boolean))).sort();
-
-  teamsCache = schools.length > 0 ? ['All Teams', ...schools] : DEFAULT_TEAMS_FROM_SAMPLE;
-  cacheTimestamp = Date.now();
-  return teamsCache;
-};
+export const playersResource = createResource<Player[]>(async signal => {
+  const response = await fetch('/api/players', { signal });
+  if (!response.ok) throw new Error(`/api/players failed: ${response.status}`);
+  const payload = z.object({
+    players: z.array(playerSchema).nonempty('Player data is not available yet. Please retry.'),
+    updatedAt: z.string().nullable(),
+  }).merge(sourceMetadataFields).parse(await response.json());
+  return { data: payload.players, ...resourceSource(payload) };
+}, { ttlMs: CACHE_DURATION });
 
 // Clear cache (useful for refreshing data)
 export const clearCache = () => {
-  playersCache.clear();
-  conferencesCache = [];
-  teamsCache = [];
-  cacheTimestamp = 0;
+  playersResource.invalidate();
   clearScheduleCache();
 };

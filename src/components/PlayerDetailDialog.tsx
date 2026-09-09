@@ -5,7 +5,6 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { User, Trophy } from '@phosphor-icons/react';
 
 type GameLine = PlayerStats & {
@@ -109,12 +108,15 @@ export function PlayerDetailDialog({ player, open, onOpenChange }: PlayerDetailD
     if (!open || !player) return;
 
     let cancelled = false;
+    const controller = new AbortController();
     setIsLoading(true);
     setError(null);
     setGames([]);
     setTotals(null);
 
-    fetch(`/api/player-log?playerId=${encodeURIComponent(player.id)}`)
+    fetch(`/api/player-log?playerId=${encodeURIComponent(player.id)}`, {
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)]),
+    })
       .then(async (response) => {
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || 'Failed to load player log');
@@ -131,6 +133,7 @@ export function PlayerDetailDialog({ player, open, onOpenChange }: PlayerDetailD
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [open, player]);
 
@@ -143,8 +146,8 @@ export function PlayerDetailDialog({ player, open, onOpenChange }: PlayerDetailD
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] flex-col overflow-hidden p-4 sm:max-w-5xl sm:p-6">
+        <DialogHeader className="min-w-0 shrink-0 pr-8">
           <div className="flex items-center gap-3">
             <div className="relative h-14 w-14 flex-shrink-0 overflow-hidden rounded-full bg-muted">
               {player.headshotUrl ? (
@@ -164,7 +167,7 @@ export function PlayerDetailDialog({ player, open, onOpenChange }: PlayerDetailD
               </div>
             </div>
 
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <DialogTitle className="truncate text-left">{player.name}</DialogTitle>
               <DialogDescription className="flex flex-wrap items-center gap-2 text-left">
                 <Badge variant="outline">{player.position}</Badge>
@@ -176,53 +179,66 @@ export function PlayerDetailDialog({ player, open, onOpenChange }: PlayerDetailD
           </div>
         </DialogHeader>
 
-        <div className="grid grid-cols-3 gap-3">
-          <div className="rounded-md border p-3">
-            <div className="text-xs uppercase tracking-wide text-muted-foreground">Projected</div>
-            <div className="text-xl font-bold">{player.projectedPoints.toFixed(1)}</div>
-            <div className="text-xs text-muted-foreground">points per game</div>
-          </div>
-          <div className="rounded-md border p-3">
-            <div className="text-xs uppercase tracking-wide text-muted-foreground">Season points</div>
-            <div className="flex items-center gap-1 text-xl font-bold">
-              <Trophy size={16} className="text-accent" />
-              {totals ? totals.fantasyPoints.toFixed(1) : '—'}
+        <div
+          role="region"
+          aria-label="Player statistics"
+          tabIndex={0}
+          className="min-h-0 min-w-0 space-y-4 overflow-y-auto outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+        >
+          <div className="grid grid-cols-1 gap-2 min-[360px]:grid-cols-3 sm:gap-3">
+            <div className="rounded-md border p-2 sm:p-3">
+              <div className="text-xs uppercase tracking-wide text-muted-foreground">Projected</div>
+              <div className="text-xl font-bold">{player.projectedPoints.toFixed(1)}</div>
+              <div className="text-xs text-muted-foreground">points per game</div>
             </div>
-            <div className="text-xs text-muted-foreground">scored so far</div>
+            <div className="rounded-md border p-2 sm:p-3">
+              <div className="text-xs uppercase tracking-wide text-muted-foreground">Season points</div>
+              <div className="flex flex-wrap items-center gap-1 text-xl font-bold">
+                <Trophy size={16} className="shrink-0 text-accent" />
+                {totals ? totals.fantasyPoints.toFixed(1) : '—'}
+              </div>
+              <div className="text-xs text-muted-foreground">scored so far</div>
+            </div>
+            <div className="rounded-md border p-2 sm:p-3">
+              <div className="text-xs uppercase tracking-wide text-muted-foreground">Games</div>
+              <div className="text-xl font-bold">{totals?.games ?? 0}</div>
+              <div className="text-xs text-muted-foreground">with recorded stats</div>
+            </div>
           </div>
-          <div className="rounded-md border p-3">
-            <div className="text-xs uppercase tracking-wide text-muted-foreground">Games</div>
-            <div className="text-xl font-bold">{totals?.games ?? 0}</div>
-            <div className="text-xs text-muted-foreground">with recorded stats</div>
-          </div>
-        </div>
 
-        <Separator />
+          <Separator />
 
-        <div>
-          <h4 className="mb-2 text-sm font-semibold">Game log</h4>
-          {isLoading ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">Loading game log…</p>
-          ) : error ? (
-            <p className="py-4 text-center text-sm text-destructive">{error}</p>
-          ) : games.length === 0 ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">
-              No games with recorded stats yet this season.
-            </p>
-          ) : (
-            <ScrollArea className="max-h-64">
-              <Table>
-                <TableHeader>
+          <div className="min-w-0">
+            <h4 className="mb-2 text-sm font-semibold">Game log</h4>
+            {isLoading ? (
+              <p className="py-4 text-center text-sm text-muted-foreground">Loading game log…</p>
+            ) : error ? (
+              <p className="py-4 text-center text-sm text-destructive">{error}</p>
+            ) : games.length === 0 ? (
+              <p className="py-4 text-center text-sm text-muted-foreground">
+                No games with recorded stats yet this season.
+              </p>
+            ) : (
+              <Table
+                aria-label="Game log"
+                containerProps={{
+                  role: 'region',
+                  'aria-label': 'Game log',
+                  tabIndex: 0,
+                  className: 'max-h-[min(16rem,50dvh)] rounded-md border outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
+                }}
+              >
+                <TableHeader className="sticky top-0 z-10 bg-background">
                   <TableRow>
                     <TableHead className="w-16">Week</TableHead>
-                    <TableHead>Opponent</TableHead>
+                    <TableHead className="w-48">Opponent</TableHead>
                     <TableHead className="text-center">Result</TableHead>
+                    <TableHead className="text-center">Pts</TableHead>
                     {gameColumns.map((column) => (
                       <TableHead key={String(column.key)} className="text-center">
                         {column.label}
                       </TableHead>
                     ))}
-                    <TableHead className="text-center">Pts</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -230,8 +246,8 @@ export function PlayerDetailDialog({ player, open, onOpenChange }: PlayerDetailD
                     const result = resultFor(game);
                     return (
                       <TableRow key={game.week}>
-                        <TableCell className="font-medium">{WEEK_LABELS[game.week] ?? `Week ${game.week}`}</TableCell>
-                        <TableCell className="text-sm">
+                        <TableCell className="whitespace-normal font-medium">{WEEK_LABELS[game.week] ?? `Week ${game.week}`}</TableCell>
+                        <TableCell className="whitespace-normal text-sm">
                           {game.opponent ? `${game.isHomeGame ? 'vs' : '@'} ${game.opponent}` : '—'}
                         </TableCell>
                         <TableCell className="text-center text-sm">
@@ -243,41 +259,41 @@ export function PlayerDetailDialog({ player, open, onOpenChange }: PlayerDetailD
                             '—'
                           )}
                         </TableCell>
+                        <TableCell className="text-center font-semibold tabular-nums">
+                          {(game.fantasyPoints ?? 0).toFixed(1)}
+                        </TableCell>
                         {gameColumns.map((column) => (
                           <TableCell key={String(column.key)} className="text-center tabular-nums">
                             {(game[column.key] as number) || 0}
                           </TableCell>
                         ))}
-                        <TableCell className="text-center font-semibold tabular-nums">
-                          {(game.fantasyPoints ?? 0).toFixed(1)}
-                        </TableCell>
                       </TableRow>
                     );
                   })}
                 </TableBody>
               </Table>
-            </ScrollArea>
+            )}
+          </div>
+
+          {seasonStats.length > 0 && (
+            <>
+              <Separator />
+              <div>
+                <h4 className="mb-2 text-sm font-semibold">Season totals used for projection</h4>
+                <div className="grid grid-cols-1 gap-x-6 gap-y-1 min-[360px]:grid-cols-2 sm:grid-cols-3">
+                  {seasonStats.map((stat) => (
+                    <div key={String(stat.key)} className="flex items-baseline justify-between gap-2 text-sm">
+                      <span className="text-muted-foreground">{stat.label}</span>
+                      <span className="shrink-0 font-medium tabular-nums">
+                        {(player[stat.key] as number).toLocaleString()}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
           )}
         </div>
-
-        {seasonStats.length > 0 && (
-          <>
-            <Separator />
-            <div>
-              <h4 className="mb-2 text-sm font-semibold">Season totals used for projection</h4>
-              <div className="grid grid-cols-2 gap-x-6 gap-y-1 sm:grid-cols-3">
-                {seasonStats.map((stat) => (
-                  <div key={String(stat.key)} className="flex items-baseline justify-between text-sm">
-                    <span className="text-muted-foreground">{stat.label}</span>
-                    <span className="font-medium tabular-nums">
-                      {(player[stat.key] as number).toLocaleString()}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
       </DialogContent>
     </Dialog>
   );

@@ -1,4 +1,5 @@
 import { League, LeagueMember, LeaderboardEntry, WeeklyLineup, WeeklyMatchup } from './types';
+import { countWinningWeeks } from './leaderboard-wins';
 
 /**
  * Generate a unique league ID
@@ -22,6 +23,11 @@ export function calculateLeaderboard(
   allLineups: { [userId: string]: WeeklyLineup[] },
   currentWeek: number
 ): LeaderboardEntry[] {
+  const winningWeeks = countWinningWeeks(members.map(member => ({
+    userId: member.userId,
+    weeklyPoints: Object.fromEntries((allLineups[member.userId] ?? [])
+      .flatMap(lineup => typeof lineup.actualPoints === 'number' ? [[lineup.week, lineup.actualPoints] as const] : [])),
+  })));
   const entries: LeaderboardEntry[] = members.map((member, index) => {
     const userLineups = allLineups[member.userId] || [];
     const weeklyPoints = userLineups.map(lineup => lineup.actualPoints || lineup.totalPoints);
@@ -56,6 +62,7 @@ export function calculateLeaderboard(
       username: member.username,
       avatarUrl: member.avatarUrl,
       totalPoints,
+      winningWeeks: winningWeeks.get(member.userId) ?? 0,
       weeklyAverage,
       bestWeek,
       worstWeek,

@@ -1,5 +1,9 @@
-@import 'tailwindcss';
+@import 'tailwindcss' source(none);
+@import './main.css';
 @import "tw-animate-css";
+
+@source "./";
+@source "../index.html";
 
 @layer base {
   * {

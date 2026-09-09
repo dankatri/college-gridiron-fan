@@ -1,7 +1,10 @@
-import { useEffect, useState } from 'react';
-import { getWeekPlayerStats } from '@/lib/live-data';
+import { useMemo } from 'react';
+import { getLiveResource } from '@/lib/live-data';
+import { useResource } from './use-resource';
+import { useMinuteClock } from './use-minute-clock';
 import type { PlayerStats } from '@/lib/types';
-import { hasWeekStarted } from '@/lib/week-lock';
+import { hasWeekStarted, isWeekComplete } from '@/lib/week-lock';
+import { FIRST_WEEK } from '@/lib/types';
 
 export interface WeekActuals {
   isLoading: boolean;
@@ -9,6 +12,9 @@ export interface WeekActuals {
   hasStarted: boolean;
   /** Box scores for the week, keyed by player id. Empty until loaded. */
   actuals: Map<string, PlayerStats>;
+  error: Error | null;
+  hasData: boolean;
+  isReliable: boolean;
 }
 
 const EMPTY = new Map<string, PlayerStats>();
@@ -19,35 +25,19 @@ const EMPTY = new Map<string, PlayerStats>();
  * never fetched, since there is nothing to show.
  */
 export function useWeekActuals(week?: number): WeekActuals {
-  const hasStarted = week !== undefined && hasWeekStarted(week);
-  const [state, setState] = useState<{ week?: number; actuals: Map<string, PlayerStats> } | null>(null);
-
-  useEffect(() => {
-    if (week === undefined || !hasStarted) {
-      setState({ week, actuals: EMPTY });
-      return;
-    }
-
-    let cancelled = false;
-    setState(null);
-
-    getWeekPlayerStats(week)
-      .then((actuals) => {
-        if (!cancelled) setState({ week, actuals });
-      })
-      .catch((error) => {
-        console.error('useWeekActuals: failed to load live stats', error);
-        if (!cancelled) setState({ week, actuals: EMPTY });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [week, hasStarted]);
-
-  if (state === null || state.week !== week) {
-    return { isLoading: hasStarted, hasStarted, actuals: EMPTY };
-  }
-
-  return { isLoading: false, hasStarted, actuals: state.actuals };
+  const now = useMinuteClock();
+  const hasStarted = week !== undefined && hasWeekStarted(week, new Date(now));
+  const state = useResource(
+    getLiveResource(week ?? FIRST_WEEK), hasStarted,
+    week !== undefined && !isWeekComplete(week, new Date(now)),
+  );
+  const actuals = useMemo(
+    () => hasStarted && state.data ? new Map(state.data.stats.map(stat => [stat.playerId, stat])) : EMPTY,
+    [hasStarted, state.data],
+  );
+  return {
+    isLoading: hasStarted && state.data === undefined && !state.error,
+    hasStarted, actuals, error: state.error, hasData: !!state.data,
+    isReliable: !!state.data && !state.error && state.sourceStatus !== 'refreshing',
+  };
 }

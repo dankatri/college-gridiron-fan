@@ -1,9 +1,9 @@
 import { useState, useMemo, useEffect, type ReactNode } from 'react';
 import { Player, PlayerUsage } from '@/lib/types';
-import { getConferences, getTeams, getPlayers } from '@/lib/data';
-import { isPlayerAvailable, isPlayerInLineup } from '@/lib/utils-fantasy';
 import { MAX_PLAYER_USES } from '@/lib/types';
-import { describeWeekPoints, resolveWeekPoints, weekStatValue } from '@/lib/week-actuals';
+import { seasonStatValue, type SeasonStatKey } from '@/lib/season-stats';
+import { seasonStatsResource } from '@/lib/season-stats-data';
+import { SEASON_YEAR } from '@/lib/season-config';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -13,14 +13,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { LineupSlot } from '@/lib/types';
 import { ByeWeekIndicator } from '@/components/ByeWeekIndicator';
 import { WeekMatchup } from '@/components/WeekMatchup';
-import { PlayerDetailDialog } from '@/components/PlayerDetailDialog';
+import { TeamLogo } from '@/components/TeamLogo';
+import { optionalFeature } from '@/components/optional-feature';
 import { useWeekMatchups } from '@/hooks/use-week-matchups';
-import { useWeekActuals } from '@/hooks/use-week-actuals';
+import { useSeasonStats } from '@/hooks/use-season-stats';
 import {
   Users,
   Funnel as Filter,
   Trophy,
-  ArrowClockwise as RefreshCw,
   User,
   CaretUp,
   CaretDown,
@@ -29,8 +29,9 @@ import {
   X,
 } from '@phosphor-icons/react';
 
-type SortKey = 'projectedPoints' | keyof Player;
+type SortKey = SeasonStatKey;
 type SortDirection = 'asc' | 'desc';
+const PlayerDetailDialog = optionalFeature('Player Details', () => import('./PlayerDetailDialog').then(module => ({ default: module.PlayerDetailDialog })));
 
 /**
  * A name reduced for searching: its words concatenated, plus where each word
@@ -79,7 +80,6 @@ interface PlayerTableProps {
   currentLineup: LineupSlot[];
   currentWeek?: number;
   onPlayerSelect: (player: Player) => void;
-  onPlayersUpdate?: (players: Player[]) => void; // New callback to update parent's player list
   /** The whole week is over; nothing can be selected. */
   isLocked?: boolean;
   /** Lower-cased teams whose game has kicked off, so their players are frozen. */
@@ -95,173 +95,27 @@ export function PlayerTable({
   currentLineup, 
   currentWeek,
   onPlayerSelect,
-  onPlayersUpdate,
   isLocked = false,
   lockedTeams,
   finishedTeams
 }: PlayerTableProps) {
   const pageSizeOptions = ['10', '15', '20', '25'] as const;
   const [conferenceFilter, setConferenceFilter] = useState('All Conferences');
+  const showConference = conferenceFilter === 'All Conferences';
   const [searchTerm, setSearchTerm] = useState('');
   const [teamFilter, setTeamFilter] = useState('All Teams');
   const [pageSize, setPageSize] = useState<number>(15);
   const [currentPage, setCurrentPage] = useState(1);
-  const [conferences, setConferences] = useState<string[]>(['All Conferences']);
-  const [teams, setTeams] = useState<string[]>(['All Teams']);
-  const [isLoadingFilters, setIsLoadingFilters] = useState(true);
-  const [isLoadingPlayers, setIsLoadingPlayers] = useState(false);
-  const [enhancedPlayers, setEnhancedPlayers] = useState<Player[]>(players);
-  const [sortKey, setSortKey] = useState<SortKey>('projectedPoints');
+  const conferences = useMemo(() => ['All Conferences', ...new Set(players.map(p => p.conference).filter(Boolean))].sort((a, b) => a === 'All Conferences' ? -1 : b === 'All Conferences' ? 1 : a.localeCompare(b)), [players]);
+  const teams = useMemo(() => ['All Teams', ...Array.from(new Set(players.map(p => p.team))).sort()], [players]);
+  const names = useMemo(() => new Map(players.map(player => [player.id, nameIndex(player.name)])), [players]);
+  const usageById = useMemo(() => new Map(playerUsage.map(usage => [usage.playerId, usage.timesUsed])), [playerUsage]);
+  const selectedIds = useMemo(() => new Set(currentLineup.map(slot => slot.playerId ?? slot.player?.id)), [currentLineup]);
+  const [sortKey, setSortKey] = useState<SortKey>('fantasyPoints');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
-  const isUnfiltered = conferenceFilter === 'All Conferences' && teamFilter === 'All Teams';
   const { matchups, isLoading: isLoadingMatchups } = useWeekMatchups(currentWeek);
-  const { actuals, hasStarted, isLoading: isLoadingActuals } = useWeekActuals(currentWeek);
+  const season = useSeasonStats();
   const [detailPlayer, setDetailPlayer] = useState<Player | null>(null);
-
-  // Once a week has kicked off its real scores are more useful than the
-  // preseason projection, so the points and stat columns switch over to them.
-  const showActuals = hasStarted && !isLoadingActuals;
-
-  const weekPointsFor = (player: Player) =>
-    resolveWeekPoints(player, actuals.get(player.id), matchups.get(player.team.toLowerCase())?.game);
-
-  // Immediately set initial conference data from players if available
-  useEffect(() => {
-    if (players.length > 0 && conferences.length <= 1) {
-      const playerConferences = Array.from(new Set(
-        players.map(p => p.conference).filter(conf => conf)
-      )).sort();
-      
-      const playerTeams = Array.from(new Set(
-        players.map(p => p.team).filter(team => team)
-      )).sort();
-      
-      if (playerConferences.length > 0) {
-        setConferences(['All Conferences', ...playerConferences]);
-      }
-      
-      if (playerTeams.length > 0) {
-        setTeams(['All Teams', ...playerTeams]);
-      }
-      
-      console.log('PlayerTable: Set initial filter data from players:', {
-        conferences: playerConferences.length,
-        teams: playerTeams.length
-      });
-    }
-  }, [players, conferences.length]);
-
-  // Load filter options
-  useEffect(() => {
-    const loadFilters = async () => {
-      console.log('PlayerTable: Starting to load filters...');
-      try {
-        const [confs, tms] = await Promise.all([
-          getConferences(),
-          getTeams()
-        ]);
-        
-        console.log('PlayerTable: Loaded conferences:', confs);
-        console.log('PlayerTable: Loaded teams:', tms);
-        
-        // Ensure we always have at least the default values
-        if (confs.length === 0) {
-          console.warn('PlayerTable: No conferences loaded, using defaults');
-          setConferences(['All Conferences']);
-        } else {
-          setConferences(confs);
-        }
-        
-        if (tms.length === 0) {
-          console.warn('PlayerTable: No teams loaded, using defaults');
-          setTeams(['All Teams']);
-        } else {
-          setTeams(tms);
-        }
-      } catch (error) {
-        console.error('PlayerTable: Failed to load filter options:', error);
-        
-        // Fallback: extract conferences and teams from current players data
-        if (players.length > 0) {
-          const playerConferences = Array.from(new Set(
-            players.map(p => p.conference).filter(conf => conf)
-          )).sort();
-          
-          const playerTeams = Array.from(new Set(
-            players.map(p => p.team).filter(team => team)
-          )).sort();
-          
-          setConferences(['All Conferences', ...playerConferences]);
-          setTeams(['All Teams', ...playerTeams]);
-          
-          console.log('PlayerTable: Using fallback data - conferences:', playerConferences);
-          console.log('PlayerTable: Using fallback data - teams:', playerTeams);
-        } else {
-          // Ultimate fallback
-          setConferences(['All Conferences']);
-          setTeams(['All Teams']);
-        }
-      } finally {
-        setIsLoadingFilters(false);
-      }
-    };
-    
-    loadFilters();
-  }, [players]);
-
-  // Show the full pool whenever nothing is narrowing it, including after a
-  // refresh. While a filter is applied the filtered result below owns the list.
-  useEffect(() => {
-    if (isUnfiltered) {
-      setEnhancedPlayers(players);
-    }
-  }, [players, isUnfiltered]);
-
-  // Load the narrower set of players a filter asks for. This deliberately does
-  // not depend on `players`: the fetched players are merged into the parent
-  // pool, and re-running on that would refetch the same filter forever.
-  useEffect(() => {
-    if (isUnfiltered) return;
-
-    let cancelled = false;
-
-    const loadFilteredPlayers = async () => {
-      setIsLoadingPlayers(true);
-      try {
-        const filterOptions: { specificTeam?: string; specificConference?: string } = {};
-
-        if (teamFilter !== 'All Teams') {
-          filterOptions.specificTeam = teamFilter;
-        }
-
-        if (conferenceFilter !== 'All Conferences') {
-          filterOptions.specificConference = conferenceFilter;
-        }
-
-        const newPlayers = await getPlayers(filterOptions);
-        if (cancelled) return;
-
-        if (newPlayers.length > 0) {
-          setEnhancedPlayers(newPlayers);
-
-          // Let the parent widen its pool so selected players stay resolvable.
-          onPlayersUpdate?.(newPlayers);
-        } else {
-          console.warn('No players found for filter, keeping existing players');
-        }
-      } catch (error) {
-        console.error('Failed to load filtered players:', error);
-      } finally {
-        if (!cancelled) setIsLoadingPlayers(false);
-      }
-    };
-
-    loadFilteredPlayers();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [conferenceFilter, teamFilter, isUnfiltered, onPlayersUpdate]);
 
   // Get teams filtered by conference for dropdown
   const filteredTeams = useMemo(() => {
@@ -271,28 +125,21 @@ export function PlayerTable({
     
     // Get teams from players that match the selected conference
     const teamsInConference = Array.from(new Set(
-      enhancedPlayers
+      players
         .filter(p => p.conference === conferenceFilter)
         .map(p => p.team)
         .filter(team => team) // Remove empty/undefined team names
     )).sort();
     
-    console.log(`Teams in ${conferenceFilter}:`, teamsInConference);
-    
     // Always include "All Teams" as first option
     const result = ['All Teams', ...teamsInConference];
     
-    // If no teams found for this conference, log a warning but still return the structure
-    if (teamsInConference.length === 0) {
-      console.warn(`No teams found for conference: ${conferenceFilter}`);
-    }
-    
     return result;
-  }, [enhancedPlayers, conferenceFilter, teams]);
+  }, [players, conferenceFilter, teams]);
 
   // Filter players based on position and filters
   const filteredPlayers = useMemo(() => {
-    let filtered = enhancedPlayers.filter(p => p.position === position);
+    let filtered = players.filter(p => p.position === position);
     
     if (conferenceFilter !== 'All Conferences') {
       filtered = filtered.filter(p => p.conference === conferenceFilter);
@@ -309,22 +156,14 @@ export function PlayerTable({
     // request the whole pool again on every keystroke.
     const query = nameIndex(searchTerm).compact;
     if (query) {
-      filtered = filtered.filter(p => nameMatches(nameIndex(p.name), query));
+      filtered = filtered.filter(p => nameMatches(names.get(p.id)!, query));
     }
 
     // Missing stats sort last in both directions rather than counting as zero.
     const direction = sortDirection === 'asc' ? 1 : -1;
 
-    // Sort on whatever the column is actually showing, so a week of real
-    // scores does not get ordered by last season's totals.
-    const sortValue = (player: Player): number | undefined => {
-      if (!showActuals) {
-        const value = player[sortKey as keyof Player];
-        return typeof value === 'number' ? value : undefined;
-      }
-      if (sortKey === 'projectedPoints') return weekPointsFor(player).points;
-      return weekStatValue(actuals.get(player.id), String(sortKey));
-    };
+    const sortValue = (player: Player) =>
+      seasonStatValue(season.actuals.get(player.id), sortKey, season.complete);
 
     return [...filtered].sort((a, b) => {
       const aValue = sortValue(a);
@@ -339,7 +178,7 @@ export function PlayerTable({
       if (aValue === bValue) return a.name.localeCompare(b.name);
       return (aValue - bValue) * direction;
     });
-  }, [enhancedPlayers, position, conferenceFilter, teamFilter, searchTerm, sortKey, sortDirection, showActuals, actuals, matchups]);
+  }, [players, names, position, conferenceFilter, teamFilter, searchTerm, sortKey, sortDirection, season.actuals, season.complete]);
 
   const totalPlayers = filteredPlayers.length;
   const totalPages = Math.max(1, Math.ceil(totalPlayers / pageSize));
@@ -359,7 +198,7 @@ export function PlayerTable({
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [conferenceFilter, teamFilter, searchTerm, position, pageSize, sortKey, sortDirection, showActuals]);
+  }, [conferenceFilter, teamFilter, searchTerm, position, pageSize, sortKey, sortDirection]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -368,7 +207,9 @@ export function PlayerTable({
   }, [currentPage, totalPages]);
 
   // Get relevant stats columns based on position
-  const getStatsColumns = (position: 'QB' | 'RB' | 'WR') => {
+  const getStatsColumns = (position: 'QB' | 'RB' | 'WR'): Array<{
+    key: SeasonStatKey; label: string; format: (value?: number) => string;
+  }> => {
     switch (position) {
       case 'QB':
         return [
@@ -438,15 +279,10 @@ export function PlayerTable({
 
   const positionName = position === 'QB' ? 'Quarterbacks' : position === 'RB' ? 'Running Backs' : 'Wide Receivers';
 
-  const getUsageCount = (playerId: string) => {
-    const usage = playerUsage.find(u => u.playerId === playerId);
-    return usage?.timesUsed || 0;
-  };
-
   const getPlayerStatus = (player: Player) => {
-    const isAvailable = isPlayerAvailable(player.id, playerUsage, MAX_PLAYER_USES);
-    const inLineup = isPlayerInLineup(player.id, currentLineup);
-    const usageCount = getUsageCount(player.id);
+    const usageCount = usageById.get(player.id) ?? 0;
+    const isAvailable = usageCount < MAX_PLAYER_USES;
+    const inLineup = selectedIds.has(player.id);
 
     if (inLineup) return { status: 'in-lineup', label: 'In Lineup', variant: 'secondary' as const };
     // A player whose game has begun is settled for the week, whether or not
@@ -464,23 +300,16 @@ export function PlayerTable({
 
   const weekName = currentWeek === undefined ? 'this week' : `Week ${currentWeek}`;
 
-  const weekPointsDisplay = (player: Player) =>
-    describeWeekPoints(player, {
-      showActuals,
-      stats: actuals.get(player.id),
-      game: matchups.get(player.team.toLowerCase())?.game,
-      weekName,
-    });
-
-  const getPlayerCountDisplay = () => {
-    const baseCount = `${filteredPlayers.length}`;
-    const isFiltered = conferenceFilter !== 'All Conferences' || teamFilter !== 'All Teams';
-
-    if (isLoadingPlayers && isFiltered) {
-      return `${baseCount} (loading more...)`;
-    }
-
-    return baseCount;
+  const seasonPointsDisplay = (player: Player) => {
+    const points = seasonStatValue(season.actuals.get(player.id), 'fantasyPoints', season.complete);
+    return {
+      text: points === undefined ? '?' : points.toFixed(1),
+      summary: points === undefined ? 'Season points unavailable' : `Season: ${points.toFixed(1)} pts`,
+      muted: points === undefined,
+      title: points === undefined
+        ? 'Season scoring data is unavailable; this is not a zero score'
+        : `Actual points scored so far in ${SEASON_YEAR}`,
+    };
   };
 
   return (
@@ -488,13 +317,12 @@ export function PlayerTable({
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Users size={20} />
-          {positionName} ({getPlayerCountDisplay()})
-          {showActuals && (
-            <Badge variant="secondary" className="text-xs font-normal">
-              {weekName} actuals
-            </Badge>
-          )}
+          {positionName} ({filteredPlayers.length})
+          <Badge variant="secondary" className="text-xs font-normal">{SEASON_YEAR} actuals</Badge>
         </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Recorded {SEASON_YEAR} season totals. Schedule and availability are for {weekName}.
+        </p>
         
         {/* Filters */}
         <div className="flex gap-4 items-center flex-wrap">
@@ -528,10 +356,9 @@ export function PlayerTable({
             <Select 
               value={conferenceFilter} 
               onValueChange={setConferenceFilter} 
-              disabled={isLoadingFilters && conferences.length <= 1}
             >
               <SelectTrigger className="w-full sm:w-[160px]">
-                <SelectValue placeholder={isLoadingFilters && conferences.length <= 1 ? "Loading..." : "All Conferences"} />
+                <SelectValue placeholder="All Conferences" />
               </SelectTrigger>
               <SelectContent>
                 {conferences.map(conf => (
@@ -543,10 +370,9 @@ export function PlayerTable({
             <Select 
               value={teamFilter} 
               onValueChange={setTeamFilter} 
-              disabled={isLoadingFilters && filteredTeams.length <= 1}
             >
               <SelectTrigger className="w-full sm:w-[140px]">
-                <SelectValue placeholder={isLoadingFilters && filteredTeams.length <= 1 ? "Loading..." : "All Teams"} />
+                <SelectValue placeholder="All Teams" />
               </SelectTrigger>
               <SelectContent>
                 {filteredTeams.map(team => (
@@ -555,10 +381,6 @@ export function PlayerTable({
               </SelectContent>
             </Select>
             
-            {(isLoadingPlayers || (isLoadingFilters && conferences.length <= 1)) && (
-              <RefreshCw size={16} className="animate-spin text-muted-foreground" />
-            )}
-
             <Select value={String(pageSize)} onValueChange={(value) => setPageSize(Number(value))}>
               <SelectTrigger className="w-[120px]">
                 <SelectValue placeholder="Per page" />
@@ -588,11 +410,22 @@ export function PlayerTable({
       </CardHeader>
       
       <CardContent>
+        {season.error && (
+          <div role="alert" className="mb-3 rounded-md border border-destructive p-3 text-sm">
+            {season.hasData
+              ? 'Showing last available season stats. Totals may be incomplete.'
+              : 'Season stats are unavailable. Missing scores are not counted as zero or replaced with projections.'}
+            <Button variant="outline" size="sm" className="ml-2" onClick={() => void seasonStatsResource.refresh(true)}>
+              Retry season stats
+            </Button>
+          </div>
+        )}
+        {season.isLoading && <p role="status" className="mb-3 text-sm text-muted-foreground">Loading season stats...</p>}
         <div className="space-y-2 md:hidden">
           {paginatedPlayers.map((player) => {
             const playerStatus = getPlayerStatus(player);
             const canSelect = !isLocked && (playerStatus.status === 'available' || playerStatus.status === 'used');
-            const points = weekPointsDisplay(player);
+            const points = seasonPointsDisplay(player);
 
             return (
               <div
@@ -648,9 +481,13 @@ export function PlayerTable({
                 </div>
 
                 <div className="mt-2 flex flex-wrap items-center gap-x-1 gap-y-1 text-xs text-muted-foreground">
-                  <span>{player.team}</span>
-                  <span>•</span>
-                  <span>{player.conference}</span>
+                  <TeamLogo player={player} size="lg" showFallback />
+                  {showConference && (
+                    <>
+                      <span>•</span>
+                      <span>{player.conference}</span>
+                    </>
+                  )}
                   <span>•</span>
                   <span className={points.muted ? 'italic' : undefined} title={points.title}>
                     {points.summary}
@@ -673,25 +510,25 @@ export function PlayerTable({
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[320px]">Player</TableHead>
-                <TableHead>Team</TableHead>
-                <TableHead>Conf</TableHead>
+                <TableHead className="w-16 text-center">Team</TableHead>
+                {showConference && <TableHead>Conf</TableHead>}
                 <TableHead className="text-center">Schedule</TableHead>
                 {renderSortableHeader(
-                  'projectedPoints',
+                  'fantasyPoints',
                   <span className="flex items-center gap-1">
                     <Trophy size={14} />
-                    {showActuals ? 'Pts' : 'Proj'}
+                    Season pts
                   </span>,
                 )}
-                {statsColumns.map(col => renderSortableHeader(col.key as SortKey, col.label))}
+                {statsColumns.map(col => renderSortableHeader(col.key, col.label))}
               </TableRow>
             </TableHeader>
             <TableBody>
               {paginatedPlayers.map((player) => {
                 const playerStatus = getPlayerStatus(player);
                 const canSelect = !isLocked && (playerStatus.status === 'available' || playerStatus.status === 'used');
-                const points = weekPointsDisplay(player);
-                const weekStats = actuals.get(player.id);
+                const points = seasonPointsDisplay(player);
+                const seasonStats = season.actuals.get(player.id);
 
                 return (
                   <TableRow
@@ -744,23 +581,12 @@ export function PlayerTable({
                         </Button>
                       </div>
                     </TableCell>
-                    <TableCell className="font-medium">
-                      <div className="flex items-center gap-2">
-                        {player.teamLogoUrl && (
-                          <img
-                            src={player.teamLogoUrl}
-                            alt={`${player.team} logo`}
-                            className="w-6 h-6 object-contain"
-                            onError={(e) => {
-                              const target = e.target as HTMLImageElement;
-                              target.style.display = 'none';
-                            }}
-                          />
-                        )}
-                        <span className="truncate">{player.team}</span>
-                      </div>
+                    <TableCell className="text-center">
+                      <TeamLogo player={player} size="lg" className="mx-auto" showFallback />
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{player.conference}</TableCell>
+                    {showConference && (
+                      <TableCell className="text-sm text-muted-foreground">{player.conference}</TableCell>
+                    )}
                     <TableCell className="text-center">
                       <div className="flex items-center justify-center gap-1">
                         <WeekMatchup
@@ -780,9 +606,7 @@ export function PlayerTable({
                     {statsColumns.map(col => (
                       <TableCell key={col.key} className="text-center">
                         {col.format(
-                          showActuals
-                            ? weekStatValue(weekStats, col.key)
-                            : ((player as any)[col.key] as number | undefined),
+                          seasonStatValue(seasonStats, col.key, season.complete),
                         )}
                       </TableCell>
                     ))}
@@ -812,7 +636,7 @@ export function PlayerTable({
           </div>
         )}
         
-        {totalPlayers === 0 && !isLoadingPlayers && (
+        {totalPlayers === 0 && (
           <div className="text-center py-8 text-muted-foreground">
             {searchTerm ? (
               <>
@@ -827,22 +651,13 @@ export function PlayerTable({
           </div>
         )}
         
-        {isLoadingPlayers && (
-          <div className="text-center py-8 text-muted-foreground">
-            <div className="flex items-center justify-center gap-2">
-              <RefreshCw size={20} className="animate-spin" />
-              Loading more players...
-            </div>
-          </div>
-        )}
-
-        <PlayerDetailDialog
+        {detailPlayer && <PlayerDetailDialog
           player={detailPlayer}
           open={detailPlayer !== null}
           onOpenChange={(open) => {
             if (!open) setDetailPlayer(null);
           }}
-        />
+        />}
       </CardContent>
     </Card>
   );

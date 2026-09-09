@@ -10,7 +10,7 @@ export const config = {
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'private, no-store' },
   });
 }
 
@@ -60,6 +60,6 @@ export default async function handler(request: Request): Promise<Response> {
     });
   } catch (error) {
     console.error('[api/me] Failed to load current user', { error });
-    return jsonResponse({ user: null });
+    return jsonResponse({ user: null, error: 'Failed to check session' }, 503);
   }
 }

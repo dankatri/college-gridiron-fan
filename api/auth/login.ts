@@ -14,7 +14,7 @@ type LoginBody = {
 };
 
 function jsonResponse(body: unknown, status = 200, setCookie?: string): Response {
-  const headers = new Headers({ 'Content-Type': 'application/json' });
+  const headers = new Headers({ 'Content-Type': 'application/json', 'Cache-Control': 'private, no-store' });
   if (setCookie) headers.set('Set-Cookie', setCookie);
   return new Response(JSON.stringify(body), { status, headers });
 }

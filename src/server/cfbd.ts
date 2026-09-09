@@ -100,6 +100,8 @@ function getApiKey(): string {
  */
 const REQUEST_TIMEOUT_MS = 90_000;
 const MAX_ATTEMPTS = 3;
+let requestCount = 0;
+export const getCfbdRequestCount = () => requestCount;
 
 export async function cfbdFetch<T>(
   path: string,
@@ -117,6 +119,7 @@ export async function cfbdFetch<T>(
   let lastError: unknown;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
+      requestCount++;
       const response = await fetch(url, {
         headers: {
           Authorization: authHeader,

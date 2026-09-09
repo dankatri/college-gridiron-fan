@@ -8,7 +8,7 @@ import type { Player, PlayerStats, WeeklyGame } from './types';
  * - `pending` their game has not been played yet, so the projection still applies
  * - `none`    they have no game that week at all (bye, or an idle Week 0 team)
  */
-export type WeekPointsKind = 'actual' | 'zero' | 'pending' | 'none';
+export type WeekPointsKind = 'actual' | 'zero' | 'pending' | 'none' | 'unavailable';
 
 export interface WeekPoints {
   kind: WeekPointsKind;
@@ -27,8 +27,13 @@ export function resolveWeekPoints(
   player: Player,
   stats: PlayerStats | undefined,
   game: WeeklyGame | undefined,
+  available = true,
 ): WeekPoints {
   if (stats) return { kind: 'actual', points: stats.fantasyPoints };
+  if (game?.isByeWeek) return { kind: 'none' };
+  if (!available) return game && !game.isCompleted
+    ? { kind: 'pending', points: player.projectedPoints }
+    : { kind: 'unavailable' };
   if (!game || game.isByeWeek) return { kind: 'none' };
   if (game.isCompleted) return { kind: 'zero', points: 0 };
   return { kind: 'pending', points: player.projectedPoints };
@@ -42,7 +47,7 @@ export function weekStatValue(stats: PlayerStats | undefined, key: string): numb
   if (!stats) return undefined;
   if (key === 'returnYards') return stats.kickReturnYards + stats.puntReturnYards;
 
-  const value = (stats as unknown as Record<string, unknown>)[key];
+  const value = key in stats ? stats[key as keyof PlayerStats] : undefined;
   return typeof value === 'number' ? value : undefined;
 }
 
@@ -58,7 +63,7 @@ export function sumActualPoints(
 }
 
 export interface WeekPointsDisplay {
-  label: 'Projected' | 'Scored';
+  label: 'Projected' | 'Scored' | 'Unavailable';
   /** Just the number, for table cells. */
   text: string;
   /** Label and number together, for prose-style rows. */
@@ -74,7 +79,7 @@ export interface WeekPointsDisplay {
  */
 export function describeWeekPoints(
   player: Player,
-  options: { showActuals: boolean; stats?: PlayerStats; game?: WeeklyGame; weekName: string },
+  options: { showActuals: boolean; stats?: PlayerStats; game?: WeeklyGame; weekName: string; available?: boolean },
 ): WeekPointsDisplay {
   const { showActuals, stats, game, weekName } = options;
 
@@ -89,9 +94,14 @@ export function describeWeekPoints(
     };
   }
 
-  const { kind, points } = resolveWeekPoints(player, stats, game);
+  const { kind, points } = resolveWeekPoints(player, stats, game, options.available);
 
   switch (kind) {
+    case 'unavailable':
+      return {
+        label: 'Unavailable', text: '?', summary: 'Actual points unavailable',
+        muted: true, title: `${weekName} scoring or schedule data is unavailable; this is not a zero score`,
+      };
     case 'actual': {
       const text = points!.toFixed(1);
       return {
@@ -117,7 +127,7 @@ export function describeWeekPoints(
         text,
         summary: `Projected ${text} pts`,
         muted: true,
-        title: `${weekName} game not played yet - showing projection`,
+        title: `${weekName} actual stat line not available yet - showing projection`,
       };
     }
     default:

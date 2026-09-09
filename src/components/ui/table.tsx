@@ -2,11 +2,16 @@ import { ComponentProps } from "react"
 
 import { cn } from "@/lib/utils"
 
-function Table({ className, ...props }: ComponentProps<"table">) {
+function Table({
+  className,
+  containerProps,
+  ...props
+}: ComponentProps<"table"> & { containerProps?: ComponentProps<"div"> }) {
   return (
     <div
       data-slot="table-container"
-      className="relative w-full overflow-x-auto"
+      {...containerProps}
+      className={cn("relative w-full overflow-x-auto", containerProps?.className)}
     >
       <table
         data-slot="table"

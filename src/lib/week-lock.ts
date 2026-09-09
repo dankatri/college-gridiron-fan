@@ -23,8 +23,7 @@ export function hasWeekStarted(week: number, now: Date = new Date()): boolean {
 /**
  * True once the week's window has closed and nothing in it can change again.
  *
- * The final week of the season is open-ended, so it never reports complete;
- * its players still lock individually at kickoff.
+ * The final week has an explicit terminal Wednesday boundary too.
  */
 export function isWeekComplete(week: number, now: Date = new Date()): boolean {
   const end = weekBoundary(week + 1);
@@ -68,8 +67,7 @@ export function lockedTeamsForWeek(
   const locked = new Set<string>();
 
   for (const schedule of schedules) {
-    const game = schedule.weeklyGames.find((entry) => entry.week === week && !entry.isByeWeek);
-    if (hasKickedOff(game, now)) {
+    if (schedule.weeklyGames.some(game => game.week === week && hasKickedOff(game, now))) {
       locked.add(schedule.teamName.toLowerCase());
     }
   }
@@ -89,8 +87,8 @@ export function finishedTeamsForWeek(schedules: TeamSchedule[], week: number): S
   const finished = new Set<string>();
 
   for (const schedule of schedules) {
-    const game = schedule.weeklyGames.find((entry) => entry.week === week && !entry.isByeWeek);
-    if (game?.isCompleted) {
+    const games = schedule.weeklyGames.filter(entry => entry.week === week && !entry.isByeWeek);
+    if (games.length && games.every(game => game.isCompleted)) {
       finished.add(schedule.teamName.toLowerCase());
     }
   }

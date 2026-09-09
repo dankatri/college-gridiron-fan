@@ -330,10 +330,11 @@ export function buildLiveStats(options: {
   const { gamePlayers, week, idByAthlete, gameIds, now = new Date() } = options;
   const byPlayer = new Map<string, PlayerStats>();
 
-  const ensure = (athleteId: string): PlayerStats | undefined => {
+  const ensure = (athleteId: string, gameId: number): PlayerStats | undefined => {
     const playerId = idByAthlete.get(athleteId);
     if (!playerId) return undefined; // Not a skill-position player we track.
-    let stats = byPlayer.get(playerId);
+    const key = `${gameId}:${playerId}`;
+    let stats = byPlayer.get(key);
     if (!stats) {
       stats = {
         playerId,
@@ -353,7 +354,7 @@ export function buildLiveStats(options: {
         fantasyPoints: 0,
         lastUpdated: now,
       };
-      byPlayer.set(playerId, stats);
+      byPlayer.set(key, stats);
     }
     return stats;
   };
@@ -367,7 +368,7 @@ export function buildLiveStats(options: {
       for (const category of team.categories ?? []) {
         for (const type of category.types ?? []) {
           for (const athlete of type.athletes ?? []) {
-            const stats = ensure(athlete.id);
+            const stats = ensure(athlete.id, game.id);
             if (!stats) continue;
 
             const value = toNumber(athlete.stat);
@@ -407,7 +408,18 @@ export function buildLiveStats(options: {
     }
   }
 
+  const totals = new Map<string, PlayerStats>();
+  const fields = [
+    'passingYards', 'passingTDs', 'completions', 'attempts', 'interceptions',
+    'rushingYards', 'rushingTDs', 'receivingYards', 'receptions', 'receivingTDs',
+    'kickReturnYards', 'puntReturnYards',
+  ] as const;
   for (const stats of byPlayer.values()) {
+    const total = totals.get(stats.playerId);
+    if (!total) totals.set(stats.playerId, { ...stats });
+    else for (const field of fields) total[field] += stats[field];
+  }
+  for (const stats of totals.values()) {
     stats.fantasyPoints = roundPoints(scoreStatLine({
       passingYards: stats.passingYards,
       passingTDs: stats.passingTDs,
@@ -423,17 +435,17 @@ export function buildLiveStats(options: {
     }));
   }
 
-  return Array.from(byPlayer.values()).sort((a, b) => b.fantasyPoints - a.fantasyPoints);
+  return Array.from(totals.values()).sort((a, b) => b.fantasyPoints - a.fantasyPoints);
 }
 
 /** Scoreboard entries for one week. */
 export function buildGameStatuses(games: CfbdGame[], week: number, now = new Date()): GameStatus[] {
   return games.map((game) => {
-    const kickoff = game.startDate ? new Date(game.startDate) : null;
+    const kickoff = effectiveKickoff(game);
     const started = kickoff ? kickoff.getTime() <= now.getTime() : false;
 
     let status: GameStatus['status'] = 'scheduled';
-    if (game.completed) status = 'final';
+    if (game.completed && typeof game.homePoints === 'number' && typeof game.awayPoints === 'number') status = 'final';
     else if (started) status = 'in-progress';
 
     return {

@@ -10,6 +10,7 @@ import {
   verifySessionToken,
 } from '../../../src/server/auth-utils';
 import { getWebAuthnOrigin, getWebAuthnRPID } from '../../../src/server/webauthn-utils';
+import { bytesToBase64 } from '../../../src/server/encoding';
 
 export const config = {
   runtime: 'edge',
@@ -20,7 +21,7 @@ type RegisterVerifyBody = {
 };
 
 function jsonResponse(body: unknown, status = 200, setCookie?: string): Response {
-  const headers = new Headers({ 'Content-Type': 'application/json' });
+  const headers = new Headers({ 'Content-Type': 'application/json', 'Cache-Control': 'private, no-store' });
   if (setCookie) headers.set('Set-Cookie', setCookie);
   return new Response(JSON.stringify(body), { status, headers });
 }
@@ -77,14 +78,14 @@ export default async function handler(request: Request): Promise<Response> {
       .values({
         credentialId: credential.id,
         userId: user.id,
-        publicKey: Buffer.from(credential.publicKey).toString('base64'),
+        publicKey: bytesToBase64(credential.publicKey),
         counter: credential.counter,
       })
       .onConflictDoUpdate({
         target: webauthnCredentials.credentialId,
         set: {
           userId: user.id,
-          publicKey: Buffer.from(credential.publicKey).toString('base64'),
+          publicKey: bytesToBase64(credential.publicKey),
           counter: credential.counter,
         },
       });

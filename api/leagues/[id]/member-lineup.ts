@@ -8,6 +8,8 @@ import { isWeekComplete } from '../../../src/lib/week-lock';
 import type { LineupSlotInput } from '../../../src/server/lineup-utils';
 import { FIRST_WEEK, LAST_WEEK } from '../../../src/lib/types';
 import type { PlayerStats } from '../../../src/lib/types';
+import { cacheQueryMode, projectPlayers } from '../../../src/server/cache-projections';
+import { jsonResponse } from '../../../src/server/http';
 
 export const config = {
   runtime: 'edge',
@@ -22,13 +24,6 @@ type CachedPlayer = {
 };
 
 type LiveCachePayload = { week?: number; stats?: PlayerStats[] };
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'Content-Type': 'application/json' },
-  });
-}
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -153,7 +148,9 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     const [playerRow, liveRow] = await Promise.all([
-      db
+      cacheQueryMode('MEMBER_LINEUP_QUERY_MODE') === 'projected'
+        ? db.execute<{ data: CachedPlayer[] }>(projectPlayers(SEASON_YEAR, lineupRow.slots.flatMap(slot => slot.playerId ? [slot.playerId] : []))).then(result => result.rows)
+        : db
         .select({ data: dataCache.data })
         .from(dataCache)
         .where(eq(dataCache.key, playersCacheKey(SEASON_YEAR)))

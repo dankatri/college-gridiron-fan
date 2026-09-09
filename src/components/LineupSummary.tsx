@@ -14,7 +14,7 @@ export function LineupSummary({ lineup, actualPoints }: LineupSummaryProps) {
   const filledSlots = lineup.filter(slot => slot.player).length;
   const totalSlots = lineup.length;
   
-  const pointsDifference = actualPoints ? actualPoints - projectedPoints : 0;
+  const pointsDifference = actualPoints !== undefined ? actualPoints - projectedPoints : 0;
   const hasActualPoints = actualPoints !== undefined;
 
   return (

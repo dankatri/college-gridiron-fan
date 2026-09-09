@@ -1,11 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { getTeamSchedules, getTeamsOnBye, clearScheduleCache } from '@/lib/schedule-data';
-import { TeamSchedule, ALL_WEEKS } from '@/lib/types';
+import { schedulesResource } from '@/lib/schedule-data';
+import { useScheduleData } from '@/hooks/use-schedule-data';
+import { useResource } from '@/hooks/use-resource';
+import { teamsResource } from '@/lib/team-data';
+import { TeamLogo } from '@/components/TeamLogo';
+import { isWeekComplete } from '@/lib/week-lock';
+import { ALL_WEEKS, FIRST_WEEK, LAST_WEEK } from '@/lib/types';
 import { WEEK_LABELS } from '@/lib/season-config';
 import { Calendar, CalendarX, ArrowClockwise as RefreshCw, Users } from '@phosphor-icons/react';
 
@@ -14,63 +19,17 @@ interface ScheduleOverviewProps {
 }
 
 export function ScheduleOverview({ currentWeek }: ScheduleOverviewProps) {
-  const [schedules, setSchedules] = useState<TeamSchedule[]>([]);
-  const [teamsOnBye, setTeamsOnBye] = useState<string[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [selectedWeek, setSelectedWeek] = useState(currentWeek);
-
-  // Load schedule data
-  useEffect(() => {
-    const loadScheduleData = async () => {
-      setIsLoading(true);
-      try {
-        const [scheduleData, byeTeams] = await Promise.all([
-          getTeamSchedules(),
-          getTeamsOnBye(selectedWeek)
-        ]);
-        setSchedules(scheduleData);
-        setTeamsOnBye(byeTeams);
-      } catch (error) {
-        console.error('Failed to load schedule data:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadScheduleData();
-  }, [selectedWeek]);
-
-  // Update bye teams when week changes
-  useEffect(() => {
-    const updateByeTeams = async () => {
-      try {
-        const byeTeams = await getTeamsOnBye(selectedWeek);
-        setTeamsOnBye(byeTeams);
-      } catch (error) {
-        console.error('Failed to update bye teams:', error);
-      }
-    };
-
-    if (schedules.length > 0) {
-      updateByeTeams();
-    }
-  }, [selectedWeek, schedules]);
-
-  const handleRefresh = async () => {
-    setIsLoading(true);
-    try {
-      // Otherwise the hour-long client cache would serve the same data back.
-      clearScheduleCache();
-      const scheduleData = await getTeamSchedules();
-      setSchedules(scheduleData);
-      const byeTeams = await getTeamsOnBye(selectedWeek);
-      setTeamsOnBye(byeTeams);
-    } catch (error) {
-      console.error('Failed to refresh schedule data:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const resource = useScheduleData(!isWeekComplete(selectedWeek));
+  const teams = useResource(teamsResource, true, false);
+  const logos = useMemo(
+    () => new Map(teams.data?.map(team => [team.school.toLowerCase(), team.logo ?? undefined]) ?? []),
+    [teams.data],
+  );
+  const schedules = resource.data ?? [];
+  const isLoading = resource.isLoading || (!resource.data && !resource.error);
+  const teamsOnBye = schedules.filter(team => team.byeWeeks.includes(selectedWeek)).map(team => team.teamName);
+  const handleRefresh = () => Promise.all([schedulesResource.refresh(true), teamsResource.refresh(true)]);
 
   type WeekGame = {
     homeTeam: string;
@@ -86,23 +45,24 @@ export function ScheduleOverview({ currentWeek }: ScheduleOverviewProps) {
     const processedGames = new Set<string>();
 
     schedules.forEach(schedule => {
-      const weekGame = schedule.weeklyGames.find(game => game.week === week && !game.isByeWeek);
-      if (!weekGame || !weekGame.opponent) return;
+      for (const weekGame of schedule.weeklyGames.filter(game => game.week === week && !game.isByeWeek)) {
+        if (!weekGame.opponent) continue;
 
-      const gameKey = [schedule.teamName, weekGame.opponent].sort().join('-');
-      if (processedGames.has(gameKey)) return;
-      processedGames.add(gameKey);
+        const gameKey = weekGame.gameId ?? `${[schedule.teamName, weekGame.opponent].sort().join('-')}:${weekGame.gameDate?.toISOString() ?? ''}`;
+        if (processedGames.has(gameKey)) continue;
+        processedGames.add(gameKey);
 
-      // Scores are stored from this team's perspective, so flip them when the
-      // team we are iterating is the away side.
-      games.push({
-        homeTeam: weekGame.isHomeGame ? schedule.teamName : weekGame.opponent,
-        awayTeam: weekGame.isHomeGame ? weekGame.opponent : schedule.teamName,
-        homePoints: weekGame.isHomeGame ? weekGame.teamPoints : weekGame.opponentPoints,
-        awayPoints: weekGame.isHomeGame ? weekGame.opponentPoints : weekGame.teamPoints,
-        isCompleted: weekGame.isCompleted === true,
-        kickoff: weekGame.gameDate,
-      });
+        // Scores are stored from this team's perspective, so flip them when the
+        // team we are iterating is the away side.
+        games.push({
+          homeTeam: weekGame.isHomeGame ? schedule.teamName : weekGame.opponent,
+          awayTeam: weekGame.isHomeGame ? weekGame.opponent : schedule.teamName,
+          homePoints: weekGame.isHomeGame ? weekGame.teamPoints : weekGame.opponentPoints,
+          awayPoints: weekGame.isHomeGame ? weekGame.opponentPoints : weekGame.teamPoints,
+          isCompleted: weekGame.isCompleted === true,
+          kickoff: weekGame.gameDate,
+        });
+      }
     });
 
     return games.sort((a, b) => {
@@ -117,6 +77,14 @@ export function ScheduleOverview({ currentWeek }: ScheduleOverviewProps) {
 
   return (
     <Card>
+      {resource.error && <p role="alert" className="p-4 text-destructive">
+        {resource.data ? 'Showing the last available schedule. ' : ''}
+        {resource.error.message}
+      </p>}
+      {teams.error && <div role="status" className="p-4 text-sm text-muted-foreground">
+        Some team logos are unavailable. School names and schedules are still shown.
+        <Button variant="outline" size="sm" className="ml-2" onClick={() => void teamsResource.refresh(true)}>Retry logos</Button>
+      </div>}
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2">
@@ -147,7 +115,7 @@ export function ScheduleOverview({ currentWeek }: ScheduleOverviewProps) {
               ))}
             </TabsList>
           </ScrollArea>
-          
+
           <div className="mt-4 space-y-4">
             {/* Current Week Indicator */}
             {selectedWeek === currentWeek && (
@@ -167,7 +135,7 @@ export function ScheduleOverview({ currentWeek }: ScheduleOverviewProps) {
             ) : (
               <div className="grid md:grid-cols-2 gap-4">
                 {/* Games This Week */}
-                <Card>
+                <Card role="region" aria-label={`Games for Week ${selectedWeek}`}>
                   <CardHeader className="pb-3">
                     <CardTitle className="text-base flex items-center gap-2">
                       <Users size={16} />
@@ -192,9 +160,10 @@ export function ScheduleOverview({ currentWeek }: ScheduleOverviewProps) {
                             return (
                               <div key={index} className="rounded bg-muted/30 p-2 text-sm">
                                 <div className="flex items-center justify-between gap-2">
-                                  <span className={`min-w-0 flex-1 truncate ${awayWon ? 'font-semibold' : 'font-medium'}`}>
-                                    {game.awayTeam}
-                                  </span>
+                                  <div className={`flex min-w-0 flex-1 items-center gap-2 ${awayWon ? 'font-semibold' : 'font-medium'}`}>
+                                    <TeamLogo player={{ team: game.awayTeam, teamLogoUrl: logos.get(game.awayTeam.toLowerCase()) }} size="lg" showFallback />
+                                    <span className="truncate" title={game.awayTeam}>{game.awayTeam}</span>
+                                  </div>
                                   {game.isCompleted ? (
                                     <span className={`tabular-nums ${awayWon ? 'font-semibold' : 'text-muted-foreground'}`}>
                                       {game.awayPoints}
@@ -206,21 +175,22 @@ export function ScheduleOverview({ currentWeek }: ScheduleOverviewProps) {
                                       {game.homePoints}
                                     </span>
                                   ) : null}
-                                  <span className={`min-w-0 flex-1 truncate text-right ${homeWon ? 'font-semibold' : 'font-medium'}`}>
-                                    {game.homeTeam}
-                                  </span>
+                                  <div className={`flex min-w-0 flex-1 items-center justify-end gap-2 text-right ${homeWon ? 'font-semibold' : 'font-medium'}`}>
+                                    <span className="truncate" title={game.homeTeam}>{game.homeTeam}</span>
+                                    <TeamLogo player={{ team: game.homeTeam, teamLogoUrl: logos.get(game.homeTeam.toLowerCase()) }} size="lg" showFallback />
+                                  </div>
                                 </div>
                                 <div className="mt-1 text-center text-xs text-muted-foreground">
                                   {game.isCompleted
                                     ? 'Final'
                                     : game.kickoff
                                       ? game.kickoff.toLocaleString(undefined, {
-                                          weekday: 'short',
-                                          month: 'short',
-                                          day: 'numeric',
-                                          hour: 'numeric',
-                                          minute: '2-digit',
-                                        })
+                                        weekday: 'short',
+                                        month: 'short',
+                                        day: 'numeric',
+                                        hour: 'numeric',
+                                        minute: '2-digit',
+                                      })
                                       : 'Scheduled'}
                                 </div>
                               </div>
@@ -274,18 +244,18 @@ export function ScheduleOverview({ currentWeek }: ScheduleOverviewProps) {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={selectedWeek <= 1}
+                disabled={selectedWeek <= FIRST_WEEK}
                 onClick={() => setSelectedWeek(selectedWeek - 1)}
               >
                 Previous Week
               </Button>
               <span className="text-sm text-muted-foreground">
-                Week {selectedWeek} of 15
+                Week {selectedWeek} of {LAST_WEEK}
               </span>
               <Button
                 variant="outline"
                 size="sm"
-                disabled={selectedWeek >= 15}
+                disabled={selectedWeek >= LAST_WEEK}
                 onClick={() => setSelectedWeek(selectedWeek + 1)}
               >
                 Next Week

@@ -1,11 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { League, LeaderboardEntry, WeeklyLineup } from '@/lib/types';
 import { CreateLeague } from '@/components/CreateLeague';
 import { LeagueList } from '@/components/LeagueList';
-import { LeagueManagement } from '@/components/LeagueManagement';
-import { LeagueAdmin } from '@/components/LeagueAdmin';
+import { optionalFeature } from '@/components/optional-feature';
 import { Leaderboard } from '@/components/Leaderboard';
-import { MemberLineupDialog } from '@/components/MemberLineupDialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,14 +20,27 @@ import {
 } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
+const LeagueManagement = optionalFeature('League Management', () => import('./LeagueManagement').then(module => ({ default: module.LeagueManagement })));
+const LeagueAdmin = optionalFeature('League Admin', () => import('./LeagueAdmin').then(module => ({ default: module.LeagueAdmin })));
+const MemberLineupDialog = optionalFeature('Member Lineup', () => import('./MemberLineupDialog').then(module => ({ default: module.MemberLineupDialog })));
+
 interface LeagueDashboardProps {
   currentWeek: number;
   weeklyLineups: WeeklyLineup[];
   currentUserId: string;
   currentUsername: string;
+  leagues: ApiLeague[];
+  isLoadingLeagues: boolean;
+  onRefreshLeagues: () => Promise<void>;
+  onLineupsChanged: () => Promise<void>;
 }
 
-type ApiLeague = {
+type ApiLeaderboardEntry = {
+  rank: number; userId: string; username: string; avatarUrl?: string | null;
+  totalPoints: number; weeklyPoints: Record<number, number>; weeksScored?: number; winningWeeks?: number;
+};
+
+export type ApiLeague = {
   id: string;
   name: string;
   description?: string | null;
@@ -94,48 +105,34 @@ export function LeagueDashboard({
   weeklyLineups,
   currentUserId,
   currentUsername,
+  leagues,
+  isLoadingLeagues,
+  onRefreshLeagues: fetchMyLeagues,
+  onLineupsChanged,
 }: LeagueDashboardProps) {
   const [activeTab, setActiveTab] = useState<'my-leagues' | 'browse' | 'create'>('my-leagues');
   const [selectedLeague, setSelectedLeague] = useState<League | null>(null);
-  const [myLeagues, setMyLeagues] = useState<League[]>([]);
-  const [leaderboardEntries, setLeaderboardEntries] = useState<LeaderboardEntry[]>([]);
+  const myLeagues = useMemo(() => leagues.map(toLeagueSummary), [leagues]);
+  const [leaderboardRows, setLeaderboardRows] = useState<ApiLeaderboardEntry[]>([]);
+  const detailRequest = useRef(0);
+  const leaderboardRequest = useRef(0);
+  const selectedId = useRef<string | null>(null);
   const [viewedMember, setViewedMember] = useState<{ userId: string; username: string; avatarUrl?: string } | null>(null);
 
   const [joinCode, setJoinCode] = useState('');
-  const [isLoadingLeagues, setIsLoadingLeagues] = useState(false);
   const [isJoiningLeague, setIsJoiningLeague] = useState(false);
 
-  const fetchMyLeagues = useCallback(async () => {
-    if (!currentUserId) {
-      return;
-    }
-
-    setIsLoadingLeagues(true);
-    try {
-      const response = await fetch('/api/leagues', {
-        method: 'GET',
-        credentials: 'include',
-      });
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.error || 'Failed to fetch leagues');
-      }
-      const leagues = (payload.leagues ?? []).map((league: ApiLeague) => toLeagueSummary(league));
-      setMyLeagues(leagues);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to fetch leagues';
-      toast.error(message);
-    } finally {
-      setIsLoadingLeagues(false);
-    }
-  }, [currentUserId]);
+  useEffect(() => () => { selectedId.current = null; detailRequest.current++; leaderboardRequest.current++; }, []);
 
   const fetchLeagueDetails = useCallback(async (leagueId: string) => {
+    const requestId = ++detailRequest.current;
     const response = await fetch(`/api/leagues/${leagueId}`, {
       method: 'GET',
       credentials: 'include',
+      signal: AbortSignal.timeout(20_000),
     });
     const payload = await response.json();
+    if (requestId !== detailRequest.current || selectedId.current !== leagueId) return;
     if (!response.ok || !payload.league) {
       throw new Error(payload.error || 'Failed to load league');
     }
@@ -144,24 +141,22 @@ export function LeagueDashboard({
   }, []);
 
   const fetchLeaderboard = useCallback(async (leagueId: string) => {
+    const requestId = ++leaderboardRequest.current;
     const response = await fetch(`/api/leagues/${leagueId}/leaderboard`, {
       method: 'GET',
       credentials: 'include',
+      signal: AbortSignal.timeout(20_000),
     });
     const payload = await response.json();
+    if (requestId !== leaderboardRequest.current || selectedId.current !== leagueId) return;
     if (!response.ok) {
       throw new Error(payload.error || 'Failed to load leaderboard');
     }
 
-    const entries = ((payload.leaderboard ?? []) as Array<{
-      rank: number;
-      userId: string;
-      username: string;
-      avatarUrl?: string | null;
-      totalPoints: number;
-      weeklyPoints: Record<number, number>;
-      weeksScored?: number;
-    }>).map((entry) => {
+    setLeaderboardRows((payload.leaderboard ?? []) as ApiLeaderboardEntry[]);
+  }, []);
+
+  const leaderboardEntries = useMemo<LeaderboardEntry[]>(() => leaderboardRows.map((entry) => {
       // The server only reports weeks whose games have started, so these
       // averages never blend a real score with an unplayed week's projection.
       const weekPoints = Object.values(entry.weeklyPoints ?? {});
@@ -174,6 +169,7 @@ export function LeagueDashboard({
         username: entry.username,
         avatarUrl: entry.avatarUrl ?? undefined,
         totalPoints: entry.totalPoints,
+        winningWeeks: entry.winningWeeks ?? 0,
         weeklyAverage,
         bestWeek: weekPoints.length > 0 ? Math.max(...weekPoints) : 0,
         worstWeek: weekPoints.length > 0 ? Math.min(...weekPoints) : 0,
@@ -182,16 +178,10 @@ export function LeagueDashboard({
         trend: 'same' as const,
         trendChange: 0,
       };
-    });
-    setLeaderboardEntries(entries);
-  }, [currentWeek]);
-
-  useEffect(() => {
-    fetchMyLeagues();
-  }, [fetchMyLeagues]);
+    }), [leaderboardRows, currentWeek]);
 
   const handleLeagueCreated = (league: League) => {
-    setMyLeagues((previous) => [league, ...previous.filter((item) => item.id !== league.id)]);
+    void fetchMyLeagues();
     setActiveTab('my-leagues');
   };
 
@@ -215,7 +205,7 @@ export function LeagueDashboard({
       }
 
       const league = toLeagueSummary(payload.league as ApiLeague);
-      setMyLeagues((previous) => [league, ...previous.filter((item) => item.id !== league.id)]);
+      await fetchMyLeagues();
       setJoinCode('');
       setActiveTab('my-leagues');
       toast.success(`Joined ${league.name}`);
@@ -228,10 +218,13 @@ export function LeagueDashboard({
   };
 
   const handleSelectLeague = async (league: League) => {
+    selectedId.current = league.id;
+    setViewedMember(null);
+    setLeaderboardRows([]);
     try {
-      await fetchLeagueDetails(league.id);
-      await fetchLeaderboard(league.id);
+      await Promise.all([fetchLeagueDetails(league.id), fetchLeaderboard(league.id)]);
     } catch (error) {
+      if (selectedId.current !== league.id) return;
       const message = error instanceof Error ? error.message : 'Failed to load league';
       toast.error(message);
     }
@@ -255,6 +248,9 @@ export function LeagueDashboard({
           <Button
             variant="outline"
             onClick={() => {
+              selectedId.current = null;
+              detailRequest.current++;
+              leaderboardRequest.current++;
               setSelectedLeague(null);
               fetchMyLeagues();
             }}
@@ -304,10 +300,12 @@ export function LeagueDashboard({
                 await fetchMyLeagues();
               }}
               onLeftLeague={() => {
+                selectedId.current = null;
                 setSelectedLeague(null);
                 fetchMyLeagues();
               }}
               onDeletedLeague={() => {
+                selectedId.current = null;
                 setSelectedLeague(null);
                 fetchMyLeagues();
               }}
@@ -316,19 +314,25 @@ export function LeagueDashboard({
 
           {isLeagueOwner && (
             <TabsContent value="admin" className="mt-6">
-              <LeagueAdmin leagueId={selectedLeague.id} currentWeek={currentWeek} isOwner={isLeagueOwner} />
+              <LeagueAdmin
+                leagueId={selectedLeague.id} currentWeek={currentWeek} isOwner={isLeagueOwner}
+                onSaved={async () => {
+                  await Promise.all([fetchLeaderboard(selectedLeague.id), onLineupsChanged()]);
+                }}
+              />
             </TabsContent>
           )}
         </Tabs>
 
-        <MemberLineupDialog
+        {viewedMember && <MemberLineupDialog
+          key={`${selectedLeague.id}:${viewedMember.userId}:${currentWeek}`}
           leagueId={selectedLeague.id}
           member={viewedMember}
           week={currentWeek}
           currentUserId={currentUserId}
           open={viewedMember !== null}
           onOpenChange={(next) => { if (!next) setViewedMember(null); }}
-        />
+        />}
       </div>
     );
   }

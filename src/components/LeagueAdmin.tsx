@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LineupSlot, MAX_PLAYER_USES, Player } from '@/lib/types';
 import { ALL_WEEKS } from '@/lib/types';
 import { WEEK_LABELS } from '@/lib/season-config';
-import { getPlayers } from '@/lib/data';
+import { usePlayers } from '@/hooks/use-players';
+import { hydrateSlots, toSlotPayload, type ApiLineupSlot } from '@/lib/lineup-state';
 import { calculateProjectedPoints, createEmptyLineup } from '@/lib/utils-fantasy';
 import { hasWeekStarted } from '@/lib/week-lock';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -22,9 +23,10 @@ interface LeagueAdminProps {
   leagueId: string;
   currentWeek: number;
   isOwner: boolean;
+  onSaved: () => Promise<void>;
 }
 
-type ApiSlot = { slotIndex: number; position: string; playerId: string | null };
+type ApiSlot = ApiLineupSlot;
 
 type ApiMember = {
   userId: string;
@@ -48,17 +50,6 @@ type AuditEntry = {
   createdAt: string;
 };
 
-function slotsToLineup(slots: ApiSlot[] | undefined, playersById: Map<string, Player>): LineupSlot[] {
-  const lineup = createEmptyLineup();
-  if (!slots) return lineup;
-
-  return lineup.map((slot) => {
-    const saved = slots.find((candidate) => candidate.slotIndex === slot.slotIndex);
-    const player = saved?.playerId ? playersById.get(saved.playerId) : undefined;
-    return { ...slot, player };
-  });
-}
-
 function describeChange(entry: AuditEntry, playersById: Map<string, Player>): string[] {
   const nameFor = (playerId: string | null | undefined) => {
     if (!playerId) return 'empty';
@@ -80,62 +71,70 @@ function describeChange(entry: AuditEntry, playersById: Map<string, Player>): st
   return changes.length > 0 ? changes : ['Saved with no slot changes'];
 }
 
-export function LeagueAdmin({ leagueId, currentWeek, isOwner }: LeagueAdminProps) {
+export function LeagueAdmin({ leagueId, currentWeek, isOwner, onSaved }: LeagueAdminProps) {
   const [week, setWeek] = useState<number>(currentWeek);
   const [members, setMembers] = useState<ApiMember[]>([]);
   const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [draftLineup, setDraftLineup] = useState<LineupSlot[]>(createEmptyLineup());
   const [reason, setReason] = useState('');
-  const [players, setPlayers] = useState<Player[]>([]);
+  const { players, error: playersError } = usePlayers(isOwner);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [openSlotIndex, setOpenSlotIndex] = useState<number | null>(null);
+  const scope = `${leagueId}:${week}`;
+  const scopeRef = useRef(scope);
+  scopeRef.current = scope;
+  const requestVersion = useRef(0);
+  const [loadedScope, setLoadedScope] = useState<string | null>(null);
+  const baseline = useRef<{ key: string; signature: string } | null>(null);
 
   const playersById = useMemo(() => new Map(players.map((player) => [player.id, player])), [players]);
-  const selectedMember = members.find((member) => member.userId === selectedUserId) ?? null;
-
-  useEffect(() => {
-    getPlayers()
-      .then(setPlayers)
-      .catch((error) => {
-        console.error('LeagueAdmin: failed to load players', error);
-        toast.error('Could not load the player pool');
-      });
-  }, []);
+  const selectedMember = loadedScope === scope ? members.find((member) => member.userId === selectedUserId) ?? null : null;
 
   const loadWeek = useCallback(async () => {
     if (!isOwner) return;
-
+    const requestedScope = scopeRef.current;
+    const version = ++requestVersion.current;
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/leagues/${leagueId}/admin?week=${week}`, { credentials: 'include' });
+      const response = await fetch(`/api/leagues/${leagueId}/admin?week=${week}`, { credentials: 'include', signal: AbortSignal.timeout(20_000) });
       const payload = await response.json();
+      if (scopeRef.current !== requestedScope || version !== requestVersion.current) return;
       if (!response.ok) throw new Error(payload.error || 'Failed to load league admin data');
 
       setMembers(payload.members ?? []);
       setAuditLog(payload.auditLog ?? []);
+      setLoadedScope(requestedScope);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to load league admin data');
+      if (scopeRef.current === requestedScope && version === requestVersion.current) {
+        toast.error(error instanceof Error ? error.message : 'Failed to load league admin data');
+      }
     } finally {
-      setIsLoading(false);
+      if (scopeRef.current === requestedScope && version === requestVersion.current) setIsLoading(false);
     }
   }, [leagueId, week, isOwner]);
 
   useEffect(() => {
     void loadWeek();
+    return () => { requestVersion.current++; };
   }, [loadWeek]);
 
-  // Re-hydrate the draft whenever the member, week, or player pool changes, so
-  // the editor always starts from what is actually saved.
+  const draftKey = `${scope}:${selectedUserId ?? ''}`;
+  const savedSlots = selectedMember?.lineup?.slots ?? [];
+  const signature = JSON.stringify(savedSlots);
   useEffect(() => {
-    if (!selectedMember) {
-      setDraftLineup(createEmptyLineup());
-      return;
-    }
-    setDraftLineup(slotsToLineup(selectedMember.lineup?.slots, playersById));
-    setReason('');
-  }, [selectedMember, playersById, week]);
+    const previous = baseline.current;
+    const normalized = toSlotPayload(hydrateSlots(savedSlots, playersById));
+    baseline.current = { key: draftKey, signature: JSON.stringify(normalized) };
+    setDraftLineup(current => {
+      if (previous?.key === draftKey && JSON.stringify(toSlotPayload(current)) !== previous.signature) {
+        return hydrateSlots(toSlotPayload(current), playersById);
+      }
+      return hydrateSlots(savedSlots, playersById);
+    });
+    if (previous?.key !== draftKey) setReason('');
+  }, [draftKey, signature, playersById]);
 
   /**
    * How many times a player is already used outside the week being edited.
@@ -153,7 +152,7 @@ export function LeagueAdmin({ leagueId, currentWeek, isOwner }: LeagueAdminProps
 
   const setSlotPlayer = (slotIndex: number, player: Player | undefined) => {
     setDraftLineup((current) =>
-      current.map((slot) => (slot.slotIndex === slotIndex ? { ...slot, player } : slot)),
+      current.map((slot) => (slot.slotIndex === slotIndex ? { ...slot, player, playerId: player?.id } : slot)),
     );
     setOpenSlotIndex(null);
   };
@@ -165,9 +164,13 @@ export function LeagueAdmin({ leagueId, currentWeek, isOwner }: LeagueAdminProps
   const locked = hasWeekStarted(week);
 
   const handleSave = async () => {
-    if (!selectedMember || !isComplete) return;
+    if (!selectedMember || isLoading || playersError || !players.length) {
+      toast.error('Select a member and wait for the lineup and player data before saving');
+      return;
+    }
 
     setIsSaving(true);
+    const requestedScope = scopeRef.current;
     try {
       const response = await fetch(`/api/leagues/${leagueId}/admin`, {
         method: 'PUT',
@@ -178,16 +181,13 @@ export function LeagueAdmin({ leagueId, currentWeek, isOwner }: LeagueAdminProps
           week,
           reason,
           projectedPoints: projected,
-          slots: draftLineup.map((slot) => ({
-            slotIndex: slot.slotIndex,
-            position: slot.position,
-            playerId: slot.player?.id ?? null,
-          })),
+          slots: toSlotPayload(draftLineup),
         }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'Failed to save lineup');
-
+      await onSaved();
+      if (requestedScope !== scopeRef.current) return;
       toast.success(`Saved ${selectedMember.displayName}'s Week ${week} lineup`);
       setReason('');
       await loadWeek();
@@ -210,6 +210,7 @@ export function LeagueAdmin({ leagueId, currentWeek, isOwner }: LeagueAdminProps
 
   return (
     <div className="space-y-6">
+      {playersError && <p role="alert" className="text-destructive">The player catalogue is unavailable. Return to Set Lineup to retry loading it.</p>}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -424,7 +425,7 @@ export function LeagueAdmin({ leagueId, currentWeek, isOwner }: LeagueAdminProps
                     </p>
                     <Button
                       onClick={() => void handleSave()}
-                      disabled={isSaving}
+                      disabled={isSaving || isLoading || !players.length || !!playersError}
                       className="flex items-center gap-2"
                     >
                       <FloppyDisk size={16} />

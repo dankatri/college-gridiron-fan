@@ -1,10 +1,10 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { useLocalStorage as useKV } from '@/hooks/use-local-storage';
 import { PlayerStats, GameStatus, LiveUpdate, Player, WeeklyLineup } from '@/lib/types';
 import { generateLiveStats, generateGameStatuses, createLiveUpdate, calculateFantasyPoints } from '@/lib/stats-utils';
-import { SAMPLE_PLAYERS, getPlayers } from '@/lib/data';
-import { getLiveData } from '@/lib/live-data';
-import { SEASON_YEAR } from '@/lib/season-config';
+import { SAMPLE_PLAYERS } from '@/lib/data';
+import { getLiveResource } from '@/lib/live-data';
+import { useResource } from '@/hooks/use-resource';
+import { isWeekComplete } from '@/lib/week-lock';
 import { LiveStatsCard } from '@/components/LiveStatsCard';
 import { GameStatusTracker } from '@/components/GameStatusTracker';
 import { LiveUpdatesFeed } from '@/components/LiveUpdatesFeed';
@@ -19,87 +19,50 @@ interface LiveScoringDashboardProps {
   week: number;
   weeklyLineups: WeeklyLineup[];
   onPointsUpdate: (week: number, actualPoints: number) => void;
+  players: Player[];
 }
 
 export function LiveScoringDashboard({ 
   week, 
   weeklyLineups,
-  onPointsUpdate 
+  onPointsUpdate,
+  players,
 }: LiveScoringDashboardProps) {
   const [selectedTab, setSelectedTab] = useState<'lineup' | 'all-players' | 'games' | 'updates'>('lineup');
   const [isLiveMode, setIsLiveMode] = useState(false);
+  const [positionFilter, setPositionFilter] = useState('all');
   
-  // Persistent live data
-  const [liveStats, setLiveStats] = useKV<PlayerStats[]>(`live-stats-${SEASON_YEAR}-week-${week}`, []);
-  const [gameStatuses, setGameStatuses] = useKV<GameStatus[]>(`game-statuses-${SEASON_YEAR}-week-${week}`, []);
-  const [liveUpdates, setLiveUpdates] = useKV<LiveUpdate[]>(`live-updates-${SEASON_YEAR}-week-${week}`, []);
-
-  // Real CollegeFootballData box scores, when the worker has published them.
-  const [players, setPlayers] = useState<Player[]>(SAMPLE_PLAYERS);
-  const [hasRealData, setHasRealData] = useState(false);
-  const [lastSync, setLastSync] = useState<string | null>(null);
+  const allowSimulation = import.meta.env.DEV;
+  const resource = useResource(getLiveResource(week), true, !isWeekComplete(week));
+  const [simulationStats, setLiveStats] = useState<PlayerStats[]>(
+    () => allowSimulation ? generateLiveStats(SAMPLE_PLAYERS, week) : [],
+  );
+  const [simulationGames] = useState<GameStatus[]>(
+    () => allowSimulation ? generateGameStatuses(week) : [],
+  );
+  const [liveUpdates, setLiveUpdates] = useState<LiveUpdate[]>([]);
+  const hasRealData = resource.data !== undefined && resource.data !== null;
+  const liveStats = resource.data?.stats ?? simulationStats;
+  const gameStatuses = resource.data?.games ?? simulationGames;
+  const lastSync = resource.sourceCheckedAt;
+  const statsById = useMemo(() => new Map(liveStats.map(stat => [stat.playerId, stat])), [liveStats]);
+  const playersById = useMemo(() => new Map(players.map(player => [player.id, player])), [players]);
 
   const currentWeekLineup = weeklyLineups.find(w => w.week === week);
 
   // Memoised because effects depend on it; a fresh array each render would
   // tear down and rebuild the simulation interval before it could ever fire.
   const lineupPlayerIds = useMemo(
-    () => currentWeekLineup?.lineup.filter(slot => slot.player).map(slot => slot.player!.id) ?? [],
+    () => currentWeekLineup?.lineup.flatMap(slot => {
+      const id = slot.player?.id ?? slot.playerId;
+      return id ? [id] : [];
+    }) ?? [],
     [currentWeekLineup],
   );
 
-  useEffect(() => {
-    let cancelled = false;
-    getPlayers()
-      .then(loaded => {
-        if (!cancelled && loaded.length > 0) setPlayers(loaded);
-      })
-      .catch(error => console.warn('Could not load player pool:', error));
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Prefer real data; simulation is only a fallback for out-of-season/dev use.
-  useEffect(() => {
-    let cancelled = false;
-
-    const sync = async () => {
-      const live = await getLiveData(week);
-      if (cancelled) return false;
-
-      if (live && live.week === week && live.stats.length > 0) {
-        setLiveStats(live.stats);
-        setGameStatuses(live.games);
-        setHasRealData(true);
-        setLastSync(live.updatedAt);
-        return true;
-      }
-
-      setHasRealData(false);
-      return false;
-    };
-
-    sync().then(gotRealData => {
-      if (cancelled || gotRealData) return;
-      // Functional updates: useLocalStorage re-reads asynchronously when the
-      // week key changes, so the captured values are still the previous week's.
-      setLiveStats(prev => (prev.length === 0 ? generateLiveStats(SAMPLE_PLAYERS, week) : prev));
-      setGameStatuses(prev => (prev.length === 0 ? generateGameStatuses(week) : prev));
-    });
-
-    // The worker republishes every few minutes during games.
-    const interval = setInterval(sync, 60_000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [week, setLiveStats, setGameStatuses]);
-
   // Live updates simulation
   useEffect(() => {
-    if (!isLiveMode || hasRealData) return;
+    if (!allowSimulation || !isLiveMode || hasRealData) return;
 
     const interval = setInterval(() => {
       // Randomly update a player's stats
@@ -156,7 +119,7 @@ export function LiveScoringDashboard({
     }, 3000); // Update every 3 seconds
 
     return () => clearInterval(interval);
-  }, [isLiveMode, hasRealData, liveStats, lineupPlayerIds, week, setLiveStats, setLiveUpdates]);
+  }, [allowSimulation, isLiveMode, hasRealData, liveStats, lineupPlayerIds, week]);
 
   // Report the lineup's running total upward when it changes.
   //
@@ -166,11 +129,11 @@ export function LiveScoringDashboard({
   const lastReported = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!currentWeekLineup || liveStats.length === 0) return;
+    if (!currentWeekLineup || (!hasRealData && !allowSimulation)) return;
 
     const total = currentWeekLineup.lineup.reduce((sum, slot) => {
-      if (!slot.player) return sum;
-      return sum + (liveStats.find(stat => stat.playerId === slot.player!.id)?.fantasyPoints ?? 0);
+      const playerId = slot.player?.id ?? slot.playerId;
+      return sum + (playerId ? statsById.get(playerId)?.fantasyPoints ?? 0 : 0);
     }, 0);
 
     const rounded = Math.round(total * 10) / 10;
@@ -179,7 +142,7 @@ export function LiveScoringDashboard({
 
     lastReported.current = signature;
     onPointsUpdate(week, rounded);
-  }, [liveStats, currentWeekLineup, week, onPointsUpdate]);
+  }, [liveStats, statsById, currentWeekLineup, week, onPointsUpdate, hasRealData, allowSimulation]);
 
   const handleGenerateNewStats = () => {
     const newStats = generateLiveStats(SAMPLE_PLAYERS, week);
@@ -193,19 +156,17 @@ export function LiveScoringDashboard({
   };
 
   const getPlayerById = (id: string): Player | undefined => {
-    return players.find(p => p.id === id);
+    return playersById.get(id);
   };
 
   const lineupPlayers = currentWeekLineup?.lineup
     .filter(slot => slot.player)
     .map(slot => ({
       player: slot.player!,
-      stats: liveStats.find(s => s.playerId === slot.player!.id)
+      stats: statsById.get(slot.player!.id)
     })) || [];
 
-  const totalActualPoints = lineupPlayers.reduce((sum, { stats }) => {
-    return sum + (stats?.fantasyPoints || 0);
-  }, 0);
+  const totalActualPoints = lineupPlayerIds.reduce((sum, id) => sum + (statsById.get(id)?.fantasyPoints ?? 0), 0);
 
   const totalProjectedPoints = lineupPlayers.reduce((sum, { player }) => {
     return sum + player.projectedPoints;
@@ -213,11 +174,12 @@ export function LiveScoringDashboard({
 
   // Rendering 3,700 players is unusable; show those with stats this week.
   const statedPlayers = hasRealData
-    ? liveStats
-        .map(stat => players.find(p => p.id === stat.playerId))
+    ? Array.from(statsById.keys())
+        .map(id => playersById.get(id))
         .filter((player): player is Player => Boolean(player))
-        .slice(0, 100)
-    : SAMPLE_PLAYERS;
+    : allowSimulation ? SAMPLE_PLAYERS : [];
+  const matchingPlayers = statedPlayers.filter(player => positionFilter === 'all' || player.position === positionFilter);
+  const visiblePlayers = matchingPlayers.slice(0, 100);
 
   if (!currentWeekLineup) {
     return (
@@ -233,8 +195,26 @@ export function LiveScoringDashboard({
     );
   }
 
+  if (!hasRealData && !allowSimulation) {
+    return <Card><CardContent className="p-6 space-y-3">
+      <p role={resource.error ? 'alert' : 'status'}>
+        {resource.error ? 'Scores are unavailable. No actual total can be shown.'
+          : resource.isLoading ? 'Loading scores...' : `No scores have been published for Week ${week} yet.`}
+      </p>
+      <Button variant="outline" onClick={() => void getLiveResource(week).refresh(true)}>Retry scores</Button>
+    </CardContent></Card>;
+  }
+
   return (
     <div className="space-y-6">
+      {resource.error && <div role="alert" className="rounded-lg border border-destructive p-3 text-sm text-destructive">
+        {hasRealData ? 'Showing last available scores. ' : 'Scores are unavailable. '}
+        {resource.error.message}
+        <Button variant="outline" size="sm" className="ml-2" onClick={() => void getLiveResource(week).refresh(true)}>Retry</Button>
+      </div>}
+      {!resource.error && liveStats.length === 0 && <p role="status" className="text-sm text-muted-foreground">
+        {resource.isLoading ? 'Loading scores...' : 'No player stats have been published for this week yet.'}
+      </p>}
       {/* Header Controls */}
       <Card>
         <CardHeader>
@@ -248,7 +228,7 @@ export function LiveScoringDashboard({
                 </Badge>
               )}
             </CardTitle>
-            {!hasRealData && (
+            {allowSimulation && !hasRealData && (
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
@@ -327,9 +307,33 @@ export function LiveScoringDashboard({
         </TabsContent>
 
         <TabsContent value="all-players" className="mt-6">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div role="group" aria-label="Filter live players by position" className="flex gap-2">
+              {['all', 'QB', 'RB', 'WR'].map(position => (
+                <Button
+                  key={position}
+                  type="button"
+                  size="sm"
+                  variant={positionFilter === position ? 'default' : 'outline'}
+                  aria-pressed={positionFilter === position}
+                  onClick={() => setPositionFilter(position)}
+                >
+                  {position === 'all' ? 'All' : position}
+                </Button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Showing {visiblePlayers.length} of {matchingPlayers.length} players with stats this week
+            </p>
+          </div>
+          {visiblePlayers.length === 0 && (
+            <p role="status" className="py-6 text-center text-sm text-muted-foreground">
+              No {positionFilter === 'all' ? 'players' : `${positionFilter} players`} with recorded stats for Week {week}.
+            </p>
+          )}
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {statedPlayers.map(player => {
-              const stats = liveStats.find(s => s.playerId === player.id);
+            {visiblePlayers.map(player => {
+              const stats = statsById.get(player.id);
               const isInLineup = lineupPlayerIds.includes(player.id);
               
               return (

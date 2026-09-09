@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { 
   Trophy, 
   TrendUp, 
@@ -35,6 +36,7 @@ export function Leaderboard({
 }: LeaderboardProps) {
   const [viewMode, setViewMode] = useState<'season' | 'weekly'>('season');
   const [selectedWeek, setSelectedWeek] = useState(currentWeek);
+  const showWeekPoints = entries.some(entry => entry.pointsThisWeek !== undefined);
 
   const getRankIcon = (rank: number) => {
     switch (rank) {
@@ -93,6 +95,9 @@ export function Leaderboard({
             </div>
           )}
         </div>
+        <p className="text-xs text-muted-foreground">
+          Winning weeks count completed game weeks. Tied leaders each receive a win.
+        </p>
       </CardHeader>
       
       <CardContent>
@@ -102,88 +107,74 @@ export function Leaderboard({
             <p>No league members yet</p>
           </div>
         ) : (
-          <div className="space-y-2">
-            {entries.map((entry) => (
-              <div
-                key={entry.userId}
-                className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
-                  isCurrentUser(entry.userId)
-                    ? 'bg-accent/20 border-accent'
-                    : 'bg-card hover:bg-muted/50'
-                }`}
-              >
-                {/* Rank */}
-                <div className="flex items-center justify-center w-8">
-                  {getRankIcon(entry.rank)}
-                </div>
-
-                {/* Avatar & Name */}
-                <div className="flex items-center gap-3 flex-1 min-w-0">
-                  <Avatar className="h-8 w-8">
-                    <AvatarImage 
-                      src={entry.avatarUrl} 
-                      alt={entry.username}
-                    />
-                    <AvatarFallback>
-                      <User size={16} />
-                    </AvatarFallback>
-                  </Avatar>
-                  
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      {onSelectMember ? (
-                        <button
-                          type="button"
-                          onClick={() => onSelectMember(entry)}
-                          className="font-medium truncate underline-offset-4 hover:underline focus-visible:underline focus-visible:outline-none"
-                          title={`View ${entry.username}'s lineup`}
-                        >
-                          {entry.username}
-                        </button>
-                      ) : (
-                        <span className="font-medium truncate">
-                          {entry.username}
-                        </span>
-                      )}
-                      {isCurrentUser(entry.userId) && (
-                        <Badge variant="secondary" className="text-xs">
-                          You
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {entry.weeksPlayed} weeks played
-                    </div>
-                  </div>
-                </div>
-
-                {/* Stats */}
-                <div className="text-right space-y-1">
-                  <div className="font-semibold">
-                    {formatPoints(entry.totalPoints)} pts
-                  </div>
-                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                    {getTrendIcon(entry)}
-                    <span>
-                      {formatPoints(entry.weeklyAverage)} avg
-                    </span>
-                  </div>
-                </div>
-
-                {/* This Week */}
-                {entry.pointsThisWeek !== undefined && (
-                  <div className="text-right">
-                    <div className="text-sm font-medium">
-                      {formatPoints(entry.pointsThisWeek)}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      this week
-                    </div>
-                  </div>
+          <Table aria-label="League standings" className="min-w-[28rem]">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead scope="col" className="w-10 text-center text-xs text-muted-foreground">Rank</TableHead>
+                <TableHead scope="col" className="text-xs text-muted-foreground">Member</TableHead>
+                <TableHead scope="col" className="w-24 text-right text-xs text-muted-foreground">Total points</TableHead>
+                <TableHead scope="col" className="w-24 text-right text-xs text-muted-foreground">Winning weeks</TableHead>
+                {showWeekPoints && (
+                  <TableHead scope="col" className="w-20 text-right text-xs text-muted-foreground">This week</TableHead>
                 )}
-              </div>
-            ))}
-          </div>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {entries.map((entry) => (
+                <TableRow
+                  key={entry.userId}
+                  className={isCurrentUser(entry.userId) ? 'bg-accent/20 hover:bg-accent/20 border-accent' : 'bg-card'}
+                >
+                  <TableCell className="py-3" aria-label={`Rank ${entry.rank}`}>
+                    <div className="flex justify-center">{getRankIcon(entry.rank)}</div>
+                  </TableCell>
+                  <TableCell className="py-3">
+                    <div className="flex items-center gap-3">
+                      <Avatar className="hidden h-8 w-8 sm:flex">
+                        <AvatarImage src={entry.avatarUrl} alt={entry.username} />
+                        <AvatarFallback><User size={16} /></AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          {onSelectMember ? (
+                            <button
+                              type="button"
+                              onClick={() => onSelectMember(entry)}
+                              className="max-w-40 sm:max-w-64 font-medium truncate underline-offset-4 hover:underline focus-visible:underline focus-visible:outline-none"
+                              title={`View ${entry.username}'s lineup`}
+                            >
+                              {entry.username}
+                            </button>
+                          ) : (
+                            <span className="max-w-40 sm:max-w-64 font-medium truncate">{entry.username}</span>
+                          )}
+                          {isCurrentUser(entry.userId) && (
+                            <Badge variant="secondary" className="text-xs">You</Badge>
+                          )}
+                        </div>
+                        <div className="text-xs text-muted-foreground">{entry.weeksPlayed} weeks played</div>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="py-3 text-right tabular-nums">
+                    <div className="font-semibold">{formatPoints(entry.totalPoints)} pts</div>
+                    <div className="flex items-center justify-end gap-1 text-xs text-muted-foreground">
+                      {getTrendIcon(entry)}
+                      <span>{formatPoints(entry.weeklyAverage)} avg</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="py-3 text-right font-semibold tabular-nums" data-testid="winning-weeks">
+                    {entry.winningWeeks}
+                  </TableCell>
+                  {showWeekPoints && (
+                    <TableCell className="py-3 text-right font-medium tabular-nums">
+                      {entry.pointsThisWeek === undefined ? '-' : formatPoints(entry.pointsThisWeek)}
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         )}
 
         {/* League Stats Summary */}

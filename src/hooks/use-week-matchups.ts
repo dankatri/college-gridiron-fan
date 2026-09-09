@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
-import { getTeamSchedules } from '@/lib/schedule-data';
-import type { TeamSchedule, WeeklyGame } from '@/lib/types';
+import { useMemo } from 'react';
+import { useScheduleData } from './use-schedule-data';
+import type { WeeklyGame } from '@/lib/types';
 
 export interface TeamWeekMatchup {
   /** The team's game in the requested week, if it has one. */
@@ -20,27 +20,10 @@ export interface WeekMatchups {
  * next to each player without fetching schedules per row.
  */
 export function useWeekMatchups(week?: number): WeekMatchups {
-  const [schedules, setSchedules] = useState<TeamSchedule[] | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    getTeamSchedules()
-      .then((loaded) => {
-        if (!cancelled) setSchedules(loaded);
-      })
-      .catch((error) => {
-        console.error('useWeekMatchups: failed to load schedules', error);
-        if (!cancelled) setSchedules([]);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const { data: schedules } = useScheduleData(false, week !== undefined);
 
   return useMemo(() => {
-    if (schedules === null) {
+    if (schedules === undefined) {
       return { isLoading: true, matchups: new Map<string, TeamWeekMatchup>() };
     }
 
@@ -48,7 +31,9 @@ export function useWeekMatchups(week?: number): WeekMatchups {
     if (week === undefined) return { isLoading: false, matchups };
 
     for (const schedule of schedules) {
-      const game = schedule.weeklyGames.find((candidate) => candidate.week === week);
+      const games = schedule.weeklyGames.filter(candidate => candidate.week === week && !candidate.isByeWeek);
+      const first = games[0] ?? schedule.weeklyGames.find(candidate => candidate.week === week);
+      const game = first && games.length > 1 ? { ...first, isCompleted: games.every(candidate => candidate.isCompleted) } : first;
 
       // Plenty of teams sit out a given week (Week 0 has only 22 games), so
       // fall back to their next fixture instead of showing nothing.

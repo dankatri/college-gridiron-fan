@@ -6,8 +6,15 @@ import { SEASON_YEAR } from '../../../src/lib/season-config';
 import { hasWeekStarted } from '../../../src/lib/week-lock';
 import type { LineupSlotInput } from '../../../src/server/lineup-utils';
 import type { PlayerStats } from '../../../src/lib/types';
+import { cacheQueryMode, projectWeeklyScores } from '../../../src/server/cache-projections';
+import { jsonResponse } from '../../../src/server/http';
+import { countWinningWeeks } from '../../../src/lib/leaderboard-wins';
 
-type LiveCachePayload = { week?: number; stats?: PlayerStats[] };
+type LiveCachePayload = { week?: number; stats?: PlayerStats[]; statsAvailable?: boolean };
+type WeeklyScores = {
+  byWeek: Map<number, Map<string, number>>;
+  availableWeeks: Set<number>;
+};
 
 /**
  * Fantasy points actually scored, keyed by week then player id.
@@ -16,13 +23,17 @@ type LiveCachePayload = { week?: number; stats?: PlayerStats[] };
  * record of what players really scored — lineups.actual_points is never
  * written, so scoring from the box scores is what keeps a leaderboard honest.
  */
-async function loadWeeklyScores(): Promise<Map<number, Map<string, number>>> {
-  const rows = await db
+async function loadWeeklyScores(requested: Record<number, string[]>): Promise<WeeklyScores> {
+  const rows = cacheQueryMode('LEADERBOARD_QUERY_MODE') === 'projected'
+    ? (await db.execute<{ data: LiveCachePayload }>(projectWeeklyScores(SEASON_YEAR, requested))).rows
+    : await db
     .select({ data: dataCache.data })
     .from(dataCache)
-    .where(like(dataCache.key, `live-stats-${SEASON_YEAR}-week-%`));
+    .where(like(dataCache.key, `live-stats-${SEASON_YEAR}-week-%`))
+    .orderBy(dataCache.key);
 
   const byWeek = new Map<number, Map<string, number>>();
+  const availableWeeks = new Set<number>();
 
   for (const row of rows) {
     const payload = row.data as LiveCachePayload;
@@ -33,21 +44,16 @@ async function loadWeeklyScores(): Promise<Map<number, Map<string, number>>> {
       points.set(stat.playerId, stat.fantasyPoints ?? 0);
     }
     byWeek.set(payload.week, points);
+    if (payload.statsAvailable ?? Array.isArray(payload.stats)) availableWeeks.add(payload.week);
+    else availableWeeks.delete(payload.week);
   }
 
-  return byWeek;
+  return { byWeek, availableWeeks };
 }
 
 export const config = {
   runtime: 'edge',
 };
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'Content-Type': 'application/json' },
-  });
-}
 
 function getLeagueId(request: Request): string | null {
   const leagueId = new URL(request.url).pathname.split('/')[3];
@@ -96,7 +102,17 @@ export default async function handler(request: Request): Promise<Response> {
       .from(lineups)
       .where(and(eq(lineups.leagueId, leagueId), eq(lineups.season, SEASON_YEAR)));
 
-    const weeklyScores = await loadWeeklyScores();
+    const requested: Record<number, string[]> = {};
+    for (const row of lineupRows) {
+      requested[row.week] = [...new Set([
+        ...(requested[row.week] ?? []),
+        ...row.slots.flatMap(slot => slot.playerId ? [slot.playerId] : []),
+      ])];
+    }
+    const { byWeek: weeklyScores, availableWeeks } = lineupRows.length
+      ? await loadWeeklyScores(requested)
+      : { byWeek: new Map<number, Map<string, number>>(), availableWeeks: new Set<number>() };
+    const now = new Date();
 
     type Totals = {
       totalPoints: number;
@@ -120,7 +136,7 @@ export default async function handler(request: Request): Promise<Response> {
 
       // A week only contributes to the standings once its games have started.
       // Before that everyone is on zero, rather than on their projection.
-      if (hasWeekStarted(row.week)) {
+      if (hasWeekStarted(row.week, now)) {
         const weekScores = weeklyScores.get(row.week);
         const points = ((row.slots ?? []) as LineupSlotInput[]).reduce((sum, slot) => {
           if (!slot.playerId) return sum;
@@ -154,9 +170,13 @@ export default async function handler(request: Request): Promise<Response> {
         ...entry,
         rank: index + 1,
       }));
+    const winningWeeks = countWinningWeeks(leaderboard, availableWeeks, now);
 
     return jsonResponse({
-      leaderboard,
+      leaderboard: leaderboard.map(entry => ({
+        ...entry,
+        winningWeeks: winningWeeks.get(entry.userId) ?? 0,
+      })),
       scoredWeeks: Array.from(scoredWeeks).sort((a, b) => a - b),
     });
   } catch (error) {

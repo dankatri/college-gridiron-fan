@@ -7,13 +7,14 @@
  */
 
 import { eq } from 'drizzle-orm';
-import { db } from './db';
+import { z } from 'zod';
 import { dataCache } from './schema';
 import { playersCacheKey, schedulesCacheKey } from './cache-keys';
 import { SEASON_YEAR } from '../lib/season-config';
 import { lockedTeamsForWeek } from '../lib/week-lock';
 import type { TeamSchedule } from '../lib/types';
 import type { LineupSlotInput } from './lineup-utils';
+import { HttpError } from './http';
 
 type CachedPlayer = { id: string; name?: string; team?: string };
 
@@ -31,6 +32,7 @@ export type LockedPlayers = {
  * decision here always matches what the browser was shown.
  */
 export async function loadLockedPlayers(week: number, now: Date = new Date()): Promise<LockedPlayers> {
+  const { db } = await import('./db');
   const [scheduleRows, playerRows] = await Promise.all([
     db
       .select({ data: dataCache.data })
@@ -44,24 +46,55 @@ export async function loadLockedPlayers(week: number, now: Date = new Date()): P
       .limit(1),
   ]);
 
-  const schedules = (scheduleRows[0]?.data as TeamSchedule[] | undefined) ?? [];
-  const players = (playerRows[0]?.data as CachedPlayer[] | undefined) ?? [];
+  return lockedPlayersFromData(scheduleRows[0]?.data, playerRows[0]?.data, week, now);
+}
 
+const cachedSchedules = z.array(z.object({
+  teamId: z.string(), teamName: z.string().min(1), conference: z.string(),
+  byeWeeks: z.array(z.number().int()),
+  weeklyGames: z.array(z.object({
+    week: z.number().int(), isByeWeek: z.boolean(), isHomeGame: z.boolean(),
+    gameDate: z.string().datetime({ offset: true }).optional(),
+    isCompleted: z.boolean().optional(),
+  }).passthrough()),
+})).nonempty();
+const cachedPlayers = z.array(z.object({
+  id: z.string().min(1), team: z.string().min(1), name: z.string().optional(),
+})).nonempty();
+
+export function lockedPlayersFromData(
+  scheduleData: unknown, playerData: unknown, week: number, now: Date,
+): LockedPlayers {
+  const scheduleResult = cachedSchedules.safeParse(scheduleData);
+  const playerResult = cachedPlayers.safeParse(playerData);
+  if (!scheduleResult.success || !playerResult.success) {
+    throw new HttpError(503, 'Schedules or player data are unavailable. Your lineup has not been changed.');
+  }
+  const schedules: TeamSchedule[] = scheduleResult.data.map(schedule => ({
+    ...schedule,
+    weeklyGames: schedule.weeklyGames.map(game => ({
+      ...game, gameDate: game.gameDate ? new Date(game.gameDate) : undefined,
+    })),
+  }));
+  const players = playerResult.data;
   const lockedTeams = lockedTeamsForWeek(schedules, week, now);
+  const knownTeams = new Set(schedules.map(schedule => schedule.teamName.toLowerCase()));
   const ids = new Set<string>();
   const nameById = new Map<string, string>();
 
   for (const player of players) {
+    nameById.set(player.id, player.name ?? player.id);
+    // An absent team schedule is unknown, not evidence that it is unlocked.
+    if (!knownTeams.has(player.team.toLowerCase())) ids.add(player.id);
     if (player.team && lockedTeams.has(player.team.toLowerCase())) {
       ids.add(player.id);
-      nameById.set(player.id, player.name ?? player.id);
     }
   }
 
   return { ids, nameById };
 }
 
-function filledIds(slots: LineupSlotInput[]): Set<string> {
+function filledIds(slots: Array<Pick<LineupSlotInput, 'playerId'>>): Set<string> {
   const ids = new Set<string>();
   for (const slot of slots) {
     if (slot.playerId) ids.add(slot.playerId);
@@ -79,8 +112,8 @@ function filledIds(slots: LineupSlotInput[]): Set<string> {
  * Returns an error message, or null when the change is allowed.
  */
 export function findLockedSlotChange(
-  previousSlots: LineupSlotInput[],
-  nextSlots: LineupSlotInput[],
+  previousSlots: Array<Pick<LineupSlotInput, 'playerId'>>,
+  nextSlots: Array<Pick<LineupSlotInput, 'playerId'>>,
   locked: LockedPlayers,
 ): string | null {
   if (locked.ids.size === 0) return null;

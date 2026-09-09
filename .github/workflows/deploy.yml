@@ -1,41 +1,40 @@
-name: Deploy to GitHub Pages
+name: Quality checks
 
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages
+  group: quality-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
+  quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version-file: .node-version
           cache: npm
       - run: npm ci
-      - run: npm run build
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - run: npm run verify
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser
+      - name: Start disposable SQL fixtures
+        run: docker compose -p gridiron-integration -f tests/integration/compose.yml up --wait
+      - name: Exercise local SQL and transaction contracts
+        run: npm run test:integration:local
+      - name: Remove disposable SQL fixtures
+        if: always()
+        run: docker compose -p gridiron-integration -f tests/integration/compose.yml down
+      - name: Required isolated database tests
+        if: github.event_name != 'pull_request'
+        run: npm run test:integration:hosted
+        env:
+          DATABASE_URL_TEST: ${{ secrets.DATABASE_URL_TEST }}

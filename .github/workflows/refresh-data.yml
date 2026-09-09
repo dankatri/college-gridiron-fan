@@ -7,11 +7,10 @@ on:
   schedule:
     # Rosters, teams and schedules once a day (07:15 UTC).
     - cron: '15 7 * * *'
-    # Live box scores and schedules every 10 minutes during US game windows.
-    # Schedules carry the isCompleted flag, so they have to keep pace with the
-    # games rather than wait for the next daily run.
-    - cron: '*/10 16-23 * * 6'
-    - cron: '*/10 0-6 * * 0,3,4,5,6'
+    # Season-wide coverage. Healthy idle schedules skip upstream work; hourly
+    # discovery still runs if a game moved or the cache is incomplete.
+    - cron: '*/10 * * 1,8-12 *'
+    - cron: '7 * * 1,8-12 *'
   workflow_dispatch:
     inputs:
       job:
@@ -23,10 +22,18 @@ on:
         description: Re-fetch projection stats even if already cached
         type: boolean
         default: false
+      week:
+        description: Optional app week for manual live backfill (0-18)
+        type: string
+        required: false
 
 concurrency:
   group: refresh-data
   cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
 
 jobs:
   refresh:
@@ -36,11 +43,21 @@ jobs:
       CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
     steps:
+      - name: Require a trusted quality gate for this exact revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run list --repo "$GITHUB_REPOSITORY" --workflow deploy.yml \
+            --commit "$GITHUB_SHA" --branch main --limit 20 \
+            --json event,conclusion \
+            --jq '[.[] | select(.event == "push" or .event == "workflow_dispatch")][0].conclusion' |
+            grep -qx success
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version-file: .node-version
           cache: npm
 
       - run: npm ci
@@ -50,11 +67,15 @@ jobs:
       # completion status lands.
       - name: Decide scope
         id: scope
+        env:
+          REQUESTED_JOB: ${{ github.event.inputs.job }}
+          SCHEDULE_EXPR: ${{ github.event.schedule }}
         run: |
-          job="${{ github.event.inputs.job }}"
+          job="$REQUESTED_JOB"
           if [ -z "$job" ]; then
-            if [ "${{ github.event.schedule }}" = "15 7 * * *" ]; then job=all; else job=gameday; fi
+            if [ "$SCHEDULE_EXPR" = "15 7 * * *" ]; then job=all; else job=gameday; fi
           fi
+          case "$job" in all|projections|players|schedules|live|gameday) ;; *) exit 1 ;; esac
           echo "job=$job" >> "$GITHUB_OUTPUT"
 
       - name: Refresh projection stats
@@ -64,13 +85,23 @@ jobs:
           FORCE: ${{ github.event.inputs.force == 'true' && '1' || '' }}
 
       - name: Refresh players
-        if: steps.scope.outputs.job == 'all' || steps.scope.outputs.job == 'players'
+        if: ${{ !cancelled() && (steps.scope.outputs.job == 'all' || steps.scope.outputs.job == 'players') }}
         run: npm run refresh:players
 
       - name: Refresh schedules
-        if: steps.scope.outputs.job == 'all' || steps.scope.outputs.job == 'schedules' || steps.scope.outputs.job == 'gameday'
+        if: ${{ !cancelled() && (steps.scope.outputs.job == 'all' || steps.scope.outputs.job == 'schedules') }}
         run: npm run refresh:schedules
 
       - name: Refresh live scoring
-        if: steps.scope.outputs.job == 'all' || steps.scope.outputs.job == 'live' || steps.scope.outputs.job == 'gameday'
-        run: npm run refresh:live
+        if: ${{ !cancelled() && (steps.scope.outputs.job == 'all' || steps.scope.outputs.job == 'live') }}
+        run: |
+          if [ -n "$REQUESTED_WEEK" ]; then export WEEK="$REQUESTED_WEEK"; fi
+          npm run refresh:live
+        env:
+          REQUESTED_WEEK: ${{ github.event.inputs.week }}
+
+      - name: Refresh active games and run safety discovery
+        if: ${{ !cancelled() && steps.scope.outputs.job == 'gameday' }}
+        run: npm run refresh:gameday
+        env:
+          DISCOVERY_SWEEP: ${{ (github.event_name == 'workflow_dispatch' || github.event.schedule == '7 * * 1,8-12 *') && '1' || '' }}

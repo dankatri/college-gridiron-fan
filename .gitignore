@@ -33,3 +33,5 @@ packages
 .spark-workbench-id
 .vercel
 .env*.local
+test-results/
+playwright-report/

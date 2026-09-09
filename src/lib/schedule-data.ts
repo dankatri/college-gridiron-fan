@@ -1,9 +1,9 @@
 import { TeamSchedule, WeeklyGame } from './types';
+import { z } from 'zod';
+import { createResource } from './async-resource';
+import { sourceMetadataFields, resourceSource } from './source-metadata';
 
 // Cache for team schedules
-const scheduleCache: Map<string, TeamSchedule> = new Map();
-let cacheTimestamp: number = 0;
-let inFlight: Promise<TeamSchedule[]> | null = null;
 // Schedules carry completion flags that change during play, so this is short
 // enough for a page left open to notice games finishing. Deliberately under the
 // 60s useWeekLocks poll: at exactly 60s the cache can still be marginally valid
@@ -14,21 +14,29 @@ const CACHE_DURATION = 1000 * 45; // 45 seconds
  * Clear the schedule cache to force fresh data
  */
 export function clearScheduleCache() {
-  scheduleCache.clear();
-  cacheTimestamp = 0;
-  inFlight = null;
-  console.log('Schedule cache cleared');
+  schedulesResource.invalidate();
 }
 
 /**
  * Check if schedule cache is valid
  */
-function isScheduleCacheValid(): boolean {
-  return Date.now() - cacheTimestamp < CACHE_DURATION;
-}
+const schedulePayload = z.object({
+  updatedAt: z.string().nullable(),
+  schedules: z.array(z.object({
+    teamId: z.string(), teamName: z.string(), conference: z.string(),
+    byeWeeks: z.array(z.number().int()),
+    weeklyGames: z.array(z.object({
+      week: z.number().int(), isHomeGame: z.boolean(), isByeWeek: z.boolean(),
+      gameDate: z.string().datetime({ offset: true }).optional(),
+      opponent: z.string().optional(), gameTime: z.string().optional(),
+      gameId: z.string().optional(), isCompleted: z.boolean().optional(),
+      teamPoints: z.number().optional(), opponentPoints: z.number().optional(),
+    }).passthrough()),
+  }).passthrough()).nonempty('Schedules are not available yet. Please retry.'),
+}).merge(sourceMetadataFields);
 
 /** Game dates survive JSON transport as ISO strings; restore them as Dates. */
-function reviveSchedule(raw: TeamSchedule): TeamSchedule {
+function reviveSchedule(raw: z.infer<typeof schedulePayload>['schedules'][number]): TeamSchedule {
   return {
     ...raw,
     byeWeeks: raw.byeWeeks ?? [],
@@ -45,42 +53,18 @@ function reviveSchedule(raw: TeamSchedule): TeamSchedule {
  * never talks to the upstream API directly.
  */
 export async function getTeamSchedules(): Promise<TeamSchedule[]> {
-  if (scheduleCache.size > 0 && isScheduleCacheValid()) {
-    return Array.from(scheduleCache.values());
-  }
-
-  // Several callers ask for schedules at once on first paint; share one request.
-  if (inFlight) return inFlight;
-
-  inFlight = (async () => {
-    try {
-      const response = await fetch('/api/schedules');
-      if (!response.ok) {
-        throw new Error(`/api/schedules failed: ${response.status} ${response.statusText}`);
-      }
-
-      const payload = await response.json();
-      const raw = Array.isArray(payload?.schedules) ? (payload.schedules as TeamSchedule[]) : [];
-      const schedules = raw.map(reviveSchedule);
-
-      scheduleCache.clear();
-      for (const schedule of schedules) {
-        scheduleCache.set(schedule.teamId, schedule);
-      }
-      cacheTimestamp = Date.now();
-
-      console.log(`Loaded schedules for ${schedules.length} teams`);
-      return schedules;
-    } catch (error) {
-      console.error('Failed to load team schedules:', error);
-      return [];
-    } finally {
-      inFlight = null;
-    }
-  })();
-
-  return inFlight;
+  return schedulesResource.read();
 }
+
+export const schedulesResource = createResource<TeamSchedule[]>(async (signal) => {
+  const response = await fetch('/api/schedules', { signal });
+  if (!response.ok) throw new Error(`/api/schedules failed: ${response.status}`);
+  const payload = schedulePayload.parse(await response.json());
+  return {
+    data: payload.schedules.map(reviveSchedule),
+    ...resourceSource(payload),
+  };
+}, { ttlMs: CACHE_DURATION, pollMs: 60_000 });
 
 /**
  * Get schedule for a specific team

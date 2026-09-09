@@ -12,6 +12,7 @@ import {
   sessionCookieHeader,
 } from '../../../src/server/auth-utils';
 import { getWebAuthnOrigin, getWebAuthnRPID } from '../../../src/server/webauthn-utils';
+import { base64ToBytes } from '../../../src/server/encoding';
 
 export const config = {
   runtime: 'edge',
@@ -22,7 +23,7 @@ type LoginVerifyBody = {
 };
 
 function jsonResponse(body: unknown, status = 200, setCookies: string[] = []): Response {
-  const headers = new Headers({ 'Content-Type': 'application/json' });
+  const headers = new Headers({ 'Content-Type': 'application/json', 'Cache-Control': 'private, no-store' });
   for (const cookie of setCookies) {
     headers.append('Set-Cookie', cookie);
   }
@@ -82,7 +83,7 @@ export default async function handler(request: Request): Promise<Response> {
       expectedRPID: getWebAuthnRPID(request),
       credential: {
         id: row.credentialId,
-        publicKey: new Uint8Array(Buffer.from(row.publicKey, 'base64')),
+        publicKey: base64ToBytes(row.publicKey),
         counter: row.counter,
       },
     });

@@ -1,7 +1,5 @@
-import { eq } from 'drizzle-orm';
-import { db } from '../src/server/db';
-import { dataCache } from '../src/server/schema';
 import { SEASON_YEAR } from '../src/lib/season-config';
+import { readPublishedCache } from '../src/server/read-published-cache';
 
 export const config = {
   runtime: 'edge',
@@ -11,19 +9,13 @@ const CACHE_KEY = `schedules-${SEASON_YEAR}`;
 
 export default async function handler(): Promise<Response> {
   try {
-    const rows = await db
-      .select()
-      .from(dataCache)
-      .where(eq(dataCache.key, CACHE_KEY))
-      .limit(1);
-
-    const row = rows[0];
-    const schedules = Array.isArray(row?.data) ? row.data : [];
+    const { data, ...metadata } = await readPublishedCache<unknown[]>(CACHE_KEY);
+    const schedules = Array.isArray(data) ? data : [];
 
     return new Response(
       JSON.stringify({
         schedules,
-        updatedAt: row?.updatedAt ?? null,
+        ...metadata,
       }),
       {
         status: 200,

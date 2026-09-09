@@ -1,9 +1,7 @@
-import { eq } from 'drizzle-orm';
 import type { Player } from '../src/lib/types';
-import { db } from './../src/server/db';
-import { dataCache } from './../src/server/schema';
 import { SEASON_YEAR } from '../src/lib/season-config';
 import { playersCacheKey } from '../src/server/cache-keys';
+import { readPublishedCache } from '../src/server/read-published-cache';
 
 export const config = {
   runtime: 'edge',
@@ -14,26 +12,21 @@ const CACHE_CONTROL = 'public, s-maxage=3600, stale-while-revalidate=86400';
 
 export default async function handler(): Promise<Response> {
   try {
-    const rows = await db
-      .select()
-      .from(dataCache)
-      .where(eq(dataCache.key, CACHE_KEY))
-      .limit(1);
-
-    const cachedRow = rows[0];
-    const cachedPlayers = Array.isArray(cachedRow?.data) ? (cachedRow.data as Player[]) : [];
+    const { data, ...metadata } = await readPublishedCache<Player[]>(CACHE_KEY);
+    const cachedPlayers = Array.isArray(data) ? data : [];
 
     if (cachedPlayers.length === 0) {
       return new Response(
         JSON.stringify({
           players: [],
+          ...metadata,
           message: 'No cached player data found yet. Run `npm run refresh:players` (or the refresh-data workflow) first.',
         }),
         {
           status: 200,
           headers: {
             'Content-Type': 'application/json',
-            'Cache-Control': CACHE_CONTROL,
+            'Cache-Control': 'no-store',
           },
         },
       );
@@ -42,7 +35,7 @@ export default async function handler(): Promise<Response> {
     return new Response(
       JSON.stringify({
         players: cachedPlayers,
-        updatedAt: cachedRow?.updatedAt ?? null,
+        ...metadata,
       }),
       {
         status: 200,
@@ -63,7 +56,7 @@ export default async function handler(): Promise<Response> {
         status: 500,
         headers: {
           'Content-Type': 'application/json',
-          'Cache-Control': CACHE_CONTROL,
+          'Cache-Control': 'no-store',
         },
       },
     );

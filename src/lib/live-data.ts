@@ -1,4 +1,8 @@
-import type { GameStatus, PlayerStats } from './types';
+import { z } from 'zod';
+import { createResource, type AsyncResource } from './async-resource';
+import { FIRST_WEEK, LAST_WEEK, type GameStatus, type PlayerStats } from './types';
+import { SEASON_YEAR } from './season-config';
+import { sourceMetadataFields, resourceSource } from './source-metadata';
 
 export interface LiveDataPayload {
   week: number | null;
@@ -8,76 +12,60 @@ export interface LiveDataPayload {
   games: GameStatus[];
 }
 
-/** Dates are ISO strings after JSON transport. */
-function reviveDate(value: unknown): Date {
-  const parsed = value ? new Date(value as string) : new Date();
-  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
-}
+const date = z.string().datetime({ offset: true }).transform(value => new Date(value));
+const payloadSchema = z.object({
+  week: z.number().int().nullable(),
+  updatedAt: z.string().nullable(),
+  seasonType: z.string().optional(),
+  stats: z.array(z.object({
+    playerId: z.string(), week: z.number().int(),
+    passingYards: z.number(), passingTDs: z.number(), completions: z.number(),
+    attempts: z.number(), interceptions: z.number(), rushingYards: z.number(),
+    rushingTDs: z.number(), receivingYards: z.number(), receptions: z.number(),
+    receivingTDs: z.number(), kickReturnYards: z.number(), puntReturnYards: z.number(),
+    fantasyPoints: z.number(), lastUpdated: date,
+  })),
+  games: z.array(z.object({
+    week: z.number().int(), team1: z.string(), team2: z.string(),
+    status: z.enum(['scheduled', 'in-progress', 'final']),
+    quarter: z.number().optional(), timeRemaining: z.string().optional(),
+    team1Score: z.number(), team2Score: z.number(), lastUpdated: date,
+  })),
+}).merge(sourceMetadataFields);
 
-const CACHE_DURATION = 1000 * 60 * 2; // Live scoring refreshes every 10 minutes
-const weekCache = new Map<number, { payload: LiveDataPayload | null; fetchedAt: number }>();
-const weekInFlight = new Map<number, Promise<LiveDataPayload | null>>();
+const resources = new Map<string, AsyncResource<LiveDataPayload | null>>();
 
-/**
- * Same as getLiveData, but shared and briefly cached so the three position
- * tables and the lineup cards do not each hit /api/live for the same week.
- */
-export async function getCachedLiveData(week: number): Promise<LiveDataPayload | null> {
-  const cached = weekCache.get(week);
-  if (cached && Date.now() - cached.fetchedAt < CACHE_DURATION) {
-    return cached.payload;
+export function getLiveResource(week: number): AsyncResource<LiveDataPayload | null> {
+  if (!Number.isInteger(week) || week < FIRST_WEEK || week > LAST_WEEK) {
+    throw new Error('Invalid live scoring week');
   }
-
-  const existing = weekInFlight.get(week);
-  if (existing) return existing;
-
-  const request = getLiveData(week)
-    .then((payload) => {
-      weekCache.set(week, { payload, fetchedAt: Date.now() });
-      return payload;
-    })
-    .finally(() => {
-      weekInFlight.delete(week);
-    });
-
-  weekInFlight.set(week, request);
-  return request;
+  const key = `${SEASON_YEAR}:${week}`;
+  let resource = resources.get(key);
+  if (!resource) {
+    resource = createResource<LiveDataPayload | null>(async (signal) => {
+      const response = await fetch(`/api/live?week=${week}`, { signal });
+      if (!response.ok) throw new Error(`/api/live failed: ${response.status}`);
+      const payload = payloadSchema.parse(await response.json());
+      if (payload.week !== null && payload.week !== week) throw new Error('Live scoring week mismatch');
+      return {
+        data: payload.week === null ? null : payload,
+        ...resourceSource(payload),
+      };
+    }, { ttlMs: 45_000, pollMs: 60_000 });
+    resources.set(key, resource);
+  }
+  return resource;
 }
 
-/** Actual fantasy stats for a single week, keyed by player id. */
+export function getCachedLiveData(week: number): Promise<LiveDataPayload | null> {
+  return getLiveResource(week).read();
+}
+
+export function getLiveData(week: number): Promise<LiveDataPayload | null> {
+  return getCachedLiveData(week);
+}
+
 export async function getWeekPlayerStats(week: number): Promise<Map<string, PlayerStats>> {
   const payload = await getCachedLiveData(week);
-  return new Map((payload?.stats ?? []).map((stat) => [stat.playerId, stat]));
-}
-
-/**
- * Loads the live box scores and scoreboard cached by scripts/refresh-live.ts.
- * Returns null when no live data is available (out of season, or before the
- * first refresh has run), so callers can fall back to simulated stats.
- */
-export async function getLiveData(week: number): Promise<LiveDataPayload | null> {
-  try {
-    const response = await fetch(`/api/live?week=${week}`);
-    if (!response.ok) throw new Error(`/api/live failed: ${response.status}`);
-
-    const payload = await response.json();
-    if (!payload || typeof payload.week !== 'number') return null;
-
-    return {
-      week: payload.week,
-      seasonType: payload.seasonType,
-      updatedAt: payload.updatedAt ?? null,
-      stats: (payload.stats ?? []).map((stat: PlayerStats) => ({
-        ...stat,
-        lastUpdated: reviveDate(stat.lastUpdated),
-      })),
-      games: (payload.games ?? []).map((game: GameStatus) => ({
-        ...game,
-        lastUpdated: reviveDate(game.lastUpdated),
-      })),
-    };
-  } catch (error) {
-    console.warn('Live data unavailable:', error);
-    return null;
-  }
+  return new Map((payload?.stats ?? []).map(stat => [stat.playerId, stat]));
 }

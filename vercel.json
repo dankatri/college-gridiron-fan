@@ -1,4 +1,5 @@
 {
+  "buildCommand": "bash scripts/prepare-vercel-browser.sh && npm run verify:release",
   "rewrites": [
     {
       "source": "/((?!api/).*)",

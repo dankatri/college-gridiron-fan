@@ -29,6 +29,9 @@
     },
   },
   "include": [
-    "src"
+    "src",
+    "api",
+    "scripts",
+    "tests"
   ]
 }

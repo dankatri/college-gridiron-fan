@@ -4,6 +4,7 @@ import { dataCache } from '../src/server/schema';
 import { SEASON_YEAR } from '../src/lib/season-config';
 import type { PlayerStats, TeamSchedule } from '../src/lib/types';
 import { playersCacheKey, schedulesCacheKey } from '../src/server/cache-keys';
+import { cacheQueryMode, projectPlayerLog, projectPlayers, projectTeamSchedule } from '../src/server/cache-projections';
 
 export const config = {
   runtime: 'edge',
@@ -70,18 +71,14 @@ export default async function handler(request: Request): Promise<Response> {
       });
     }
 
-    const weekRows = await db
+    const projected = cacheQueryMode('PLAYER_LOG_QUERY_MODE') === 'projected';
+    const weekRows = projected
+      ? (await db.execute<{ key: string; data: LiveCachePayload; updatedAt: string }>(projectPlayerLog(SEASON_YEAR, playerId))).rows.map(row => ({ ...row, updatedAt: new Date(row.updatedAt) }))
+      : await db
       .select({ key: dataCache.key, data: dataCache.data, updatedAt: dataCache.updatedAt })
       .from(dataCache)
-      .where(like(dataCache.key, `live-stats-${SEASON_YEAR}-week-%`));
-
-    const scheduleRows = await db
-      .select({ data: dataCache.data })
-      .from(dataCache)
-      .where(eq(dataCache.key, schedulesCacheKey(SEASON_YEAR)))
-      .limit(1);
-
-    const schedules = (scheduleRows[0]?.data as TeamSchedule[] | undefined) ?? [];
+      .where(like(dataCache.key, `live-stats-${SEASON_YEAR}-week-%`))
+      .orderBy(dataCache.key);
 
     const games: Array<PlayerStats & { opponent?: string; isHomeGame?: boolean; teamPoints?: number; opponentPoints?: number }> = [];
     let updatedAt: Date | null = null;
@@ -100,7 +97,9 @@ export default async function handler(request: Request): Promise<Response> {
 
     // Attach opponent and score context from the schedule cache.
     if (games.length > 0) {
-      const playersRow = await db
+      const playersRow = projected
+        ? (await db.execute<{ data: Array<{ id: string; team: string }> }>(projectPlayers(SEASON_YEAR, [playerId]))).rows
+        : await db
         .select({ data: dataCache.data })
         .from(dataCache)
         .where(eq(dataCache.key, playersCacheKey(SEASON_YEAR)))
@@ -108,6 +107,11 @@ export default async function handler(request: Request): Promise<Response> {
       const pool = (playersRow[0]?.data as Array<{ id: string; team: string }> | undefined) ?? [];
       team = pool.find((player) => player.id === playerId)?.team;
 
+      const scheduleRows = !team ? [] : projected
+        ? (await db.execute<{ data: TeamSchedule[] }>(projectTeamSchedule(SEASON_YEAR, team))).rows
+        : await db.select({ data: dataCache.data }).from(dataCache)
+          .where(eq(dataCache.key, schedulesCacheKey(SEASON_YEAR))).limit(1);
+      const schedules = (scheduleRows[0]?.data as TeamSchedule[] | undefined) ?? [];
       const schedule = team ? schedules.find((entry) => entry.teamName === team) : undefined;
       if (schedule) {
         for (const game of games) {

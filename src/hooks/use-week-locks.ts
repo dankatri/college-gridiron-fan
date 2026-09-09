@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
-import { getTeamSchedules } from '@/lib/schedule-data';
+import { useMemo } from 'react';
+import { useScheduleData } from './use-schedule-data';
+import { useMinuteClock } from './use-minute-clock';
 import { finishedTeamsForWeek, isWeekComplete, lockedTeamsForWeek } from '@/lib/week-lock';
-import type { TeamSchedule } from '@/lib/types';
 
 export interface WeekLocks {
   isLoading: boolean;
+  error: Error | null;
   /** Lower-cased names of teams whose game this week has kicked off. */
   lockedTeams: Set<string>;
   /** Those of `lockedTeams` whose game is over rather than still being played. */
@@ -28,42 +29,21 @@ const NO_TEAMS = new Set<string>();
  * only arrives with fresh data, so advancing the clock alone is not enough.
  */
 export function useWeekLocks(week?: number): WeekLocks {
-  const [schedules, setSchedules] = useState<TeamSchedule[] | null>(null);
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const refresh = () => {
-      getTeamSchedules()
-        .then((loaded) => {
-          if (cancelled) return;
-          setSchedules(loaded);
-          setNow(Date.now());
-        })
-        .catch((error) => {
-          console.error('useWeekLocks: failed to load schedules', error);
-          if (!cancelled) setSchedules((previous) => previous ?? []);
-        });
-    };
-
-    refresh();
-    const timer = window.setInterval(refresh, 60_000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, []);
+  const now = useMinuteClock();
+  const { data: schedules, error } = useScheduleData(
+    week !== undefined && !isWeekComplete(week, new Date(now)),
+    week !== undefined,
+  );
 
   return useMemo(() => {
-    if (schedules === null || week === undefined) {
+    if (schedules === undefined || week === undefined) {
       return {
-        isLoading: schedules === null,
+        isLoading: schedules === undefined,
+        error,
         lockedTeams: NO_TEAMS,
         finishedTeams: NO_TEAMS,
         isComplete: week === undefined ? false : isWeekComplete(week, new Date(now)),
-        isPlayerLocked: () => false,
+        isPlayerLocked: () => schedules === undefined,
       };
     }
 
@@ -71,10 +51,11 @@ export function useWeekLocks(week?: number): WeekLocks {
 
     return {
       isLoading: false,
+      error,
       lockedTeams,
       finishedTeams: finishedTeamsForWeek(schedules, week),
       isComplete: isWeekComplete(week, new Date(now)),
       isPlayerLocked: (team?: string | null) => (team ? lockedTeams.has(team.toLowerCase()) : false),
     };
-  }, [schedules, week, now]);
+  }, [schedules, week, now, error]);
 }

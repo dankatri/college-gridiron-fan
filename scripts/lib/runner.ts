@@ -7,6 +7,7 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { getCfbdRequestCount } from '../../src/server/cfbd';
 
 /** Loads .env.local for local runs. In CI the values come from repo secrets. */
 export function loadLocalEnv(): void {
@@ -58,9 +59,10 @@ export async function runScript(name: string, body: () => Promise<void>): Promis
   logStep(`${name} starting`);
   try {
     await body();
-    logStep(`${name} complete`, { durationMs: Date.now() - startedAt });
+    logStep(`${name} complete`, { durationMs: Date.now() - startedAt, upstreamRequests: getCfbdRequestCount() });
   } catch (error) {
     console.error(`[refresh] ${name} FAILED`, error);
+    logStep(`${name} failed`, { durationMs: Date.now() - startedAt, upstreamRequests: getCfbdRequestCount() });
     process.exitCode = 1;
   }
 }

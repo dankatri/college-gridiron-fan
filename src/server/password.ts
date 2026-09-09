@@ -1,7 +1,9 @@
 /**
  * Password hashing using Web Crypto API (Edge-compatible).
- * Uses PBKDF2 with SHA-256, 100k iterations, 32-byte salt.
+ * Uses PBKDF2 with SHA-256, 100k iterations, 16-byte salt.
  */
+
+import { bytesToHex, hexToBytes } from './encoding';
 
 const ITERATIONS = 100_000;
 const KEY_LENGTH = 32;
@@ -11,8 +13,8 @@ export async function hashPassword(password: string): Promise<string> {
   const salt = crypto.getRandomValues(new Uint8Array(SALT_LENGTH));
   const key = await deriveKey(password, salt);
   const hash = await crypto.subtle.exportKey('raw', key);
-  const saltHex = Buffer.from(salt).toString('hex');
-  const hashHex = Buffer.from(hash).toString('hex');
+  const saltHex = bytesToHex(salt);
+  const hashHex = bytesToHex(new Uint8Array(hash));
   return `pbkdf2:${ITERATIONS}:${saltHex}:${hashHex}`;
 }
 
@@ -20,11 +22,11 @@ export async function verifyPassword(password: string, stored: string): Promise<
   const parts = stored.split(':');
   if (parts[0] !== 'pbkdf2' || parts.length !== 4) return false;
   const iterations = parseInt(parts[1], 10);
-  const salt = Uint8Array.from(Buffer.from(parts[2], 'hex'));
+  const salt = hexToBytes(parts[2]);
   const expectedHash = parts[3];
   const key = await deriveKey(password, salt, iterations);
   const hash = await crypto.subtle.exportKey('raw', key);
-  const hashHex = Buffer.from(hash).toString('hex');
+  const hashHex = bytesToHex(new Uint8Array(hash));
   return hashHex === expectedHash;
 }
 

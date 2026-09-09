@@ -12,7 +12,7 @@ import { PROJECTION_YEAR } from '../src/lib/season-config';
 import { seasonStatsCacheKey } from '../src/server/cache-keys';
 import { STAT_CATEGORIES, countGamesPlayed, pivotSeasonStats } from '../src/server/cfbd-transform';
 import type { StatLine } from '../src/server/cfbd-transform';
-import { readCache, writeCache } from './lib/cache';
+import { beginCacheRun, readCache, refreshCache, IncompleteSourceError } from './lib/cache';
 import { logStep, requireEnv, runScript } from './lib/runner';
 
 export type ProjectionCache = {
@@ -41,39 +41,43 @@ await runScript('refresh-projections', async () => {
     }
   }
 
-  const { getAllDivisionGames, getSeasonStats } = await import('../src/server/cfbd');
+  const run = await beginCacheRun();
+  await refreshCache(cacheKey, run, async () => {
+    const { getAllDivisionGames, getSeasonStats } = await import('../src/server/cfbd');
 
-  logStep('fetching season stats by category', { year, categories: STAT_CATEGORIES });
-  const statChunks = await Promise.all(
-    STAT_CATEGORIES.map(async (category) => {
-      const rows = await getSeasonStats(year, category);
-      logStep('category fetched', { category, rows: rows.length });
-      return rows;
-    }),
-  );
+    logStep('fetching season stats by category', { year, categories: STAT_CATEGORIES });
+    const statChunks = await Promise.all(
+      STAT_CATEGORIES.map(async (category) => {
+        const rows = await getSeasonStats(year, category);
+        logStep('category fetched', { category, rows: rows.length });
+        return rows;
+      }),
+    );
 
-  // Keep only skill-position players; the rest can never appear in a lineup.
-  const rows = statChunks.flat().filter((row) => SKILL_POSITIONS.has((row.position ?? '').toUpperCase()));
-  const statsByPlayer = pivotSeasonStats(rows);
+    // Keep only skill-position players; the rest can never appear in a lineup.
+    const rows = statChunks.flat().filter((row) => SKILL_POSITIONS.has((row.position ?? '').toUpperCase()));
+    const statsByPlayer = pivotSeasonStats(rows);
 
-  // All divisions: teams promoted to FBS since PROJECTION_YEAR played their
-  // previous season as FCS, and their games must still count toward the divisor.
-  logStep('fetching games for per-game divisor', { year });
-  const games = await getAllDivisionGames(year, 'both');
-  const gamesPlayed = countGamesPlayed(games);
+    // All divisions: teams promoted to FBS since PROJECTION_YEAR played their
+    // previous season as FCS, and their games must still count toward the divisor.
+    logStep('fetching games for per-game divisor', { year });
+    const games = await getAllDivisionGames(year, 'both');
+    const gamesPlayed = countGamesPlayed(games);
 
-  const payload: ProjectionCache = {
-    year,
-    gamesPlayed: Object.fromEntries(gamesPlayed),
-    statsByPlayer: Object.fromEntries(statsByPlayer),
-  };
+    const payload: ProjectionCache = {
+      year,
+      gamesPlayed: Object.fromEntries(gamesPlayed),
+      statsByPlayer: Object.fromEntries(statsByPlayer),
+    };
 
-  await writeCache(cacheKey, payload);
+    if (!statsByPlayer.size || !gamesPlayed.size) throw new IncompleteSourceError('Projection source returned no usable stats or games');
 
-  logStep('projection stats cached', {
-    year,
-    players: statsByPlayer.size,
-    teams: gamesPlayed.size,
-    approxBytes: JSON.stringify(payload).length,
+    logStep('projection stats cached', {
+      year,
+      players: statsByPlayer.size,
+      teams: gamesPlayed.size,
+      approxBytes: JSON.stringify(payload).length,
+    });
+    return payload;
   });
 });

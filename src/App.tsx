@@ -1,6 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Player, LineupSlot, WeeklyLineup, PlayerUsage, MAX_PLAYER_USES, TOTAL_WEEKS } from '@/lib/types';
-import { getPlayers, clearCache } from '@/lib/data';
+import { playersResource, clearCache } from '@/lib/data';
+import { usePlayers } from '@/hooks/use-players';
+import { getLiveResource } from '@/lib/live-data';
+import { seasonStatsResource } from '@/lib/season-stats-data';
 import { SEASON_YEAR, weekBoundary } from '@/lib/season-config';
 import { useLocalStorage } from '@/hooks/use-local-storage';
 import { useAuth } from '@/hooks/use-auth';
@@ -11,7 +14,6 @@ import { useWeekMatchups } from '@/hooks/use-week-matchups';
 import { describeWeekPoints, sumActualPoints } from '@/lib/week-actuals';
 import {
   hydrateSlots,
-  mergePlayerPool,
   toSlotPayload,
   type ApiLineupSlot,
 } from '@/lib/lineup-state';
@@ -30,9 +32,9 @@ import { PlayerTable } from '@/components/PlayerTable';
 import { LineupPositionGroup } from '@/components/LineupPositionGroup';
 import { LineupSummary } from '@/components/LineupSummary';
 import { WeekNavigation } from '@/components/WeekNavigation';
-import { LiveScoringDashboard } from '@/components/LiveScoringDashboard';
-import { LeagueDashboard } from '@/components/LeagueDashboard';
-import { ScheduleOverview } from '@/components/ScheduleOverview';
+import type { ApiLeague } from '@/components/LeagueDashboard';
+import { optionalFeature } from '@/components/optional-feature';
+import { schedulesResource } from '@/lib/schedule-data';
 import { ByeWeekAlert } from '@/components/ByeWeekAlert';
 import { LoginScreen } from '@/components/LoginScreen';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -54,10 +56,11 @@ import {
 } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
-type ApiLeagueSummary = {
-  id: string;
-  name: string;
-};
+type ApiLeagueSummary = ApiLeague;
+
+const LiveScoringDashboard = optionalFeature('Live Scoring', () => import('@/components/LiveScoringDashboard').then(module => ({ default: module.LiveScoringDashboard })));
+const LeagueDashboard = optionalFeature('Leagues', () => import('@/components/LeagueDashboard').then(module => ({ default: module.LeagueDashboard })));
+const ScheduleOverview = optionalFeature('Schedule', () => import('@/components/ScheduleOverview').then(module => ({ default: module.ScheduleOverview })));
 
 type ApiLineup = {
   id: string;
@@ -69,29 +72,24 @@ type ApiLineup = {
   lockedAt: string | null;
 };
 
-type ApiMeResponse = {
-  user: {
-    hasPasskey?: boolean;
-  } | null;
-};
-
 function App() {
   const [currentWeek, setCurrentWeek] = useState(getCurrentWeek());
   const [currentLineup, setCurrentLineup] = useState<LineupSlot[]>(createEmptyLineup());
   const [selectedPosition, setSelectedPosition] = useState<'QB' | 'RB' | 'WR'>('QB');
   const [activeTab, setActiveTab] = useState<'lineup' | 'schedule' | 'scoring' | 'leagues'>('lineup');
-  const [players, setPlayers] = useState<Player[]>([]);
-  const [isLoadingPlayers, setIsLoadingPlayers] = useState(true);
   const [savedLineupRows, setSavedLineupRows] = useState<ApiLineup[]>([]);
-  const [currentWeekLineupRow, setCurrentWeekLineupRow] = useState<ApiLineup | null>(null);
   const [playerUsage, setPlayerUsage] = useState<PlayerUsage[]>([]);
   const [leagues, setLeagues] = useState<ApiLeagueSummary[]>([]);
   const [isLoadingLeagues, setIsLoadingLeagues] = useState(false);
-  const [hasPasskey, setHasPasskey] = useState(false);
+  const [lineupSourceLeagueId, setLineupSourceLeagueId] = useState<string | null>(null);
   const [playerSheetOpen, setPlayerSheetOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const savePending = useRef(false);
 
-  const { user: currentUser, isLoading, registerPasskey, signOut } = useAuth();
+  const { user: currentUser, isLoading, sessionError, retrySession, registerPasskey, signOut } = useAuth();
   const isAuthenticated = !!currentUser;
+  const { players, isLoading: isLoadingPlayers, error: playersError } = usePlayers(isAuthenticated);
+  const hasPasskey = !!currentUser?.hasPasskey;
   const [hasPasswordResetLink, setHasPasswordResetLink] = useState(
     () =>
       typeof window !== 'undefined' &&
@@ -104,15 +102,21 @@ function App() {
   );
 
   const playersById = useMemo(() => new Map(players.map((player) => [player.id, player])), [players]);
+  const activeScope = `${currentUser?.id ?? ''}:${currentLeagueId ?? ''}`;
+  const scopeRef = useRef(activeScope);
+  scopeRef.current = activeScope;
+  const leagueRequest = useRef(0);
+  const lineupRequest = useRef(0);
+  const draftBaseline = useRef<{ key: string; signature: string } | null>(null);
 
   // Past weeks show what a lineup really scored instead of its projection.
-  const { actuals: weekActuals, hasStarted: weekHasStarted, isLoading: isLoadingActuals } =
-    useWeekActuals(currentWeek);
-  const { matchups: weekMatchups } = useWeekMatchups(currentWeek);
+  const { actuals: weekActuals, hasStarted: weekHasStarted, hasData: hasActuals, isReliable: actualsReliable, error: actualsError } =
+    useWeekActuals(isAuthenticated ? currentWeek : undefined);
+  const { matchups: weekMatchups } = useWeekMatchups(isAuthenticated ? currentWeek : undefined);
   // Players lock one by one as their games kick off; the week itself stays
-  // open for edits until every game in it has been played.
-  const weekLocks = useWeekLocks(currentWeek);
-  const showWeekActuals = weekHasStarted && !isLoadingActuals;
+  // open for edits until its following Wednesday boundary.
+  const weekLocks = useWeekLocks(isAuthenticated ? currentWeek : undefined);
+  const showWeekActuals = weekHasStarted;
   const weekName = `Week ${currentWeek}`;
 
   const lineupSlotPoints = useCallback(
@@ -123,9 +127,10 @@ function App() {
             stats: weekActuals.get(slot.player.id),
             game: weekMatchups.get(slot.player.team.toLowerCase())?.game,
             weekName,
+            available: actualsReliable && !weekLocks.isLoading,
           })
         : undefined,
-    [showWeekActuals, weekActuals, weekMatchups, weekName],
+    [showWeekActuals, weekActuals, weekMatchups, weekName, actualsReliable, weekLocks.isLoading],
   );
 
   // The reset screen clears the token from the URL once the password is updated.
@@ -152,14 +157,16 @@ function App() {
 
   const fetchLeagues = useCallback(async () => {
     if (!isAuthenticated) return;
+    const requestId = ++leagueRequest.current;
     setIsLoadingLeagues(true);
     try {
-      const response = await fetch('/api/leagues', { method: 'GET', credentials: 'include' });
+      const response = await fetch('/api/leagues', { method: 'GET', credentials: 'include', signal: AbortSignal.timeout(20_000) });
       const payload = await response.json();
       if (!response.ok) {
         throw new Error(payload.error || 'Failed to load leagues');
       }
       const fetchedLeagues = (payload.leagues ?? []) as ApiLeagueSummary[];
+      if (requestId !== leagueRequest.current) return;
       setLeagues(fetchedLeagues);
 
       if (fetchedLeagues.length === 0) {
@@ -167,22 +174,24 @@ function App() {
         return;
       }
 
-      const currentStillValid = currentLeagueId && fetchedLeagues.some((league) => league.id === currentLeagueId);
-      if (!currentStillValid) {
-        setCurrentLeagueId(fetchedLeagues[0].id);
-      }
+      setCurrentLeagueId(previous =>
+        previous && fetchedLeagues.some(league => league.id === previous) ? previous : fetchedLeagues[0].id,
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to load leagues';
       toast.error(message);
     } finally {
-      setIsLoadingLeagues(false);
+      if (requestId === leagueRequest.current) setIsLoadingLeagues(false);
     }
-  }, [isAuthenticated, currentLeagueId, setCurrentLeagueId]);
+  }, [isAuthenticated, setCurrentLeagueId]);
 
   const fetchAllLineups = useCallback(async () => {
+    const requestId = ++lineupRequest.current;
+    const requestedScope = scopeRef.current;
     if (!isAuthenticated || !currentLeagueId) {
       setSavedLineupRows([]);
       setPlayerUsage([]);
+      setLineupSourceLeagueId(null);
       return;
     }
 
@@ -190,88 +199,46 @@ function App() {
       const response = await fetch(`/api/leagues/${currentLeagueId}/lineups`, {
         method: 'GET',
         credentials: 'include',
+        signal: AbortSignal.timeout(20_000),
       });
       const payload = await response.json();
       if (!response.ok) {
         throw new Error(payload.error || 'Failed to load lineups');
       }
+      if (requestId !== lineupRequest.current || requestedScope !== scopeRef.current) return;
       setSavedLineupRows((payload.lineups ?? []) as ApiLineup[]);
       setPlayerUsage((payload.playerUsage ?? []) as PlayerUsage[]);
+      setLineupSourceLeagueId(currentLeagueId);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to load lineups';
       toast.error(message);
     }
   }, [isAuthenticated, currentLeagueId]);
 
-  const fetchCurrentWeekLineup = useCallback(async () => {
-    if (!isAuthenticated || !currentLeagueId) {
-      setCurrentWeekLineupRow(null);
-      setCurrentLineup(createEmptyLineup());
-      return;
-    }
-
-    try {
-      const response = await fetch(`/api/leagues/${currentLeagueId}/lineups?week=${currentWeek}`, {
-        method: 'GET',
-        credentials: 'include',
-      });
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.error || 'Failed to load week lineup');
-      }
-
-      const lineup = (payload.lineup ?? null) as ApiLineup | null;
-      setCurrentWeekLineupRow(lineup);
-      setPlayerUsage((payload.playerUsage ?? []) as PlayerUsage[]);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to load week lineup';
-      toast.error(message);
-      setCurrentWeekLineupRow(null);
-      setCurrentLineup(createEmptyLineup());
-    }
-  }, [isAuthenticated, currentLeagueId, currentWeek]);
-
-  useEffect(() => {
-    if (!isAuthenticated) return;
-
-    const loadPlayers = async () => {
-      setIsLoadingPlayers(true);
-      try {
-        const currentPlayers = await getPlayers();
-        setPlayers(currentPlayers);
-      } catch (error) {
-        console.error('Failed to load players:', error);
-      } finally {
-        setIsLoadingPlayers(false);
-      }
-    };
-
-    loadPlayers();
-  }, [isAuthenticated]);
-
   useEffect(() => {
     if (!isAuthenticated) return;
     fetchLeagues();
-  }, [isAuthenticated, fetchLeagues, activeTab]);
+  }, [isAuthenticated, fetchLeagues]);
 
   useEffect(() => {
     fetchAllLineups();
   }, [fetchAllLineups]);
 
+  const selectedSavedRow = lineupSourceLeagueId === currentLeagueId
+    ? savedLineupRows.find(row => row.week === currentWeek) ?? null
+    : null;
+  const savedSlots = selectedSavedRow?.slots ?? toSlotPayload(createEmptyLineup());
+  const slotSignature = JSON.stringify(savedSlots);
+  const draftKey = `${activeScope}:${currentWeek}`;
   useEffect(() => {
-    fetchCurrentWeekLineup();
-  }, [fetchCurrentWeekLineup]);
-
-  // Unsaved edits must survive anything that grows the player pool, so the
-  // lineup is only rebuilt from the stored row when that row itself changes.
-  useEffect(() => {
-    setCurrentLineup(
-      currentWeekLineupRow
-        ? hydrateSlots(currentWeekLineupRow.slots, playersById)
-        : createEmptyLineup(),
-    );
-    // playersById is deliberately excluded; pending slots are filled in below.
-  }, [currentWeekLineupRow]);
+    const previous = draftBaseline.current;
+    draftBaseline.current = { key: draftKey, signature: slotSignature };
+    setCurrentLineup(current => {
+      if (previous?.key === draftKey && JSON.stringify(toSlotPayload(current)) !== previous.signature) return current;
+      return hydrateSlots(savedSlots, playersById);
+    });
+    // Only slot content/context can replace a clean draft, not score updates.
+  }, [draftKey, slotSignature]);
 
   // The stored lineup usually arrives before the player list does, so fill in
   // any slot still waiting on its player record as the pool grows.
@@ -279,34 +246,11 @@ function App() {
     setCurrentLineup((previous) => resolvePendingSlots(previous, playersById));
   }, [playersById]);
 
-  useEffect(() => {
-    if (!isAuthenticated) {
-      setHasPasskey(false);
-      return;
-    }
-
-    const loadPasskeyStatus = async () => {
-      try {
-        const response = await fetch('/api/me', {
-          method: 'GET',
-          credentials: 'include',
-        });
-        if (!response.ok) {
-          setHasPasskey(false);
-          return;
-        }
-        const payload = (await response.json()) as ApiMeResponse;
-        setHasPasskey(!!payload.user?.hasPasskey);
-      } catch (error) {
-        console.error('[App] Failed to load passkey status', { error });
-        setHasPasskey(false);
-      }
-    };
-
-    loadPasskeyStatus();
-  }, [isAuthenticated, currentUser?.id]);
-
   const handlePlayerSelect = (player: Player): boolean => {
+    if (weekLocks.isLoading || lineupSourceLeagueId !== currentLeagueId) {
+      toast.error('Wait for your lineup and schedule to load before editing');
+      return false;
+    }
     if (!currentLeagueId) {
       toast.error('Choose a league first');
       return false;
@@ -324,7 +268,7 @@ function App() {
       return false;
     }
 
-    const availableSlot = currentLineup.find((slot) => slot.position === player.position && !slot.player);
+    const availableSlot = currentLineup.find((slot) => slot.position === player.position && !slot.player && !slot.playerId);
     if (!availableSlot) {
       toast.error(`No available ${player.position} slots`);
       return false;
@@ -344,6 +288,10 @@ function App() {
   };
 
   const handleRemovePlayer = (slotIndex: number) => {
+    if (weekLocks.isLoading || lineupSourceLeagueId !== currentLeagueId) {
+      toast.error('Wait for your lineup and schedule to load before editing');
+      return;
+    }
     if (weekLocks.isComplete) {
       toast.error(`Week ${currentWeek} is over and cannot be modified`);
       return;
@@ -361,6 +309,14 @@ function App() {
   };
 
   const handleSaveLineup = async () => {
+    if (savePending.current) {
+      toast.error('A save is already in progress');
+      return;
+    }
+    if (!players.length || weekLocks.isLoading || lineupSourceLeagueId !== currentLeagueId) {
+      toast.error('Your lineup, player catalogue and schedule must be loaded before saving');
+      return;
+    }
     if (!currentLeagueId) {
       toast.error('Choose a league first');
       return;
@@ -369,7 +325,10 @@ function App() {
       toast.error(`Week ${currentWeek} is over and cannot be modified`);
       return;
     }
+    savePending.current = true;
+    setIsSaving(true);
     try {
+      const requestedScope = scopeRef.current;
       const response = await fetch(`/api/leagues/${currentLeagueId}/lineups`, {
         method: 'PUT',
         credentials: 'include',
@@ -384,10 +343,10 @@ function App() {
       if (!response.ok) {
         throw new Error(payload.error || 'Failed to save lineup');
       }
+      if (requestedScope !== scopeRef.current) return;
 
       const saved = (payload.lineup ?? null) as ApiLineup | null;
       if (saved) {
-        setCurrentWeekLineupRow(saved);
         setSavedLineupRows((previous) => {
           const next = previous.filter((row) => row.week !== saved.week);
           next.push(saved);
@@ -407,66 +366,43 @@ function App() {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to save lineup';
       toast.error(message);
+    } finally {
+      savePending.current = false;
+      setIsSaving(false);
     }
   };
 
   const handleRefreshPlayers = async () => {
-    setIsLoadingPlayers(true);
     try {
       clearCache();
-      const currentPlayers = await getPlayers();
-      setPlayers(currentPlayers);
+      await Promise.all([playersResource.read(), seasonStatsResource.read(true)]);
       toast.success('Player data refreshed!');
     } catch (error) {
       console.error('Failed to refresh players:', error);
       toast.error('Failed to refresh player data');
-    } finally {
-      setIsLoadingPlayers(false);
-    }
-  };
-
-  // Filtering the player table fetches a subset of the league's players. Merge
-  // it into the pool rather than replacing it, so narrowing a filter can never
-  // make an already-selected player unresolvable.
-  const handlePlayersUpdate = useCallback((newPlayers: Player[]) => {
-    setPlayers((previous) => mergePlayerPool(previous, newPlayers));
-  }, []);
-
-  const handleForceSampleData = async () => {
-    setIsLoadingPlayers(true);
-    try {
-      clearCache();
-      const currentPlayers = await getPlayers();
-      setPlayers(currentPlayers);
-      toast.success('Player data reloaded!');
-    } catch (error) {
-      console.error('Failed to reload data:', error);
-      toast.error('Failed to reload player data');
-    } finally {
-      setIsLoadingPlayers(false);
     }
   };
 
   const handleLogout = async () => {
-    await signOut();
+    try {
+      await signOut();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to sign out');
+      return;
+    }
     setPlayerSheetOpen(false);
-    setHasPasskey(false);
-    setPlayers([]);
     setCurrentLineup(createEmptyLineup());
     setCurrentWeek(1);
     setActiveTab('lineup');
     setSavedLineupRows([]);
-    setCurrentWeekLineupRow(null);
     setPlayerUsage([]);
     setLeagues([]);
-    clearCache();
     toast.success('Logged out successfully');
   };
 
   const handleAddPasskey = async () => {
     try {
       await registerPasskey();
-      setHasPasskey(true);
       toast.success('Passkey registered');
     } catch (error) {
       console.error('Failed to register passkey', { error });
@@ -495,17 +431,16 @@ function App() {
   // Once the week has been played, score the lineup from the live box scores
   // rather than waiting for the stored total to be backfilled.
   const liveActualPoints = useMemo(() => {
-    if (!showWeekActuals) return undefined;
+    if (!showWeekActuals || !hasActuals) return undefined;
     const playerIds = currentLineup.map((slot) => slot.player?.id);
-    if (!playerIds.some((playerId) => playerId && weekActuals.has(playerId))) return undefined;
     return sumActualPoints(playerIds, weekActuals);
-  }, [showWeekActuals, currentLineup, weekActuals]);
+  }, [showWeekActuals, hasActuals, currentLineup, weekActuals]);
 
   const displayedActualPoints = liveActualPoints ?? currentWeekLineup?.actualPoints;
 
   // A lineup can be saved part-finished, so the button says how far along it is.
-  const filledSlotCount = currentLineup.filter((slot) => slot.player).length;
-  const lockedSlotCount = currentLineup.filter((slot) => weekLocks.isPlayerLocked(slot.player?.team)).length;
+  const filledSlotCount = currentLineup.filter((slot) => slot.player || slot.playerId).length;
+  const lockedSlotCount = currentLineup.filter((slot) => slot.player && !weekLocks.isLoading && weekLocks.isPlayerLocked(slot.player.team)).length;
   const finishedSlotCount = currentLineup.filter(
     (slot) => slot.player?.team && weekLocks.finishedTeams.has(slot.player.team.toLowerCase()),
   ).length;
@@ -543,6 +478,15 @@ function App() {
     );
   }
 
+  if (sessionError && !isAuthenticated) {
+    return <div className="min-h-screen flex items-center justify-center p-4">
+      <Card><CardContent className="p-6 space-y-3">
+        <p role="alert">{sessionError}</p>
+        <Button onClick={() => void retrySession()}>Retry session</Button>
+      </CardContent></Card>
+    </div>;
+  }
+
   if (!isAuthenticated || hasPasswordResetLink) {
     return <LoginScreen />;
   }
@@ -550,6 +494,24 @@ function App() {
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto p-3 sm:p-4 space-y-6">
+        {sessionError && <div role="alert" className="rounded-lg border p-3 text-sm">
+          Session details could not be refreshed. Your draft is unchanged.
+          <Button variant="outline" size="sm" className="ml-2" onClick={() => void retrySession()}>Retry session</Button>
+        </div>}
+        {weekLocks.error && <div role="alert" className="rounded-lg border border-destructive p-3 text-sm text-destructive">
+          Schedule refresh failed. {weekLocks.isLoading ? 'Editing is unavailable until schedules load.' : 'Known kickoff locks are still enforced.'}
+          <Button variant="outline" size="sm" className="ml-2" onClick={() => void schedulesResource.refresh(true)}>Retry schedules</Button>
+        </div>}
+        {playersError && <div role="alert" className="rounded-lg border border-destructive p-3 text-sm">
+          {players.length ? 'Showing the last available player catalogue. ' : 'Player data is unavailable. '}
+          <Button variant="outline" size="sm" onClick={handleRefreshPlayers}>Retry players</Button>
+        </div>}
+        {weekHasStarted && !actualsReliable && <div role="status" className="rounded-lg border p-3 text-sm">
+          {hasActuals
+            ? actualsError ? 'Showing the last available actual scores; refresh failed or is incomplete.' : 'The source is updating. Showing the last available actual scores.'
+            : 'Actual scores are not available yet. Missing scores are not counted as zero.'}
+          <Button variant="outline" size="sm" className="ml-2" onClick={() => void getLiveResource(currentWeek).refresh(true)}>Retry scores</Button>
+        </div>}
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="text-center space-y-2 flex-1 lg:text-left">
             <h1 className="text-2xl sm:text-3xl font-bold flex items-center justify-center lg:justify-start gap-2">
@@ -634,19 +596,19 @@ function App() {
 
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'lineup' | 'schedule' | 'scoring' | 'leagues')}>
           <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="lineup" className="flex items-center gap-1 sm:gap-2">
+            <TabsTrigger value="lineup" aria-label="Set Lineup" className="flex items-center gap-1 sm:gap-2">
               <Users size={16} />
               <span className="hidden sm:inline">Set Lineup</span>
             </TabsTrigger>
-            <TabsTrigger value="schedule" className="flex items-center gap-1 sm:gap-2">
+            <TabsTrigger value="schedule" aria-label="Schedule" className="flex items-center gap-1 sm:gap-2">
               <Calendar size={16} />
               <span className="hidden sm:inline">Schedule</span>
             </TabsTrigger>
-            <TabsTrigger value="scoring" className="flex items-center gap-1 sm:gap-2">
+            <TabsTrigger value="scoring" aria-label="Live Scoring" className="flex items-center gap-1 sm:gap-2">
               <Activity size={16} />
               <span className="hidden sm:inline">Live Scoring</span>
             </TabsTrigger>
-            <TabsTrigger value="leagues" className="flex items-center gap-1 sm:gap-2">
+            <TabsTrigger value="leagues" aria-label="Leagues" className="flex items-center gap-1 sm:gap-2">
               <Medal size={16} />
               <span className="hidden sm:inline">Leagues</span>
             </TabsTrigger>
@@ -709,7 +671,7 @@ function App() {
                         />
                       ))}
 
-                      <Button onClick={() => void handleSaveLineup()} className="w-full" disabled={weekLocks.isComplete}>
+                      <Button onClick={() => void handleSaveLineup()} className="w-full" disabled={isSaving || !players.length || weekLocks.isComplete || weekLocks.isLoading || lineupSourceLeagueId !== currentLeagueId}>
                         {saveButtonLabel}
                       </Button>
                     </CardContent>
@@ -740,7 +702,7 @@ function App() {
                       <Button
                         variant="secondary"
                         size="sm"
-                        onClick={handleForceSampleData}
+                        onClick={handleRefreshPlayers}
                         disabled={isLoadingPlayers}
                         className="flex items-center justify-center gap-2 w-full"
                       >
@@ -763,7 +725,7 @@ function App() {
                             <CardContent className="flex items-center justify-center py-12">
                               <div className="flex items-center gap-3 text-muted-foreground">
                                 <RefreshCw size={20} className="animate-spin" />
-                                Loading {SEASON_YEAR} season players from ESPN...
+                                Loading {SEASON_YEAR} season players...
                               </div>
                             </CardContent>
                           </Card>
@@ -783,8 +745,7 @@ function App() {
                                 currentLineup={currentLineup}
                                 currentWeek={currentWeek}
                                 onPlayerSelect={handlePlayerSelectFromSheet}
-                                onPlayersUpdate={handlePlayersUpdate}
-                                isLocked={weekLocks.isComplete}
+                                isLocked={weekLocks.isComplete || weekLocks.isLoading || lineupSourceLeagueId !== currentLeagueId}
                                 lockedTeams={weekLocks.lockedTeams}
                                 finishedTeams={weekLocks.finishedTeams}
                               />
@@ -843,7 +804,7 @@ function App() {
                         <Button
                           variant="secondary"
                           size="sm"
-                          onClick={handleForceSampleData}
+                          onClick={handleRefreshPlayers}
                           disabled={isLoadingPlayers}
                           className="flex items-center justify-center gap-2 w-full sm:w-auto"
                         >
@@ -857,7 +818,7 @@ function App() {
                         <CardContent className="flex items-center justify-center py-12">
                           <div className="flex items-center gap-3 text-muted-foreground">
                             <RefreshCw size={20} className="animate-spin" />
-                            Loading {SEASON_YEAR} season players from ESPN...
+                            Loading {SEASON_YEAR} season players...
                           </div>
                         </CardContent>
                       </Card>
@@ -877,8 +838,7 @@ function App() {
                             currentLineup={currentLineup}
                             currentWeek={currentWeek}
                             onPlayerSelect={handlePlayerSelect}
-                            onPlayersUpdate={handlePlayersUpdate}
-                            isLocked={weekLocks.isComplete}
+                            isLocked={weekLocks.isComplete || weekLocks.isLoading || lineupSourceLeagueId !== currentLeagueId}
                             lockedTeams={weekLocks.lockedTeams}
                                 finishedTeams={weekLocks.finishedTeams}
                           />
@@ -909,7 +869,7 @@ function App() {
                           />
                         ))}
 
-                        <Button onClick={() => void handleSaveLineup()} className="w-full" disabled={weekLocks.isComplete}>
+                        <Button onClick={() => void handleSaveLineup()} className="w-full" disabled={isSaving || !players.length || weekLocks.isComplete || weekLocks.isLoading || lineupSourceLeagueId !== currentLeagueId}>
                           {saveButtonLabel}
                         </Button>
                       </CardContent>
@@ -941,11 +901,11 @@ function App() {
           </TabsContent>
 
           <TabsContent value="schedule" className="mt-6">
-            <ScheduleOverview currentWeek={currentWeek} />
+            <ScheduleOverview key={currentWeek} currentWeek={currentWeek} />
           </TabsContent>
 
           <TabsContent value="scoring" className="mt-6">
-            <LiveScoringDashboard week={currentWeek} weeklyLineups={weeklyLineups} onPointsUpdate={handlePointsUpdate} />
+            <LiveScoringDashboard key={currentWeek} week={currentWeek} players={players} weeklyLineups={weeklyLineups} onPointsUpdate={handlePointsUpdate} />
           </TabsContent>
 
           <TabsContent value="leagues" className="mt-6">
@@ -954,6 +914,10 @@ function App() {
               weeklyLineups={weeklyLineups}
               currentUserId={currentUser?.id || ''}
               currentUsername={currentUser?.displayName || ''}
+              leagues={leagues}
+              isLoadingLeagues={isLoadingLeagues}
+              onRefreshLeagues={fetchLeagues}
+              onLineupsChanged={fetchAllLineups}
             />
           </TabsContent>
         </Tabs>
@@ -974,4 +938,7 @@ function App() {
   );
 }
 
-export default App;
+export default function AppRoot() {
+  const { user } = useAuth();
+  return <App key={user?.id ?? 'signed-out'} />;
+}
