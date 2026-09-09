@@ -2,6 +2,35 @@ import { expect, test } from '@playwright/test';
 import { mockApp, user } from './fixtures';
 
 for (const width of [1280, 390]) {
+  test(`leaderboard distinguishes a zero-point lineup from no lineup at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const app = await mockApp(page);
+    await page.route('**/api/leagues/league-a/leaderboard', route => route.fulfill({
+      json: { leaderboard: [
+        { userId: user.id, username: user.displayName, rank: 1, totalPoints: 0,
+          weeklyPoints: { 1: 0 }, weeksScored: 1, winningWeeks: 0 },
+        { userId: 'other-user', username: 'Other Member', rank: 2, totalPoints: 0,
+          weeklyPoints: {}, weeksScored: 0, winningWeeks: 0 },
+      ] },
+    }));
+    await page.goto('/');
+    await page.getByRole('tab', { name: 'Leagues', exact: true }).click();
+    await page.getByRole('button', { name: 'View League', exact: true }).click();
+    const standings = page.getByRole('table', { name: 'League standings' });
+    const played = standings.getByRole('row').filter({
+      has: page.getByRole('button', { name: user.displayName, exact: true }),
+    });
+    const unplayed = standings.getByRole('row').filter({
+      has: page.getByRole('button', { name: 'Other Member', exact: true }),
+    });
+    await expect(played).toContainText('1 weeks played');
+    await expect(unplayed).toContainText('0 weeks played');
+    await expect(played).toContainText('0.0 pts');
+    await expect(unplayed).toContainText('0.0 pts');
+    await expect(unplayed).toContainText('0.0 avg');
+    expect(app.errors).toEqual([]);
+  });
+
   test(`leaderboard values use shared column headings at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     const app = await mockApp(page);

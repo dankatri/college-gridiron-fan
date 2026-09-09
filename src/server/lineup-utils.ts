@@ -1,4 +1,5 @@
 import { LINEUP_REQUIREMENTS } from '../lib/types';
+import { hasWeekStarted } from '../lib/week-lock';
 
 export type LineupSlotInput = {
   slotIndex: number;
@@ -13,8 +14,15 @@ export function normalizeSlots(slots: LineupSlotInput[]): LineupSlotInput[] {
 }
 
 /** How many slots actually have a player in them. */
-export function countFilledSlots(slots: LineupSlotInput[]): number {
+export function countFilledSlots(slots: ReadonlyArray<{ playerId: string | null }>): number {
   return slots.filter((slot) => !!slot.playerId).length;
+}
+
+export function isPlayedLineup(
+  lineup: { week: number; slots: ReadonlyArray<{ playerId: string | null }> },
+  now: Date = new Date(),
+): boolean {
+  return countFilledSlots(lineup.slots) > 0 && hasWeekStarted(lineup.week, now);
 }
 
 /**

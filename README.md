@@ -10,6 +10,12 @@ valid. The final configured week also has a closing boundary, without adding
 another selectable week. Owners may make audited overrides, including partial
 lineups, but cannot exceed the season usage cap.
 
+**Weeks played** counts opened weeks with at least one selected player. Missing
+or completely empty saved lineups do not count or dilute the weekly average.
+Partial lineups count, including those scoring zero or negative points; future
+weeks do not count until their window opens. Owner member summaries use the
+same rule.
+
 The league leaderboard keeps cumulative actual points and also shows
 **Winning weeks**: completed game weeks in which a member's saved lineup had
 the highest actual score. Tied leaders each receive a win. Open/future weeks,

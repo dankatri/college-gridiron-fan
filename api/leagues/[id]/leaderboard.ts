@@ -3,8 +3,7 @@ import { db } from '../../../src/server/db';
 import { dataCache, leagueMembers, lineups, users } from '../../../src/server/schema';
 import { requireUser } from '../../../src/server/auth-utils';
 import { SEASON_YEAR } from '../../../src/lib/season-config';
-import { hasWeekStarted } from '../../../src/lib/week-lock';
-import type { LineupSlotInput } from '../../../src/server/lineup-utils';
+import { isPlayedLineup, type LineupSlotInput } from '../../../src/server/lineup-utils';
 import type { PlayerStats } from '../../../src/lib/types';
 import { cacheQueryMode, projectWeeklyScores } from '../../../src/server/cache-projections';
 import { jsonResponse } from '../../../src/server/http';
@@ -134,9 +133,8 @@ export default async function handler(request: Request): Promise<Response> {
 
       existing.projectedPoints[row.week] = Number.parseFloat(row.projectedPoints ?? '0') || 0;
 
-      // A week only contributes to the standings once its games have started.
-      // Before that everyone is on zero, rather than on their projection.
-      if (hasWeekStarted(row.week, now)) {
+      // Empty saved lineups are not participation, even when the week has opened.
+      if (isPlayedLineup(row, now)) {
         const weekScores = weeklyScores.get(row.week);
         const points = ((row.slots ?? []) as LineupSlotInput[]).reduce((sum, slot) => {
           if (!slot.playerId) return sum;

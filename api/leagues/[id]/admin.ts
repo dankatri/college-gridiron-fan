@@ -6,6 +6,7 @@ import { FIRST_WEEK, LAST_WEEK } from '../../../src/lib/types';
 import { SEASON_YEAR } from '../../../src/lib/season-config';
 import { isWeekComplete } from '../../../src/lib/week-lock';
 import {
+  isPlayedLineup,
   toUsageMap,
   type LineupSlotInput,
 } from '../../../src/server/lineup-utils';
@@ -126,6 +127,7 @@ export default async function handler(request: Request): Promise<Response> {
         .from(lineups)
         .where(and(eq(lineups.leagueId, leagueId), eq(lineups.season, SEASON_YEAR)));
 
+      const now = new Date();
       const memberPayload = members.map((member) => {
         const forMember = seasonLineups.filter((row) => row.userId === member.userId);
         const weekLineup = forMember.find((row) => row.week === week) ?? null;
@@ -137,7 +139,7 @@ export default async function handler(request: Request): Promise<Response> {
           avatarUrl: member.avatarUrl,
           role: member.userId === ownership.league.ownerId ? 'owner' : member.role,
           joinedAt: member.joinedAt,
-          weeksSet: forMember.length,
+          weeksSet: forMember.filter(row => isPlayedLineup(row, now)).length,
           lineup: weekLineup,
           playerUsage: Array.from(usage.entries()).map(([playerId, timesUsed]) => ({ playerId, timesUsed })),
         };
