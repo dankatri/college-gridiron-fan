@@ -1,5 +1,5 @@
 import { LINEUP_REQUIREMENTS } from '../lib/types';
-import { hasWeekStarted } from '../lib/week-lock';
+import { hasWeekStarted, isWeekComplete } from '../lib/week-lock';
 
 export type LineupSlotInput = {
   slotIndex: number;
@@ -18,11 +18,24 @@ export function countFilledSlots(slots: ReadonlyArray<{ playerId: string | null 
   return slots.filter((slot) => !!slot.playerId).length;
 }
 
+export function hasStartedGames(payload: {
+  hasStartedGames?: boolean;
+  stats?: ReadonlyArray<unknown> | null;
+  games?: ReadonlyArray<{ status: string }> | null;
+}): boolean {
+  return payload.hasStartedGames ?? (
+    (payload.stats?.length ?? 0) > 0 ||
+    payload.games?.some(game => game.status === 'in-progress' || game.status === 'final') === true
+  );
+}
+
 export function isPlayedLineup(
   lineup: { week: number; slots: ReadonlyArray<{ playerId: string | null }> },
+  gamesStarted: boolean,
   now: Date = new Date(),
 ): boolean {
-  return countFilledSlots(lineup.slots) > 0 && hasWeekStarted(lineup.week, now);
+  return countFilledSlots(lineup.slots) > 0 && hasWeekStarted(lineup.week, now) &&
+    (isWeekComplete(lineup.week, now) || gamesStarted);
 }
 
 /**

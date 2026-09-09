@@ -4,10 +4,11 @@ import { eq, like, sql } from 'drizzle-orm';
 import { fixture, isolatedDatabaseURL } from './fixture';
 import { dataCache } from '../../src/server/schema';
 import { liveStatsCacheKey, playersCacheKey, schedulesCacheKey } from '../../src/server/cache-keys';
-import { projectPlayerLog, projectPlayers, projectTeamSchedule, projectWeeklyScores } from '../../src/server/cache-projections';
+import { projectPlayerLog, projectPlayers, projectStartedWeeks, projectTeamSchedule, projectWeeklyScores } from '../../src/server/cache-projections';
+import { hasStartedGames } from '../../src/server/lineup-utils';
 
 type Stat = { playerId: string; week: number; fantasyPoints: number; passingYards: number; lastUpdated: string };
-type Payload = { week?: number; stats?: Stat[] | null; statsAvailable?: boolean };
+type Payload = { week?: number; stats?: Stat[] | null; statsAvailable?: boolean; hasStartedGames?: boolean; games?: Array<{ status: string }> };
 type Row = { key: string; data: Payload; updatedAt: Date };
 
 test('isolated SQL projection parity and returned-byte gate', async t => {
@@ -44,11 +45,23 @@ test('isolated SQL projection parity and returned-byte gate', async t => {
     const newScores = new Map((row.data.stats ?? []).map(stat => [stat.playerId, stat.fantasyPoints]));
     assert.equal(newScores.get('qb-a'), oldScores.get('qb-a'));
     assert.equal(newScores.size, 1);
+    assert.equal(hasStartedGames(row.data), hasStartedGames(full));
   }
   assert.equal(projected.rows.length, 3);
   const empty = await f.run(tx => tx.execute<Row>(projectWeeklyScores(2026, { 5: ['qb-a'], 7: ['qb-a'] })));
   assert.deepEqual(empty.rows.map(row => row.data.stats), [[], []]);
   assert.deepEqual(empty.rows.map(row => row.data.statsAvailable), [false, true]);
+  assert.deepEqual(empty.rows.map(row => row.data.hasStartedGames), [false, false]);
+  const noSelectedStats = await f.run(tx => tx.execute<Row>(projectWeeklyScores(2026, { 1: ['not-recorded'] })));
+  assert.deepEqual(noSelectedStats.rows[0].data.stats, []);
+  assert.equal(noSelectedStats.rows[0].data.hasStartedGames, true);
+  await f.run(tx => tx.update(dataCache).set({ data: { week: 7, stats: [], games: [{ status: 'in-progress' }] } })
+    .where(eq(dataCache.key, liveStatsCacheKey(2026, 7))));
+  const gameStarted = await f.run(tx => tx.execute<Row>(projectWeeklyScores(2026, { 7: ['not-recorded'] })));
+  assert.equal(gameStarted.rows[0].data.hasStartedGames, true);
+  const startedWeeks = await f.run(tx => tx.execute<{ week: number }>(projectStartedWeeks(2026, [0, 1, 5, 7])));
+  assert.deepEqual(startedWeeks.rows.map(row => row.week), [0, 1, 7]);
+  assert.deepEqual((await f.run(tx => tx.execute(projectStartedWeeks(2026, [])))).rows, []);
   const unrequested = await f.run(tx => tx.execute<Row>(projectWeeklyScores(2026, {})));
   assert.deepEqual(unrequested.rows, []);
   const before = Buffer.byteLength(JSON.stringify(legacy));

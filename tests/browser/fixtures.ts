@@ -16,7 +16,7 @@ export const user = { id: 'test-user', displayName: 'Test Member', email: 'membe
 export const league = {
   id: 'league-a', name: 'Test League', ownerId: user.id, ownerName: user.displayName,
   season: 2026, maxMembers: 20, isPublic: false, allowLateJoins: true,
-  createdAt: now, memberCount: 2, members: [
+  createdAt: now, joinedAt: now, memberCount: 2, members: [
     { userId: user.id, displayName: user.displayName, joinedAt: now, role: 'owner' },
     { userId: 'other-user', displayName: 'Other Member', joinedAt: now, role: 'member' },
   ],
@@ -72,9 +72,11 @@ export async function mockApp(page: Page) {
   const state: {
     currentUser: typeof user | null; schedulesFail: boolean; liveFail: boolean; seasonFail: boolean;
     seasonStats: SeasonStatsPayload;
+    leagues: typeof league[];
     playerPool: Player[]; lineups: typeof lineup[]; usage: Array<{ playerId: string; timesUsed: number }>;
   } = {
     currentUser: user,
+    leagues: [structuredClone(league)],
     schedulesFail: false, liveFail: false, seasonFail: false, playerPool: players,
     seasonStats: {
       season: 2026, updatedAt: now, availableWeeks: [0, 1], missingWeeks: [],
@@ -98,7 +100,7 @@ export async function mockApp(page: Page) {
       state.currentUser = { ...user, id: 'other-user', displayName: 'Other Member', email: request.postDataJSON().email };
       return respond({ user: state.currentUser });
     }
-    if (url.pathname === '/api/leagues') return respond({ leagues: [league] });
+    if (url.pathname === '/api/leagues') return respond({ leagues: state.leagues });
     if (url.pathname === '/api/players') return respond({ players: state.playerPool, updatedAt: now });
     if (url.pathname === '/api/teams') return respond({ teams: schedules.map(team => ({ school: team.teamName, conference: team.conference })), updatedAt: now });
     if (url.pathname === '/api/season-stats') return respond(

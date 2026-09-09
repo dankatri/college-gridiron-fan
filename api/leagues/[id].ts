@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db } from '../../src/server/db';
 import { leagueMembers, leagues, users } from '../../src/server/schema';
 import { requireUser } from '../../src/server/auth-utils';
@@ -38,7 +38,7 @@ export default async function handler(request: Request): Promise<Response> {
         return jsonResponse({ error: 'You are not a member of this league' }, 403);
       }
 
-      const leagueRows = await db
+      const [leagueRows, members] = await Promise.all([db
         .select({
           id: leagues.id,
           name: leagues.name,
@@ -56,14 +56,8 @@ export default async function handler(request: Request): Promise<Response> {
         .from(leagues)
         .innerJoin(users, eq(users.id, leagues.ownerId))
         .where(eq(leagues.id, leagueId))
-        .limit(1);
-
-      const league = leagueRows[0];
-      if (!league) {
-        return jsonResponse({ error: 'League not found' }, 404);
-      }
-
-      const members = await db
+        .limit(1),
+      db
         .select({
           userId: leagueMembers.userId,
           role: leagueMembers.role,
@@ -73,18 +67,19 @@ export default async function handler(request: Request): Promise<Response> {
         })
         .from(leagueMembers)
         .innerJoin(users, eq(users.id, leagueMembers.userId))
-        .where(eq(leagueMembers.leagueId, leagueId));
+        .where(eq(leagueMembers.leagueId, leagueId)),
+      ]);
 
-      const memberCountRows = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(leagueMembers)
-        .where(eq(leagueMembers.leagueId, leagueId));
+      const league = leagueRows[0];
+      if (!league) {
+        return jsonResponse({ error: 'League not found' }, 404);
+      }
 
       return jsonResponse({
         league: {
           ...league,
           members,
-          memberCount: Number(memberCountRows[0]?.count ?? members.length),
+          memberCount: members.length,
           owner: {
             id: league.ownerId,
             displayName: league.ownerName,

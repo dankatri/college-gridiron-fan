@@ -152,7 +152,7 @@ export function Leaderboard({
                             <Badge variant="secondary" className="text-xs">You</Badge>
                           )}
                         </div>
-                        <div className="text-xs text-muted-foreground">{entry.weeksPlayed} weeks played</div>
+                        <div className="text-xs text-muted-foreground">{entry.weeksPlayed} {entry.weeksPlayed === 1 ? 'week' : 'weeks'} played</div>
                       </div>
                     </div>
                   </TableCell>

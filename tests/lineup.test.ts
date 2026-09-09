@@ -31,24 +31,26 @@ test('usage is derived from filled slots across saved weeks, never empty slots',
 test('weeks played exclude empty saved lineups and include partial lineups regardless of score', () => {
   const now = new Date('2026-09-07T12:00:00Z');
   const partial = slots.map((slot, index) => ({ ...slot, playerId: index === 0 ? 'qb-1' : null }));
-  assert.equal(isPlayedLineup({ week: 0, slots: [] }, now), false);
-  assert.equal(isPlayedLineup({ week: 0, slots }, now), false);
-  assert.equal(isPlayedLineup({ week: 1, slots }, now), false);
+  assert.equal(isPlayedLineup({ week: 0, slots: [] }, true, now), false);
+  assert.equal(isPlayedLineup({ week: 0, slots }, true, now), false);
+  assert.equal(isPlayedLineup({ week: 1, slots }, true, now), false);
   for (const actualPoints of [null, 0, -2, 19]) {
     const lineup = { week: 0, slots: partial, actualPoints };
-    assert.equal(isPlayedLineup(lineup, now), true);
+    assert.equal(isPlayedLineup(lineup, true, now), true);
   }
   const saved = [{ week: 0, slots }, { week: 1, slots: partial }, { week: 2, slots: partial }];
-  assert.deepEqual(saved.filter(row => isPlayedLineup(row, now)).map(row => row.week), [1]);
-  assert.deepEqual(saved.filter(row => isPlayedLineup({ ...row, slots }, now)), []);
+  assert.deepEqual(saved.filter(row => isPlayedLineup(row, true, now)).map(row => row.week), [1]);
+  assert.deepEqual(saved.filter(row => isPlayedLineup({ ...row, slots }, true, now)), []);
 });
 
-test('a selected lineup counts from the week opening boundary, never before it', () => {
+test('opening the editing window alone does not count a selected lineup as played', () => {
   const boundary = weekBoundary(2)!;
   const lineup = { week: 2, slots: [{ ...slots[0], playerId: 'qb-1' }] };
-  assert.equal(isPlayedLineup(lineup, new Date(boundary.getTime() - 1)), false);
-  assert.equal(isPlayedLineup(lineup, boundary), true);
-  assert.equal(isPlayedLineup({ ...lineup, slots }, boundary), false);
+  assert.equal(isPlayedLineup(lineup, true, new Date(boundary.getTime() - 1)), false);
+  assert.equal(isPlayedLineup(lineup, false, boundary), false);
+  assert.equal(isPlayedLineup(lineup, true, boundary), true);
+  assert.equal(isPlayedLineup({ ...lineup, slots }, true, boundary), false);
+  assert.equal(isPlayedLineup(lineup, false, weekBoundary(3)!), true);
 });
 
 test('historical slot layouts still count toward usage without rewriting saved data', () => {

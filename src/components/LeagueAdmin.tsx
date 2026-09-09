@@ -287,7 +287,7 @@ export function LeagueAdmin({ leagueId, currentWeek, isOwner, onSaved }: LeagueA
                             </span>
                           )}
                           <span>•</span>
-                          <span>{member.weeksSet} weeks played</span>
+                          <span>{member.weeksSet} {member.weeksSet === 1 ? 'week' : 'weeks'} played</span>
                         </div>
                       </button>
                     );

@@ -1,4 +1,4 @@
-import { eq, inArray, sql } from 'drizzle-orm';
+import { asc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../src/server/db';
 import { leagueMembers, leagues, users } from '../../src/server/schema';
 import { requireUser } from '../../src/server/auth-utils';
@@ -64,18 +64,6 @@ export default async function handler(request: Request): Promise<Response> {
   if (request.method === 'GET') {
     try {
       const user = await requireUser(request);
-      const memberships = await db
-        .select({
-          leagueId: leagueMembers.leagueId,
-        })
-        .from(leagueMembers)
-        .where(eq(leagueMembers.userId, user.id));
-
-      const leagueIds = memberships.map((membership) => membership.leagueId);
-      if (leagueIds.length === 0) {
-        return jsonResponse({ leagues: [] });
-      }
-
       const leagueRows = await db
         .select({
           id: leagues.id,
@@ -89,12 +77,15 @@ export default async function handler(request: Request): Promise<Response> {
           allowLateJoins: leagues.allowLateJoins,
           createdAt: leagues.createdAt,
           ownerName: users.displayName,
+          joinedAt: leagueMembers.joinedAt,
         })
         .from(leagues)
+        .innerJoin(leagueMembers, eq(leagueMembers.leagueId, leagues.id))
         .innerJoin(users, eq(users.id, leagues.ownerId))
-        .where(inArray(leagues.id, leagueIds));
+        .where(eq(leagueMembers.userId, user.id))
+        .orderBy(asc(leagueMembers.joinedAt), asc(leagues.id));
 
-      const memberCounts = await getMemberCounts(leagueIds);
+      const memberCounts = await getMemberCounts(leagueRows.map(league => league.id));
 
       return jsonResponse({
         leagues: leagueRows.map((league) => ({

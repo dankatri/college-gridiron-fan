@@ -10,11 +10,33 @@ valid. The final configured week also has a closing boundary, without adding
 another selectable week. Owners may make audited overrides, including partial
 lineups, but cannot exceed the season usage cap.
 
-**Weeks played** counts opened weeks with at least one selected player. Missing
-or completely empty saved lineups do not count or dilute the weekly average.
-Partial lineups count, including those scoring zero or negative points; future
-weeks do not count until their window opens. Owner member summaries use the
-same rule.
+The week bar keeps completed weeks in a **Completed weeks** menu and groups
+everything after Rivalry Week, including conference championships, under
+**Post season**. The remaining regular-season weeks stay visible in one
+horizontally scrollable row. The compact mobile selector uses the same groups.
+Grouping changes at the normal week boundary without changing the selected week.
+
+**Weeks played** requires at least one selected player and a week that has
+actually begun playing, not merely opened for editing. An open week starts
+counting when its accepted live snapshot contains a game in progress, a final
+result, or recorded stats. Closed weeks retain participation even with a zero
+score or missing stats. Missing and completely empty lineups never count or
+dilute the average; partial, zero-point and negative-point lineups still count.
+Owner member summaries use the same rule.
+
+Entering **Leagues** opens the first league the signed-in user joined. Membership
+join time, not league creation time, determines that order. **Back to Leagues**
+keeps the chooser open for switching, joining or creating leagues; members with
+no leagues start there directly.
+
+The league heading and navigation render from the already-loaded membership
+summary; standings load independently, and full membership details load only
+when opening **Manage**. An account-scoped, memory-only cache reuses standings
+for 30 seconds and management details for five minutes across tab visits.
+Visible standings revalidate every minute and on focus when stale. Background
+refreshes retain the table with an updating/error indicator, but access-denied
+responses discard protected data. Logout clears the cache; lineup and membership
+changes invalidate the relevant league. Private APIs remain `private, no-store`.
 
 The league leaderboard keeps cumulative actual points and also shows
 **Winning weeks**: completed game weeks in which a member's saved lineup had

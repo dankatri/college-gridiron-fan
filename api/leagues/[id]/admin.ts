@@ -13,6 +13,7 @@ import {
 import { adminSaveLineupSchema } from '../../../src/server/lineup-input';
 import { saveLineup } from '../../../src/server/save-lineup';
 import { jsonResponse, errorResponse } from '../../../src/server/http';
+import { projectStartedWeeks } from '../../../src/server/cache-projections';
 
 export const config = {
   runtime: 'edge',
@@ -127,6 +128,11 @@ export default async function handler(request: Request): Promise<Response> {
         .from(lineups)
         .where(and(eq(lineups.leagueId, leagueId), eq(lineups.season, SEASON_YEAR)));
 
+      const startedWeeks = seasonLineups.length
+        ? new Set((await db.execute<{ week: number }>(
+          projectStartedWeeks(SEASON_YEAR, [...new Set(seasonLineups.map(row => row.week))]),
+        )).rows.map(row => row.week))
+        : new Set<number>();
       const now = new Date();
       const memberPayload = members.map((member) => {
         const forMember = seasonLineups.filter((row) => row.userId === member.userId);
@@ -139,7 +145,7 @@ export default async function handler(request: Request): Promise<Response> {
           avatarUrl: member.avatarUrl,
           role: member.userId === ownership.league.ownerId ? 'owner' : member.role,
           joinedAt: member.joinedAt,
-          weeksSet: forMember.filter(row => isPlayedLineup(row, now)).length,
+          weeksSet: forMember.filter(row => isPlayedLineup(row, startedWeeks.has(row.week), now)).length,
           lineup: weekLineup,
           playerUsage: Array.from(usage.entries()).map(([playerId, timesUsed]) => ({ playerId, timesUsed })),
         };

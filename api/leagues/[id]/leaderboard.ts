@@ -3,16 +3,24 @@ import { db } from '../../../src/server/db';
 import { dataCache, leagueMembers, lineups, users } from '../../../src/server/schema';
 import { requireUser } from '../../../src/server/auth-utils';
 import { SEASON_YEAR } from '../../../src/lib/season-config';
-import { isPlayedLineup, type LineupSlotInput } from '../../../src/server/lineup-utils';
+import { hasStartedGames } from '../../../src/server/lineup-utils';
+import { scoreLineups } from '../../../src/server/leaderboard-scoring';
 import type { PlayerStats } from '../../../src/lib/types';
 import { cacheQueryMode, projectWeeklyScores } from '../../../src/server/cache-projections';
 import { jsonResponse } from '../../../src/server/http';
 import { countWinningWeeks } from '../../../src/lib/leaderboard-wins';
 
-type LiveCachePayload = { week?: number; stats?: PlayerStats[]; statsAvailable?: boolean };
+type LiveCachePayload = {
+  week?: number;
+  stats?: PlayerStats[] | null;
+  games?: Array<{ status: string }>;
+  statsAvailable?: boolean;
+  hasStartedGames?: boolean;
+};
 type WeeklyScores = {
   byWeek: Map<number, Map<string, number>>;
   availableWeeks: Set<number>;
+  startedWeeks: Set<number>;
 };
 
 /**
@@ -33,6 +41,7 @@ async function loadWeeklyScores(requested: Record<number, string[]>): Promise<We
 
   const byWeek = new Map<number, Map<string, number>>();
   const availableWeeks = new Set<number>();
+  const startedWeeks = new Set<number>();
 
   for (const row of rows) {
     const payload = row.data as LiveCachePayload;
@@ -45,9 +54,11 @@ async function loadWeeklyScores(requested: Record<number, string[]>): Promise<We
     byWeek.set(payload.week, points);
     if (payload.statsAvailable ?? Array.isArray(payload.stats)) availableWeeks.add(payload.week);
     else availableWeeks.delete(payload.week);
+    if (hasStartedGames(payload)) startedWeeks.add(payload.week);
+    else startedWeeks.delete(payload.week);
   }
 
-  return { byWeek, availableWeeks };
+  return { byWeek, availableWeeks, startedWeeks };
 }
 
 export const config = {
@@ -81,7 +92,7 @@ export default async function handler(request: Request): Promise<Response> {
       return jsonResponse({ error: 'You are not a member of this league' }, 403);
     }
 
-    const members = await db
+    const [members, lineupRows] = await Promise.all([db
       .select({
         userId: leagueMembers.userId,
         username: users.displayName,
@@ -89,9 +100,8 @@ export default async function handler(request: Request): Promise<Response> {
       })
       .from(leagueMembers)
       .innerJoin(users, eq(users.id, leagueMembers.userId))
-      .where(eq(leagueMembers.leagueId, leagueId));
-
-    const lineupRows = await db
+      .where(eq(leagueMembers.leagueId, leagueId)),
+    db
       .select({
         userId: lineups.userId,
         week: lineups.week,
@@ -99,7 +109,8 @@ export default async function handler(request: Request): Promise<Response> {
         projectedPoints: lineups.projectedPoints,
       })
       .from(lineups)
-      .where(and(eq(lineups.leagueId, leagueId), eq(lineups.season, SEASON_YEAR)));
+      .where(and(eq(lineups.leagueId, leagueId), eq(lineups.season, SEASON_YEAR))),
+    ]);
 
     const requested: Record<number, string[]> = {};
     for (const row of lineupRows) {
@@ -108,47 +119,11 @@ export default async function handler(request: Request): Promise<Response> {
         ...row.slots.flatMap(slot => slot.playerId ? [slot.playerId] : []),
       ])];
     }
-    const { byWeek: weeklyScores, availableWeeks } = lineupRows.length
+    const { byWeek: weeklyScores, availableWeeks, startedWeeks } = lineupRows.length
       ? await loadWeeklyScores(requested)
-      : { byWeek: new Map<number, Map<string, number>>(), availableWeeks: new Set<number>() };
+      : { byWeek: new Map<number, Map<string, number>>(), availableWeeks: new Set<number>(), startedWeeks: new Set<number>() };
     const now = new Date();
-
-    type Totals = {
-      totalPoints: number;
-      weeklyPoints: Record<number, number>;
-      projectedPoints: Record<number, number>;
-      weeksScored: number;
-    };
-
-    const totals = new Map<string, Totals>();
-    const scoredWeeks = new Set<number>();
-
-    for (const row of lineupRows) {
-      const existing = totals.get(row.userId) ?? {
-        totalPoints: 0,
-        weeklyPoints: {},
-        projectedPoints: {},
-        weeksScored: 0,
-      };
-
-      existing.projectedPoints[row.week] = Number.parseFloat(row.projectedPoints ?? '0') || 0;
-
-      // Empty saved lineups are not participation, even when the week has opened.
-      if (isPlayedLineup(row, now)) {
-        const weekScores = weeklyScores.get(row.week);
-        const points = ((row.slots ?? []) as LineupSlotInput[]).reduce((sum, slot) => {
-          if (!slot.playerId) return sum;
-          return sum + (weekScores?.get(slot.playerId) ?? 0);
-        }, 0);
-
-        existing.totalPoints += points;
-        existing.weeklyPoints[row.week] = Number(points.toFixed(2));
-        existing.weeksScored += 1;
-        scoredWeeks.add(row.week);
-      }
-
-      totals.set(row.userId, existing);
-    }
+    const { totals, scoredWeeks } = scoreLineups(lineupRows, weeklyScores, startedWeeks, now);
 
     const leaderboard = members
       .map((member) => {

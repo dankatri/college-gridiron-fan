@@ -10,6 +10,8 @@ export const SEASON_YEAR = 2026;
 // Use previous season's stats for projections until current season games start
 export const PROJECTION_YEAR = 2025;
 
+export const RIVALRY_WEEK = 13;
+
 /**
  * The last week that is still part of the regular season (the conference
  * championships). Weeks 15-18 are the CFP, where a missing week means the team

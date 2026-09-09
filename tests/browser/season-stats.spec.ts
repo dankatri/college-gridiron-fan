@@ -21,7 +21,12 @@ test('selection columns and sorting use season totals even for a future selected
   await expect(page.getByRole('row').nth(1)).toContainText('Alex Finished');
   await expect(playerRow(page, 'Alex Finished').getByRole('cell').nth(5)).toHaveText('900');
   for (const week of ['W0', 'W2']) {
-    await page.getByRole('tab', { name: week, exact: true }).click();
+    if (week === 'W0') {
+      await page.getByRole('button', { name: /^Completed weeks/ }).click();
+      await page.getByRole('menuitemradio', { name: 'Week 0', exact: true }).click();
+    } else {
+      await page.getByRole('tab', { name: week, exact: true }).click();
+    }
     await expect(points('Alex Finished')).toHaveText('44.2');
     await expect(page.getByRole('columnheader', { name: 'Season pts', exact: true })).toBeVisible();
   }

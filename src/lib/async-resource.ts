@@ -20,7 +20,7 @@ export interface ResourceSnapshot<T> {
 
 export function createResource<T>(
   load: (signal: AbortSignal) => Promise<ResourceValue<T>>,
-  options: { ttlMs: number; pollMs?: number; timeoutMs?: number },
+  options: { ttlMs: number; pollMs?: number; timeoutMs?: number; clearDataOnError?: (error: Error) => boolean },
 ) {
   let snapshot: ResourceSnapshot<T> = {
     data: undefined, isLoading: false, error: null, sourceCheckedAt: null,
@@ -29,11 +29,13 @@ export function createResource<T>(
   let generation = 0;
   let request: { controller: AbortController; promise: Promise<ResourceSnapshot<T>> } | null = null;
   const listeners = new Map<() => void, boolean>();
+  const observers = new Set<() => void>();
   let timer: ReturnType<typeof setInterval> | undefined;
 
   const publish = (next: ResourceSnapshot<T>) => {
     snapshot = next;
     for (const listener of listeners.keys()) listener();
+    for (const observer of observers) observer();
   };
 
   const refresh = (force = false): Promise<ResourceSnapshot<T>> => {
@@ -77,7 +79,11 @@ export function createResource<T>(
       } catch (cause) {
         if (version === generation) {
           const error = cause instanceof Error ? cause : new Error(String(cause));
-          publish({ ...snapshot, isLoading: false, error });
+          publish({
+            ...snapshot,
+            data: options.clearDataOnError?.(error) ? undefined : snapshot.data,
+            isLoading: false, error,
+          });
         }
       } finally {
         clearTimeout(deadline);
@@ -103,6 +109,10 @@ export function createResource<T>(
 
   return {
     getSnapshot: () => snapshot,
+    observe(listener: () => void) {
+      observers.add(listener);
+      return () => { observers.delete(listener); };
+    },
     refresh,
     async read(force = false): Promise<T> {
       const result = await refresh(force);
@@ -110,7 +120,7 @@ export function createResource<T>(
       if (result.data === undefined) throw new Error('Data is unavailable. Please retry.');
       return result.data;
     },
-    invalidate(clear = false) {
+    invalidate(clear = false, revalidate = true) {
       generation++;
       request?.controller.abort(new Error('Request superseded'));
       request = null;
@@ -119,7 +129,7 @@ export function createResource<T>(
         isLoading: false, error: null,
         ...(clear ? { sourceCheckedAt: null, sourceAttemptedAt: null, contentVersion: null, sourceStatus: null } : {}),
       });
-      if (listeners.size > 0) void refresh();
+      if (revalidate && listeners.size > 0) void refresh();
     },
     subscribe(listener: () => void, poll = true) {
       const first = listeners.size === 0;

@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { League, LeaderboardEntry, WeeklyLineup } from '@/lib/types';
+import { useMemo, useState } from 'react';
+import { League, WeeklyLineup } from '@/lib/types';
 import { CreateLeague } from '@/components/CreateLeague';
 import { LeagueList } from '@/components/LeagueList';
-import { optionalFeature } from '@/components/optional-feature';
-import { Leaderboard } from '@/components/Leaderboard';
+import { LeagueView } from '@/components/LeagueView';
+import { toLeagueSummary, type ApiLeague, type LeagueViewCache } from '@/lib/league-view-data';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,13 +16,8 @@ import {
   Crown,
   Target,
   Medal,
-  ShieldCheck,
 } from '@phosphor-icons/react';
 import { toast } from 'sonner';
-
-const LeagueManagement = optionalFeature('League Management', () => import('./LeagueManagement').then(module => ({ default: module.LeagueManagement })));
-const LeagueAdmin = optionalFeature('League Admin', () => import('./LeagueAdmin').then(module => ({ default: module.LeagueAdmin })));
-const MemberLineupDialog = optionalFeature('Member Lineup', () => import('./MemberLineupDialog').then(module => ({ default: module.MemberLineupDialog })));
 
 interface LeagueDashboardProps {
   currentWeek: number;
@@ -31,73 +26,9 @@ interface LeagueDashboardProps {
   currentUsername: string;
   leagues: ApiLeague[];
   isLoadingLeagues: boolean;
+  viewCache: LeagueViewCache;
   onRefreshLeagues: () => Promise<void>;
   onLineupsChanged: () => Promise<void>;
-}
-
-type ApiLeaderboardEntry = {
-  rank: number; userId: string; username: string; avatarUrl?: string | null;
-  totalPoints: number; weeklyPoints: Record<number, number>; weeksScored?: number; winningWeeks?: number;
-};
-
-export type ApiLeague = {
-  id: string;
-  name: string;
-  description?: string | null;
-  ownerId: string;
-  ownerName?: string;
-  season: number;
-  joinCode?: string;
-  maxMembers: number;
-  isPublic: number | boolean;
-  allowLateJoins: number | boolean;
-  createdAt: string;
-  memberCount?: number;
-  members?: Array<{
-    userId: string;
-    displayName: string;
-    avatarUrl?: string | null;
-    role?: 'owner' | 'member';
-    joinedAt: string;
-  }>;
-};
-
-function toLeagueSummary(apiLeague: ApiLeague): League {
-  return {
-    id: apiLeague.id,
-    name: apiLeague.name,
-    description: apiLeague.description ?? undefined,
-    ownerId: apiLeague.ownerId,
-    ownerName: apiLeague.ownerName ?? 'Owner',
-    joinCode: apiLeague.joinCode,
-    memberCount: apiLeague.memberCount ?? 0,
-    members: [],
-    settings: {
-      maxMembers: apiLeague.maxMembers,
-      isPublic: Boolean(apiLeague.isPublic),
-      allowLateJoins: Boolean(apiLeague.allowLateJoins),
-      scoringMultiplier: 1,
-    },
-    createdAt: new Date(apiLeague.createdAt),
-    season: apiLeague.season,
-  };
-}
-
-function toLeagueDetail(apiLeague: ApiLeague): League {
-  return {
-    ...toLeagueSummary(apiLeague),
-    members: (apiLeague.members ?? []).map((member, index) => ({
-      userId: member.userId,
-      username: member.displayName,
-      avatarUrl: member.avatarUrl ?? undefined,
-      role: member.role ?? 'member',
-      joinedAt: new Date(member.joinedAt),
-      isActive: true,
-      totalPoints: 0,
-      weeklyPoints: {},
-      rank: index + 1,
-    })),
-  };
 }
 
 export function LeagueDashboard({
@@ -107,80 +38,22 @@ export function LeagueDashboard({
   currentUsername,
   leagues,
   isLoadingLeagues,
+  viewCache,
   onRefreshLeagues: fetchMyLeagues,
   onLineupsChanged,
 }: LeagueDashboardProps) {
   const [activeTab, setActiveTab] = useState<'my-leagues' | 'browse' | 'create'>('my-leagues');
-  const [selectedLeague, setSelectedLeague] = useState<League | null>(null);
+  const [selectedLeagueId, setSelectedLeagueId] = useState<string | null | undefined>(undefined);
   const myLeagues = useMemo(() => leagues.map(toLeagueSummary), [leagues]);
-  const [leaderboardRows, setLeaderboardRows] = useState<ApiLeaderboardEntry[]>([]);
-  const detailRequest = useRef(0);
-  const leaderboardRequest = useRef(0);
-  const selectedId = useRef<string | null>(null);
-  const [viewedMember, setViewedMember] = useState<{ userId: string; username: string; avatarUrl?: string } | null>(null);
+  const selectedLeague = selectedLeagueId === undefined
+    ? myLeagues[0]
+    : myLeagues.find(league => league.id === selectedLeagueId);
 
   const [joinCode, setJoinCode] = useState('');
   const [isJoiningLeague, setIsJoiningLeague] = useState(false);
 
-  useEffect(() => () => { selectedId.current = null; detailRequest.current++; leaderboardRequest.current++; }, []);
-
-  const fetchLeagueDetails = useCallback(async (leagueId: string) => {
-    const requestId = ++detailRequest.current;
-    const response = await fetch(`/api/leagues/${leagueId}`, {
-      method: 'GET',
-      credentials: 'include',
-      signal: AbortSignal.timeout(20_000),
-    });
-    const payload = await response.json();
-    if (requestId !== detailRequest.current || selectedId.current !== leagueId) return;
-    if (!response.ok || !payload.league) {
-      throw new Error(payload.error || 'Failed to load league');
-    }
-    const league = toLeagueDetail(payload.league as ApiLeague);
-    setSelectedLeague(league);
-  }, []);
-
-  const fetchLeaderboard = useCallback(async (leagueId: string) => {
-    const requestId = ++leaderboardRequest.current;
-    const response = await fetch(`/api/leagues/${leagueId}/leaderboard`, {
-      method: 'GET',
-      credentials: 'include',
-      signal: AbortSignal.timeout(20_000),
-    });
-    const payload = await response.json();
-    if (requestId !== leaderboardRequest.current || selectedId.current !== leagueId) return;
-    if (!response.ok) {
-      throw new Error(payload.error || 'Failed to load leaderboard');
-    }
-
-    setLeaderboardRows((payload.leaderboard ?? []) as ApiLeaderboardEntry[]);
-  }, []);
-
-  const leaderboardEntries = useMemo<LeaderboardEntry[]>(() => leaderboardRows.map((entry) => {
-      // The server only reports weeks whose games have started, so these
-      // averages never blend a real score with an unplayed week's projection.
-      const weekPoints = Object.values(entry.weeklyPoints ?? {});
-      const weeksPlayed = entry.weeksScored ?? weekPoints.length;
-      const weeklyAverage = weeksPlayed > 0 ? entry.totalPoints / weeksPlayed : 0;
-      const pointsThisWeek = entry.weeklyPoints?.[currentWeek] ?? 0;
-      return {
-        rank: entry.rank,
-        userId: entry.userId,
-        username: entry.username,
-        avatarUrl: entry.avatarUrl ?? undefined,
-        totalPoints: entry.totalPoints,
-        winningWeeks: entry.winningWeeks ?? 0,
-        weeklyAverage,
-        bestWeek: weekPoints.length > 0 ? Math.max(...weekPoints) : 0,
-        worstWeek: weekPoints.length > 0 ? Math.min(...weekPoints) : 0,
-        weeksPlayed,
-        pointsThisWeek,
-        trend: 'same' as const,
-        trendChange: 0,
-      };
-    }), [leaderboardRows, currentWeek]);
-
   const handleLeagueCreated = (league: League) => {
+    setSelectedLeagueId(null);
     void fetchMyLeagues();
     setActiveTab('my-leagues');
   };
@@ -191,6 +64,7 @@ export function LeagueDashboard({
       return;
     }
 
+    setSelectedLeagueId(null);
     setIsJoiningLeague(true);
     try {
       const response = await fetch('/api/leagues/join', {
@@ -217,123 +91,29 @@ export function LeagueDashboard({
     }
   };
 
-  const handleSelectLeague = async (league: League) => {
-    selectedId.current = league.id;
-    setViewedMember(null);
-    setLeaderboardRows([]);
-    try {
-      await Promise.all([fetchLeagueDetails(league.id), fetchLeaderboard(league.id)]);
-    } catch (error) {
-      if (selectedId.current !== league.id) return;
-      const message = error instanceof Error ? error.message : 'Failed to load league';
-      toast.error(message);
-    }
+  const handleSelectLeague = (league: League) => setSelectedLeagueId(league.id);
+
+  const handleBackToLeagues = () => {
+    setSelectedLeagueId(null);
+    if (!isLoadingLeagues) void fetchMyLeagues();
   };
 
-  if (selectedLeague) {
-    const isLeagueOwner = selectedLeague.ownerId === currentUserId;
-
+  if (isLoadingLeagues && selectedLeagueId !== null && !selectedLeague) {
     return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-bold flex items-center gap-2">
-              <Crown size={24} className="text-accent" />
-              {selectedLeague.name}
-            </h2>
-            <p className="text-muted-foreground">
-              {(selectedLeague.memberCount ?? selectedLeague.members.length)} members • Season {selectedLeague.season}
-            </p>
-          </div>
-          <Button
-            variant="outline"
-            onClick={() => {
-              selectedId.current = null;
-              detailRequest.current++;
-              leaderboardRequest.current++;
-              setSelectedLeague(null);
-              fetchMyLeagues();
-            }}
-          >
-            Back to Leagues
-          </Button>
-        </div>
+      <Card>
+        <CardContent className="flex items-center justify-between gap-4 py-8">
+          <p role="status" className="text-muted-foreground">Loading your leagues...</p>
+          <Button variant="outline" onClick={handleBackToLeagues}>Back to Leagues</Button>
+        </CardContent>
+      </Card>
+    );
+  }
 
-        <Tabs defaultValue="leaderboard" className="w-full">
-          <TabsList className={`grid w-full ${isLeagueOwner ? 'grid-cols-3' : 'grid-cols-2'}`}>
-            <TabsTrigger value="leaderboard" className="flex items-center gap-1 sm:gap-2">
-              <Trophy size={16} />
-              <span className="hidden sm:inline">Leaderboard</span>
-            </TabsTrigger>
-            <TabsTrigger value="manage" className="flex items-center gap-1 sm:gap-2">
-              <Users size={16} />
-              <span className="hidden sm:inline">Manage</span>
-            </TabsTrigger>
-            {isLeagueOwner && (
-              <TabsTrigger value="admin" className="flex items-center gap-1 sm:gap-2">
-                <ShieldCheck size={16} />
-                <span className="hidden sm:inline">Admin</span>
-              </TabsTrigger>
-            )}
-          </TabsList>
-
-          <TabsContent value="leaderboard" className="mt-6">
-            <Leaderboard
-              entries={leaderboardEntries}
-              currentWeek={currentWeek}
-              currentUserId={currentUserId}
-              onSelectMember={(entry) => setViewedMember({
-                userId: entry.userId,
-                username: entry.username,
-                avatarUrl: entry.avatarUrl,
-              })}
-            />
-          </TabsContent>
-
-          <TabsContent value="manage" className="mt-6">
-            <LeagueManagement
-              league={selectedLeague}
-              currentUserId={currentUserId}
-              onRefreshLeague={async () => {
-                await fetchLeagueDetails(selectedLeague.id);
-                await fetchLeaderboard(selectedLeague.id);
-                await fetchMyLeagues();
-              }}
-              onLeftLeague={() => {
-                selectedId.current = null;
-                setSelectedLeague(null);
-                fetchMyLeagues();
-              }}
-              onDeletedLeague={() => {
-                selectedId.current = null;
-                setSelectedLeague(null);
-                fetchMyLeagues();
-              }}
-            />
-          </TabsContent>
-
-          {isLeagueOwner && (
-            <TabsContent value="admin" className="mt-6">
-              <LeagueAdmin
-                leagueId={selectedLeague.id} currentWeek={currentWeek} isOwner={isLeagueOwner}
-                onSaved={async () => {
-                  await Promise.all([fetchLeaderboard(selectedLeague.id), onLineupsChanged()]);
-                }}
-              />
-            </TabsContent>
-          )}
-        </Tabs>
-
-        {viewedMember && <MemberLineupDialog
-          key={`${selectedLeague.id}:${viewedMember.userId}:${currentWeek}`}
-          leagueId={selectedLeague.id}
-          member={viewedMember}
-          week={currentWeek}
-          currentUserId={currentUserId}
-          open={viewedMember !== null}
-          onOpenChange={(next) => { if (!next) setViewedMember(null); }}
-        />}
-      </div>
+  if (selectedLeague) {
+    return (
+      <LeagueView key={selectedLeague.id} league={selectedLeague} currentWeek={currentWeek}
+        currentUserId={currentUserId} viewCache={viewCache} onBack={handleBackToLeagues}
+        onRefreshLeagues={fetchMyLeagues} onLineupsChanged={onLineupsChanged} />
     );
   }
 
@@ -377,17 +157,20 @@ export function LeagueDashboard({
         </CardContent>
       </Card>
 
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'my-leagues' | 'browse' | 'create')}>
+      <Tabs value={activeTab} onValueChange={(value) => {
+        setSelectedLeagueId(null);
+        setActiveTab(value as 'my-leagues' | 'browse' | 'create');
+      }}>
         <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="my-leagues" className="flex items-center gap-1 sm:gap-2">
+          <TabsTrigger value="my-leagues" aria-label="My leagues" className="flex items-center gap-1 sm:gap-2">
             <Users size={16} />
             <span className="hidden sm:inline">My Leagues ({myLeagues.length})</span>
           </TabsTrigger>
-          <TabsTrigger value="browse" className="flex items-center gap-1 sm:gap-2">
+          <TabsTrigger value="browse" aria-label="Browse leagues" className="flex items-center gap-1 sm:gap-2">
             <Target size={16} />
             <span className="hidden sm:inline">Browse</span>
           </TabsTrigger>
-          <TabsTrigger value="create" className="flex items-center gap-1 sm:gap-2">
+          <TabsTrigger value="create" aria-label="Create league" className="flex items-center gap-1 sm:gap-2">
             <Plus size={16} />
             <span className="hidden sm:inline">Create</span>
           </TabsTrigger>

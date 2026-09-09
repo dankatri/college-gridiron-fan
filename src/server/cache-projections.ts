@@ -8,12 +8,33 @@ export function cacheQueryMode(name: 'LEADERBOARD_QUERY_MODE' | 'PLAYER_LOG_QUER
   return mode;
 }
 
+function startedGamesExpression() {
+  return sql`(
+    coalesce(jsonb_array_length(nullif(c.data->'stats', 'null'::jsonb)), 0) > 0
+    or exists (
+      select 1 from jsonb_array_elements(coalesce(nullif(c.data->'games', 'null'::jsonb), '[]'::jsonb)) game
+      where game->>'status' in ('in-progress', 'final')
+    )
+  )`;
+}
+
+export function projectStartedWeeks(year: number, weeks: number[]) {
+  return sql`
+    select c.data->'week' as week
+    from data_cache c
+    where c.key like ${`live-stats-${year}-week-%`}
+      and ${JSON.stringify(weeks)}::jsonb @> jsonb_build_array(c.data->'week')
+      and ${startedGamesExpression()}
+    order by c.key`;
+}
+
 export function projectWeeklyScores(year: number, requested: Record<number, string[]>) {
   const selections = JSON.stringify(requested);
   return sql`
     select c.key, c.updated_at as "updatedAt",
       jsonb_build_object('week', c.data->'week',
         'statsAvailable', coalesce(jsonb_typeof(c.data->'stats') = 'array', false),
+        'hasStartedGames', ${startedGamesExpression()},
         'stats', (
         select coalesce(jsonb_agg(jsonb_build_object(
           'playerId', s.value->'playerId', 'fantasyPoints', s.value->'fantasyPoints'

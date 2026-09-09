@@ -32,7 +32,7 @@ import { PlayerTable } from '@/components/PlayerTable';
 import { LineupPositionGroup } from '@/components/LineupPositionGroup';
 import { LineupSummary } from '@/components/LineupSummary';
 import { WeekNavigation } from '@/components/WeekNavigation';
-import type { ApiLeague } from '@/components/LeagueDashboard';
+import { createLeagueViewCache, type ApiLeague } from '@/lib/league-view-data';
 import { optionalFeature } from '@/components/optional-feature';
 import { schedulesResource } from '@/lib/schedule-data';
 import { ByeWeekAlert } from '@/components/ByeWeekAlert';
@@ -57,6 +57,7 @@ import {
 import { toast } from 'sonner';
 
 type ApiLeagueSummary = ApiLeague;
+const EMPTY_LEAGUES: ApiLeagueSummary[] = [];
 
 const LiveScoringDashboard = optionalFeature('Live Scoring', () => import('@/components/LiveScoringDashboard').then(module => ({ default: module.LiveScoringDashboard })));
 const LeagueDashboard = optionalFeature('Leagues', () => import('@/components/LeagueDashboard').then(module => ({ default: module.LeagueDashboard })));
@@ -79,7 +80,7 @@ function App() {
   const [activeTab, setActiveTab] = useState<'lineup' | 'schedule' | 'scoring' | 'leagues'>('lineup');
   const [savedLineupRows, setSavedLineupRows] = useState<ApiLineup[]>([]);
   const [playerUsage, setPlayerUsage] = useState<PlayerUsage[]>([]);
-  const [leagues, setLeagues] = useState<ApiLeagueSummary[]>([]);
+  const [leagueList, setLeagueList] = useState<{ userId: string | null; data: ApiLeagueSummary[] }>({ userId: null, data: [] });
   const [isLoadingLeagues, setIsLoadingLeagues] = useState(false);
   const [lineupSourceLeagueId, setLineupSourceLeagueId] = useState<string | null>(null);
   const [playerSheetOpen, setPlayerSheetOpen] = useState(false);
@@ -87,6 +88,11 @@ function App() {
   const savePending = useRef(false);
 
   const { user: currentUser, isLoading, sessionError, retrySession, registerPasskey, signOut } = useAuth();
+  const sessionUserId = useRef(currentUser?.id);
+  sessionUserId.current = currentUser?.id;
+  const leagues = leagueList.userId === currentUser?.id ? leagueList.data : EMPTY_LEAGUES;
+  const leagueViews = useMemo(() => createLeagueViewCache(currentUser?.id ?? null), [currentUser?.id]);
+  useEffect(() => () => leagueViews.clear(), [leagueViews]);
   const isAuthenticated = !!currentUser;
   const { players, isLoading: isLoadingPlayers, error: playersError } = usePlayers(isAuthenticated);
   const hasPasskey = !!currentUser?.hasPasskey;
@@ -156,7 +162,8 @@ function App() {
   );
 
   const fetchLeagues = useCallback(async () => {
-    if (!isAuthenticated) return;
+    if (!currentUser?.id) return;
+    const userId = currentUser.id;
     const requestId = ++leagueRequest.current;
     setIsLoadingLeagues(true);
     try {
@@ -166,8 +173,9 @@ function App() {
         throw new Error(payload.error || 'Failed to load leagues');
       }
       const fetchedLeagues = (payload.leagues ?? []) as ApiLeagueSummary[];
-      if (requestId !== leagueRequest.current) return;
-      setLeagues(fetchedLeagues);
+      if (requestId !== leagueRequest.current || userId !== sessionUserId.current) return;
+      leagueViews.retain(fetchedLeagues.map(league => league.id));
+      setLeagueList({ userId, data: fetchedLeagues });
 
       if (fetchedLeagues.length === 0) {
         setCurrentLeagueId(null);
@@ -183,7 +191,7 @@ function App() {
     } finally {
       if (requestId === leagueRequest.current) setIsLoadingLeagues(false);
     }
-  }, [isAuthenticated, setCurrentLeagueId]);
+  }, [currentUser?.id, leagueViews, setCurrentLeagueId]);
 
   const fetchAllLineups = useCallback(async () => {
     const requestId = ++lineupRequest.current;
@@ -344,6 +352,7 @@ function App() {
         throw new Error(payload.error || 'Failed to save lineup');
       }
       if (requestedScope !== scopeRef.current) return;
+      leagueViews.invalidateStandings(currentLeagueId);
 
       const saved = (payload.lineup ?? null) as ApiLineup | null;
       if (saved) {
@@ -391,12 +400,15 @@ function App() {
       return;
     }
     setPlayerSheetOpen(false);
+    leagueRequest.current++;
+    lineupRequest.current++;
+    leagueViews.clear();
     setCurrentLineup(createEmptyLineup());
     setCurrentWeek(1);
     setActiveTab('lineup');
     setSavedLineupRows([]);
     setPlayerUsage([]);
-    setLeagues([]);
+    setLeagueList({ userId: null, data: [] });
     toast.success('Logged out successfully');
   };
 
@@ -910,12 +922,14 @@ function App() {
 
           <TabsContent value="leagues" className="mt-6">
             <LeagueDashboard
+              key={currentUser?.id}
               currentWeek={currentWeek}
               weeklyLineups={weeklyLineups}
               currentUserId={currentUser?.id || ''}
               currentUsername={currentUser?.displayName || ''}
               leagues={leagues}
               isLoadingLeagues={isLoadingLeagues}
+              viewCache={leagueViews}
               onRefreshLeagues={fetchLeagues}
               onLineupsChanged={fetchAllLineups}
             />
