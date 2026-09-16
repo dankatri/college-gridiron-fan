@@ -66,7 +66,7 @@ test('mobile selection cards show position-specific key stats', async ({ page })
   await page.getByRole('tab', { name: 'Running Backs', exact: true }).click();
   await expect(picker.getByText('2 TDs / 88 yds', { exact: true })).toBeVisible();
   await page.getByRole('tab', { name: 'Wide Receivers', exact: true }).click();
-  await expect(picker.getByText('1 TDs / 65 yds', { exact: true })).toBeVisible();
+  await expect(picker.getByText('1 TD / 65 yds', { exact: true })).toBeVisible();
   expect(app.errors).toEqual([]);
 });
 
