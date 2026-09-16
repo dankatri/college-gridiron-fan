@@ -31,6 +31,7 @@ import {
 
 type SortKey = SeasonStatKey;
 type SortDirection = 'asc' | 'desc';
+interface ExtraStat { label: string; value?: number }
 const PlayerDetailDialog = optionalFeature('Player Details', () => import('./PlayerDetailDialog').then(module => ({ default: module.PlayerDetailDialog })));
 
 /**
@@ -315,7 +316,7 @@ export function PlayerTable({
   // Compact, position-specific key stats for the mobile card view
   const pluralTD = (count: number) => (count === 1 ? 'TD' : 'TDs');
 
-  const tdYardsSummary = (tds?: number, yds?: number, extra?: { label: string; value?: number }): string | undefined => {
+  const tdYardsSummary = (tds?: number, yds?: number, extra?: ExtraStat): string | undefined => {
     if (tds === undefined || yds === undefined || (extra && extra.value === undefined)) return undefined;
     const base = `${tds} ${pluralTD(tds)} / ${yds.toLocaleString()} yds`;
     return extra ? `${base} / ${extra.value} ${extra.label}` : base;
