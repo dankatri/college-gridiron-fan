@@ -315,9 +315,10 @@ export function PlayerTable({
   // Compact, position-specific key stats for the mobile card view
   const pluralTD = (count: number) => (count === 1 ? 'TD' : 'TDs');
 
-  const tdYardsSummary = (tds?: number, yds?: number): string | undefined => {
-    if (tds === undefined || yds === undefined) return undefined;
-    return `${tds} ${pluralTD(tds)} / ${yds.toLocaleString()} yds`;
+  const tdYardsSummary = (tds?: number, yds?: number, extra?: { label: string; value?: number }): string | undefined => {
+    if (tds === undefined || yds === undefined || (extra && extra.value === undefined)) return undefined;
+    const base = `${tds} ${pluralTD(tds)} / ${yds.toLocaleString()} yds`;
+    return extra ? `${base} / ${extra.value} ${extra.label}` : base;
   };
 
   const keyStatsDisplay = (player: Player): string | undefined => {
@@ -325,13 +326,10 @@ export function PlayerTable({
     const value = (key: SeasonStatKey) => seasonStatValue(stats, key, season.complete);
 
     switch (player.position) {
-      case 'QB': {
-        const tds = value('passingTDs');
-        const yds = value('passingYards');
-        const ints = value('interceptions');
-        const summary = tdYardsSummary(tds, yds);
-        return summary === undefined || ints === undefined ? undefined : `${summary} / ${ints} INT`;
-      }
+      case 'QB':
+        return tdYardsSummary(value('passingTDs'), value('passingYards'), {
+          label: 'INT', value: value('interceptions'),
+        });
       case 'RB':
         return tdYardsSummary(value('rushingTDs'), value('rushingYards'));
       case 'WR':
