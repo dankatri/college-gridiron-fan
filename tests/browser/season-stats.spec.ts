@@ -51,6 +51,25 @@ test('mobile selection cards use season totals rather than player projections', 
   expect(app.errors).toEqual([]);
 });
 
+test('mobile selection cards show position-specific key stats', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 900 });
+  const app = await mockApp(page);
+  app.state.seasonStats.stats = [
+    actualStats('qb-future', { fantasyPoints: 60, passingTDs: 3, passingYards: 245, interceptions: 1 }),
+    actualStats('rb-future', { fantasyPoints: 20, rushingTDs: 2, rushingYards: 88 }),
+    actualStats('wr-future', { fantasyPoints: 15, receivingTDs: 1, receivingYards: 65 }),
+  ];
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Browse Available Players', exact: true }).click();
+  const picker = page.getByRole('dialog', { name: 'Available Players', exact: true });
+  await expect(picker.getByText('3 TDs / 245 yds / 1 INT', { exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: 'Running Backs', exact: true }).click();
+  await expect(picker.getByText('2 TDs / 88 yds', { exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: 'Wide Receivers', exact: true }).click();
+  await expect(picker.getByText('1 TDs / 65 yds', { exact: true })).toBeVisible();
+  expect(app.errors).toEqual([]);
+});
+
 test('unavailable season stats never become projections or zero and can be retried', async ({ page }) => {
   const app = await mockApp(page);
   app.state.seasonFail = true;

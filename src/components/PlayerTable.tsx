@@ -312,6 +312,36 @@ export function PlayerTable({
     };
   };
 
+  // Compact, position-specific key stats for the mobile card view
+  const keyStatsDisplay = (player: Player): string | undefined => {
+    const stats = season.actuals.get(player.id);
+    const value = (key: SeasonStatKey) => seasonStatValue(stats, key, season.complete);
+
+    switch (player.position) {
+      case 'QB': {
+        const tds = value('passingTDs');
+        const yds = value('passingYards');
+        const ints = value('interceptions');
+        if (tds === undefined && yds === undefined && ints === undefined) return undefined;
+        return `${tds ?? 0} TDs / ${(yds ?? 0).toLocaleString()} yds / ${ints ?? 0} INT`;
+      }
+      case 'RB': {
+        const tds = value('rushingTDs');
+        const yds = value('rushingYards');
+        if (tds === undefined && yds === undefined) return undefined;
+        return `${tds ?? 0} TDs / ${(yds ?? 0).toLocaleString()} yds`;
+      }
+      case 'WR': {
+        const tds = value('receivingTDs');
+        const yds = value('receivingYards');
+        if (tds === undefined && yds === undefined) return undefined;
+        return `${tds ?? 0} TDs / ${(yds ?? 0).toLocaleString()} yds`;
+      }
+      default:
+        return undefined;
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -426,6 +456,7 @@ export function PlayerTable({
             const playerStatus = getPlayerStatus(player);
             const canSelect = !isLocked && (playerStatus.status === 'available' || playerStatus.status === 'used');
             const points = seasonPointsDisplay(player);
+            const keyStats = keyStatsDisplay(player);
 
             return (
               <div
@@ -500,6 +531,12 @@ export function PlayerTable({
                     isLoading={isLoadingMatchups}
                   />
                 </div>
+
+                {keyStats && (
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {keyStats}
+                  </div>
+                )}
               </div>
             );
           })}
