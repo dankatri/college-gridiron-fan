@@ -115,12 +115,12 @@ function App() {
   const lineupRequest = useRef(0);
   const draftBaseline = useRef<{ key: string; signature: string } | null>(null);
 
-  // Past weeks show what a lineup really scored instead of its projection.
+  // Show recorded points for the selected week.
   const { actuals: weekActuals, hasStarted: weekHasStarted, hasData: hasActuals, isReliable: actualsReliable, error: actualsError } =
     useWeekActuals(isAuthenticated ? currentWeek : undefined);
   const { matchups: weekMatchups } = useWeekMatchups(isAuthenticated ? currentWeek : undefined);
   // Players lock one by one as their games kick off; the week itself stays
-  // open for edits until its following Wednesday boundary.
+  // open until all games finish or the following Wednesday boundary.
   const weekLocks = useWeekLocks(isAuthenticated ? currentWeek : undefined);
   const showWeekActuals = weekHasStarted;
   const weekName = `Week ${currentWeek}`;
@@ -128,7 +128,7 @@ function App() {
   const lineupSlotPoints = useCallback(
     (slot: LineupSlot) =>
       slot.player
-        ? describeWeekPoints(slot.player, {
+        ? describeWeekPoints({
             showActuals: showWeekActuals,
             stats: weekActuals.get(slot.player.id),
             game: weekMatchups.get(slot.player.team.toLowerCase())?.game,
@@ -155,10 +155,10 @@ function App() {
           lineup: hydrateSlots(row.slots, playersById),
           totalPoints: Number.parseFloat(row.projectedPoints ?? '0') || 0,
           actualPoints: row.actualPoints ? Number.parseFloat(row.actualPoints) : undefined,
-          isLocked: !!row.lockedAt || isWeekComplete(row.week),
+          isLocked: !!row.lockedAt || isWeekComplete(row.week, new Date(), weekLocks.gameFinals),
         }))
         .sort((a, b) => a.week - b.week),
-    [savedLineupRows, playersById],
+    [savedLineupRows, playersById, weekLocks.gameFinals],
   );
 
   const fetchLeagues = useCallback(async () => {
@@ -557,7 +557,7 @@ function App() {
         </div>
 
         <div className="space-y-2">
-          <WeekNavigation currentWeek={currentWeek} onWeekChange={setCurrentWeek} />
+          <WeekNavigation currentWeek={currentWeek} onWeekChange={setCurrentWeek} gameFinals={weekLocks.gameFinals} />
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             {(() => {
               const seasonStart = weekBoundary(1)!;
@@ -924,6 +924,7 @@ function App() {
             <LeagueDashboard
               key={currentUser?.id}
               currentWeek={currentWeek}
+              gameFinals={weekLocks.gameFinals}
               weeklyLineups={weeklyLineups}
               currentUserId={currentUser?.id || ''}
               currentUsername={currentUser?.displayName || ''}

@@ -33,9 +33,10 @@ export function isPlayedLineup(
   lineup: { week: number; slots: ReadonlyArray<{ playerId: string | null }> },
   gamesStarted: boolean,
   now: Date = new Date(),
+  gameFinals?: ReadonlySet<number>,
 ): boolean {
   return countFilledSlots(lineup.slots) > 0 && hasWeekStarted(lineup.week, now) &&
-    (isWeekComplete(lineup.week, now) || gamesStarted);
+    (isWeekComplete(lineup.week, now, gameFinals) || gamesStarted);
 }
 
 /**

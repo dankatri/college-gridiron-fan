@@ -4,9 +4,12 @@ Build a weekly lineup of two quarterbacks, two running backs and two wide
 receivers. Partial lineups can be saved. Each player may be used three times
 per league/season and locks when their first game in that app week kicks off.
 
-The week's editing and member-lineup reveal boundary is the following
-configured Wednesday, not the moment the last known game finishes. Week 0 is
-valid. The final configured week also has a closing boundary, without adding
+An opened week automatically closes for member editing and reveals member
+lineups when every non-bye game in its accepted schedule is confirmed final,
+with a stable game ID and both scores present. Every team representation must
+agree; empty or unavailable schedules cannot close a week early. The following
+configured Wednesday remains the fallback cutoff. Week 0 is valid.
+The final configured week also has a closing boundary, without adding
 another selectable week. Owners may make audited overrides, including partial
 lineups, but cannot exceed the season usage cap.
 
@@ -14,7 +17,9 @@ The week bar keeps completed weeks in a **Completed weeks** menu and groups
 everything after Rivalry Week, including conference championships, under
 **Post season**. The remaining regular-season weeks stay visible in one
 horizontally scrollable row. The compact mobile selector uses the same groups.
-Grouping changes at the normal week boundary without changing the selected week.
+Grouping changes when the slate finishes or the normal boundary passes, without
+changing the selected week. Score corrections continue after early closure;
+ending a week does not freeze its recorded points.
 
 **Weeks played** requires at least one selected player and a week that has
 actually begun playing, not merely opened for editing. An open week starts
@@ -44,6 +49,14 @@ the highest actual score. Tied leaders each receive a win. Open/future weeks,
 weeks without an available scoring snapshot, and members without a lineup for
 that week do not receive wins. Counts are recalculated from the accepted scores
 on each leaderboard request, including later corrections and audited lineup edits.
+
+Projected points are temporarily removed from all user-facing player, lineup,
+live-scoring and league views, including comparisons and progress bars against
+predictions. Pending players show **Awaiting stats**, not an estimated score;
+unavailable data is not presented as a confirmed zero. Actual scores and season
+totals are unchanged. Historical player totals are labelled with their source
+year. Existing projection fields and storage are retained for compatibility,
+but are not displayed or used as fallback scores.
 
 The player selection list shows season-to-date actual points and statistics,
 independent of the selected week; schedule, usage and kickoff locks still follow
@@ -190,7 +203,7 @@ works. Do not merge production-writer changes while those gates are blocked.
 | Resource | Browser freshness | Shared HTTP caching |
 | --- | --- | --- |
 | Player catalogue | 30 minutes; filters/search/sorts stay local | 1 hour + 24-hour stale window |
-| Schedules | 45 seconds; 60-second active-week polling | 60 seconds + 300-second stale window |
+| Schedules | 45 seconds; one 60-second visible poll until the season cutoff | 60 seconds + 300-second stale window |
 | Per-week live facts | 45 seconds; 60-second active-week polling | 60 seconds + 300-second stale window |
 | Season player totals | 45 seconds; one shared 60-second poll | 60 seconds + 300-second stale window |
 | Team logo directory | 1 hour; reused across schedule weeks | 1 hour + 24-hour stale window |
@@ -228,6 +241,26 @@ that hash as a body validator would be incorrect. Keep shared caching and
 measure conditional-request benefits before adding more database checks.
 
 ## Source refresh and recovery
+
+Schedule publication preserves the evidence used to close weeks: completed
+games cannot disappear, change app weeks, revert to unfinished, or lose their
+final scores. Known open-week fixtures cannot silently disappear; a reschedule
+must retain the same game ID. An already-final slate cannot change membership
+before its calendar cutoff. Failed or incomplete refresh attempts retain the
+accepted schedule, so they do not reopen member editing. Numeric score
+corrections remain allowed, and live scoring continues refreshing independently.
+
+When deploying this rule, first self-check the accepted schedules with
+`assertScheduleCompleteness(current, current, now)`, drain refresh runs using
+older code, and run the hardened schedule refresh before enabling the new app.
+Compare the known fixture IDs with the source, not just game counts.
+If a legitimate late fixture trips the membership guard, keep the last-good
+snapshot and inspect the failed refresh/source metadata. Do not clear the cache
+or reopen revealed lineups. Membership reconciliation is permitted after the
+normal cutoff, when calendar locking prevents reopening; rerun the refresh then.
+Completed-game ID changes/removals require an explicitly reviewed source
+reconciliation, preserving closed-week editing restrictions and an audit of the
+old/new IDs. Neither discovery sweeps nor manual backfills bypass these guards.
 
 The daily job refreshes projections, rosters, schedules and live facts.
 Projection/player failures do not suppress independent schedule/live work.

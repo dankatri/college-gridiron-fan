@@ -20,9 +20,8 @@ export interface WeekActuals {
 const EMPTY = new Map<string, PlayerStats>();
 
 /**
- * Load a week's actual fantasy scores so past weeks can show what players
- * really did instead of a projection. Weeks that have not kicked off yet are
- * never fetched, since there is nothing to show.
+ * Load actual fantasy scores for an opened week. Future weeks are not fetched
+ * before their editing window opens.
  */
 export function useWeekActuals(week?: number): WeekActuals {
   const now = useMinuteClock();

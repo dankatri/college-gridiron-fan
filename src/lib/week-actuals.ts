@@ -1,30 +1,27 @@
-import type { Player, PlayerStats, WeeklyGame } from './types';
+import type { PlayerStats, WeeklyGame } from './types';
 
 /**
  * How a player's points for a single week should be read.
  *
  * - `actual`  the player recorded a stat line, so we show what they scored
  * - `zero`    their game is final but they never appeared in the box score
- * - `pending` their game has not been played yet, so the projection still applies
+ * - `pending` no stat line is available yet for an unfinished game
  * - `none`    they have no game that week at all (bye, or an idle Week 0 team)
+ * - `unavailable` scoring or schedule data is missing or unreliable
  */
 export type WeekPointsKind = 'actual' | 'zero' | 'pending' | 'none' | 'unavailable';
 
 export interface WeekPoints {
   kind: WeekPointsKind;
-  /** Undefined only when kind is `none`. */
+  /** Present only for recorded scores and confirmed zero scores. */
   points?: number;
 }
 
 /**
- * Decide whether to show a player's real score or their projection for a week.
- *
- * A week can be part-played (Week 0 spreads across a full week of kickoffs), so
- * this resolves per player rather than per week: anyone who has already played
- * shows their actual points, anyone still to play keeps their projection.
+ * Resolve each player's actual score independently in a partially played week.
+ * Pending or unavailable scores must never be replaced with a predicted number.
  */
 export function resolveWeekPoints(
-  player: Player,
   stats: PlayerStats | undefined,
   game: WeeklyGame | undefined,
   available = true,
@@ -32,11 +29,11 @@ export function resolveWeekPoints(
   if (stats) return { kind: 'actual', points: stats.fantasyPoints };
   if (game?.isByeWeek) return { kind: 'none' };
   if (!available) return game && !game.isCompleted
-    ? { kind: 'pending', points: player.projectedPoints }
+    ? { kind: 'pending' }
     : { kind: 'unavailable' };
   if (!game || game.isByeWeek) return { kind: 'none' };
   if (game.isCompleted) return { kind: 'zero', points: 0 };
-  return { kind: 'pending', points: player.projectedPoints };
+  return { kind: 'pending' };
 }
 
 /**
@@ -63,8 +60,8 @@ export function sumActualPoints(
 }
 
 export interface WeekPointsDisplay {
-  label: 'Projected' | 'Scored' | 'Unavailable';
-  /** Just the number, for table cells. */
+  label: 'Scored' | 'Pending' | 'No game' | 'Unavailable';
+  /** A recorded score, or a non-numeric placeholder. */
   text: string;
   /** Label and number together, for prose-style rows. */
   summary: string;
@@ -78,23 +75,14 @@ export interface WeekPointsDisplay {
  * so tables and lineup cards describe a played week the same way.
  */
 export function describeWeekPoints(
-  player: Player,
   options: { showActuals: boolean; stats?: PlayerStats; game?: WeeklyGame; weekName: string; available?: boolean },
 ): WeekPointsDisplay {
   const { showActuals, stats, game, weekName } = options;
 
-  if (!showActuals) {
-    const text = player.projectedPoints.toFixed(1);
-    return {
-      label: 'Projected',
-      text,
-      summary: `Projected ${text} pts`,
-      muted: false,
-      title: 'Projected points per game',
-    };
-  }
-
-  const { kind, points } = resolveWeekPoints(player, stats, game, options.available);
+  const resolved: WeekPoints = showActuals
+    ? resolveWeekPoints(stats, game, options.available)
+    : { kind: game?.isByeWeek ? 'none' : 'pending' };
+  const { kind, points } = resolved;
 
   switch (kind) {
     case 'unavailable':
@@ -120,19 +108,17 @@ export function describeWeekPoints(
         muted: true,
         title: `No ${weekName} stat line recorded`,
       };
-    case 'pending': {
-      const text = points!.toFixed(1);
+    case 'pending':
       return {
-        label: 'Projected',
-        text,
-        summary: `Projected ${text} pts`,
+        label: 'Pending',
+        text: '-',
+        summary: 'Awaiting stats',
         muted: true,
-        title: `${weekName} actual stat line not available yet - showing projection`,
+        title: `Waiting for recorded ${weekName} stats`,
       };
-    }
     default:
       return {
-        label: 'Scored',
+        label: 'No game',
         text: '-',
         summary: `No ${weekName} game`,
         muted: true,

@@ -1,9 +1,11 @@
 import type { CfbdGame, CfbdGamePlayers } from '../../src/server/cfbd';
-import type { GameStatus, Player, PlayerStats, TeamSchedule } from '../../src/lib/types';
+import type { GameStatus, Player, PlayerStats, TeamSchedule, WeeklyGame } from '../../src/lib/types';
 import { ALL_WEEKS, FIRST_WEEK, LAST_WEEK } from '../../src/lib/types';
 import { weekBoundary, weekForDate } from '../../src/lib/season-config';
 import { effectiveKickoff } from '../../src/server/cfbd-transform';
 import { IncompleteSourceError } from './cache';
+import { completedGameWeeks, hasWeekStarted, isFinalGame, isWeekComplete } from '../../src/lib/week-lock';
+import { scheduleCompletionSchema } from '../../src/server/week-completion';
 
 const HOUR = 60 * 60 * 1000;
 export const CORRECTION_WINDOW_MS = 96 * HOUR;
@@ -43,18 +45,52 @@ export function refreshWeeks(games: CfbdGame[], now: Date, sweep: boolean, force
   return [...weeks].sort((a, b) => a - b);
 }
 
-export function assertScheduleCompleteness(previous: TeamSchedule[] | null, next: TeamSchedule[]) {
+export function assertScheduleCompleteness(previous: TeamSchedule[] | null, next: TeamSchedule[], now = new Date()) {
+  if (!scheduleCompletionSchema.safeParse(next).success) {
+    throw new IncompleteSourceError('The schedule source has invalid completion fields');
+  }
   if (!next.length || next.filter(team => team.weeklyGames.some(game => !game.isByeWeek)).length < next.length / 2) {
     throw new IncompleteSourceError('The schedule source has insufficient team/game coverage');
   }
-  const nextIds = new Set(next.flatMap(team => team.weeklyGames.flatMap(game => game.gameId ? [game.gameId] : [])));
   const nextTeams = new Set(next.map(team => team.teamId));
   if (previous?.some(team => !nextTeams.has(team.teamId))) {
     throw new IncompleteSourceError('A previously available FBS team disappeared from the schedule source');
   }
+  const nextGames = new Map<string, WeeklyGame[]>();
+  const nextTeamGames = new Map<string, WeeklyGame[]>();
+  for (const team of next) for (const game of team.weeklyGames) {
+    if (game.isByeWeek) continue;
+    if (!game.gameId) throw new IncompleteSourceError('A scheduled game has no stable game ID');
+    const occurrences = nextGames.get(game.gameId) ?? [];
+    if (occurrences.some(other => other.week !== game.week || !!other.isCompleted !== !!game.isCompleted)) {
+      throw new IncompleteSourceError('Team representations disagree on a game week or completion');
+    }
+    nextGames.set(game.gameId, [...occurrences, game]);
+    const key = JSON.stringify([team.teamId, game.gameId]);
+    nextTeamGames.set(key, [...(nextTeamGames.get(key) ?? []), game]);
+  }
   for (const team of previous ?? []) for (const game of team.weeklyGames) {
-    if (game.isCompleted && game.gameId && !nextIds.has(game.gameId)) {
-      throw new IncompleteSourceError('A previously completed game disappeared from the schedule source');
+    if (game.isByeWeek) continue;
+    const occurrences = nextTeamGames.get(JSON.stringify([team.teamId, game.gameId])) ?? [];
+    const open = hasWeekStarted(game.week, now) && !isWeekComplete(game.week, now);
+    if ((game.isCompleted || open) && !occurrences.length) {
+      throw new IncompleteSourceError('A known game disappeared from a completed or open-week team schedule');
+    }
+    if (game.isCompleted && occurrences.some(candidate =>
+      !candidate.isCompleted || candidate.week !== game.week || (isFinalGame(game) && !isFinalGame(candidate)))) {
+      throw new IncompleteSourceError('A completed game regressed, moved weeks, or lost its final scores');
+    }
+  }
+  const acceptedFinals = completedGameWeeks(previous ?? []);
+  for (const week of acceptedFinals) {
+    // After the calendar cutoff, corrections cannot reopen member editing.
+    if (!hasWeekStarted(week, now) || isWeekComplete(week, now)) continue;
+    const previousIds = new Set((previous ?? []).flatMap(team =>
+      team.weeklyGames.filter(game => game.week === week && !game.isByeWeek).map(game => game.gameId)));
+    const nextIds = new Set(next.flatMap(team =>
+      team.weeklyGames.filter(game => game.week === week && !game.isByeWeek).map(game => game.gameId)));
+    if (previousIds.size !== nextIds.size || [...nextIds].some(id => !previousIds.has(id))) {
+      throw new IncompleteSourceError('An accepted final week changed its game slate; reconciliation is required');
     }
   }
 }

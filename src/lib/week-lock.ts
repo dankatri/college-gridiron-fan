@@ -3,17 +3,35 @@
  *
  * A week is not an all-or-nothing thing. Its games are spread from Thursday
  * night to the following Tuesday, so the week as a whole stays open for edits
- * until its window closes, while each individual player locks the moment their
+ * until all games finish or its window closes, while each player locks when their
  * own game kicks off. That is what stops someone benching a player after
  * watching them get injured, without freezing the other five slots for days.
  */
 
 import { weekBoundary } from './season-config';
 import type { TeamSchedule, WeeklyGame } from './types';
+import { ALL_WEEKS } from './types';
+
+type CompletionGame = Pick<WeeklyGame, 'week' | 'isByeWeek' | 'gameId' | 'isCompleted' | 'teamPoints' | 'opponentPoints'>;
+
+export function isFinalGame(game: CompletionGame): boolean {
+  return !game.isByeWeek && !!game.gameId && game.isCompleted === true &&
+    Number.isFinite(game.teamPoints) && Number.isFinite(game.opponentPoints);
+}
+
+/** Check every team representation; a conflicting duplicate must block closure. */
+export function completedGameWeeks(schedules: readonly { weeklyGames: readonly CompletionGame[] }[]): Set<number> {
+  const finals = new Map<number, boolean>();
+  for (const schedule of schedules) for (const game of schedule.weeklyGames) {
+    if (game.isByeWeek || !ALL_WEEKS.includes(game.week)) continue;
+    finals.set(game.week, (finals.get(game.week) ?? true) && isFinalGame(game));
+  }
+  return new Set([...finals].filter(([, complete]) => complete).map(([week]) => week));
+}
 
 /**
  * True once the week's window has opened, meaning its first games can be under
- * way. This is the gate for showing real points instead of projections.
+ * way. This is the gate for fetching weekly box scores.
  */
 export function hasWeekStarted(week: number, now: Date = new Date()): boolean {
   const start = weekBoundary(week);
@@ -21,13 +39,13 @@ export function hasWeekStarted(week: number, now: Date = new Date()): boolean {
 }
 
 /**
- * True once the week's window has closed and nothing in it can change again.
- *
- * The final week has an explicit terminal Wednesday boundary too.
+ * Members cannot edit after the slate finishes or the calendar cutoff passes.
+ * Omit game finals only for calendar-based polling/correction windows.
  */
-export function isWeekComplete(week: number, now: Date = new Date()): boolean {
+export function isWeekComplete(week: number, now: Date = new Date(), gameFinals?: ReadonlySet<number>): boolean {
   const end = weekBoundary(week + 1);
-  return end ? now.getTime() >= end.getTime() : false;
+  return !!end && (now.getTime() >= end.getTime() ||
+    (hasWeekStarted(week, now) && gameFinals?.has(week) === true));
 }
 
 /** A team's real game in a week, or undefined for a bye or an open week. */

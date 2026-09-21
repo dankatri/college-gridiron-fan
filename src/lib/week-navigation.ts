@@ -2,13 +2,13 @@ import { ALL_WEEKS } from './types';
 import { RIVALRY_WEEK } from './season-config';
 import { isWeekComplete } from './week-lock';
 
-export function groupNavigationWeeks(now: Date) {
+export function groupNavigationWeeks(now: Date, gameFinals?: ReadonlySet<number>) {
   const completed: number[] = [];
   const regular: number[] = [];
   const postseason: number[] = [];
 
   for (const week of ALL_WEEKS) {
-    if (isWeekComplete(week, now)) completed.push(week);
+    if (isWeekComplete(week, now, gameFinals)) completed.push(week);
     else if (week > RIVALRY_WEEK) postseason.push(week);
     else regular.push(week);
   }

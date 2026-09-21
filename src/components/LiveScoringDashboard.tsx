@@ -168,10 +168,6 @@ export function LiveScoringDashboard({
 
   const totalActualPoints = lineupPlayerIds.reduce((sum, id) => sum + (statsById.get(id)?.fantasyPoints ?? 0), 0);
 
-  const totalProjectedPoints = lineupPlayers.reduce((sum, { player }) => {
-    return sum + player.projectedPoints;
-  }, 0);
-
   // Rendering 3,700 players is unusable; show those with stats this week.
   const statedPlayers = hasRealData
     ? Array.from(statsById.keys())
@@ -251,23 +247,9 @@ export function LiveScoringDashboard({
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="text-center p-4 bg-muted/30 rounded-lg">
-              <div className="text-2xl font-bold text-accent">{totalActualPoints.toFixed(1)}</div>
-              <div className="text-sm text-muted-foreground">Actual Points</div>
-            </div>
-            <div className="text-center p-4 bg-muted/30 rounded-lg">
-              <div className="text-2xl font-bold">{totalProjectedPoints.toFixed(1)}</div>
-              <div className="text-sm text-muted-foreground">Projected Points</div>
-            </div>
-            <div className="text-center p-4 bg-muted/30 rounded-lg">
-              <div className={`text-2xl font-bold ${
-                totalActualPoints >= totalProjectedPoints ? 'text-green-600' : 'text-red-600'
-              }`}>
-                {totalActualPoints >= totalProjectedPoints ? '+' : ''}{(totalActualPoints - totalProjectedPoints).toFixed(1)}
-              </div>
-              <div className="text-sm text-muted-foreground">vs. Projection</div>
-            </div>
+          <div className="rounded-lg bg-muted/30 p-4 text-center">
+            <div className="text-2xl font-bold text-accent">{totalActualPoints.toFixed(1)}</div>
+            <div className="text-sm text-muted-foreground">Actual Points</div>
           </div>
         </CardContent>
       </Card>

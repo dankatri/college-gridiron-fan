@@ -15,6 +15,7 @@ const MemberLineupDialog = optionalFeature('Member Lineup', () => import('./Memb
 
 interface LeagueViewProps {
   league: League;
+  gameFinals: ReadonlySet<number>;
   currentWeek: number;
   currentUserId: string;
   viewCache: LeagueViewCache;
@@ -23,7 +24,7 @@ interface LeagueViewProps {
   onLineupsChanged: () => Promise<void>;
 }
 
-export function LeagueView({ league, currentWeek, currentUserId, viewCache, onBack, onRefreshLeagues, onLineupsChanged }: LeagueViewProps) {
+export function LeagueView({ league, currentWeek, gameFinals, currentUserId, viewCache, onBack, onRefreshLeagues, onLineupsChanged }: LeagueViewProps) {
   const [activeTab, setActiveTab] = useState('leaderboard');
   const [viewedMember, setViewedMember] = useState<{ userId: string; username: string; avatarUrl?: string } | null>(null);
   const resources = viewCache.get(league.id);
@@ -120,7 +121,7 @@ export function LeagueView({ league, currentWeek, currentUserId, viewCache, onBa
           </TabsContent>
 
           {isOwner && <TabsContent value="admin" className="mt-6">
-            <LeagueAdmin leagueId={league.id} currentWeek={currentWeek} isOwner={isOwner} onSaved={async () => {
+            <LeagueAdmin leagueId={league.id} currentWeek={currentWeek} gameFinals={gameFinals} isOwner={isOwner} onSaved={async () => {
               viewCache.invalidateStandings(league.id);
               setViewedMember(null);
               await Promise.all([resources.standings.read(), onLineupsChanged()]);
@@ -132,6 +133,7 @@ export function LeagueView({ league, currentWeek, currentUserId, viewCache, onBa
       {!accessError && viewedMember && <MemberLineupDialog
         key={`${league.id}:${viewedMember.userId}:${currentWeek}`}
         leagueId={league.id} member={viewedMember} week={currentWeek} currentUserId={currentUserId}
+        gameFinals={gameFinals}
         open onOpenChange={open => { if (!open) setViewedMember(null); }} />}
     </div>
   );

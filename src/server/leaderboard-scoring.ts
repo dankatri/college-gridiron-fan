@@ -19,6 +19,7 @@ export function scoreLineups(
   weeklyScores: ReadonlyMap<number, ReadonlyMap<string, number>>,
   startedWeeks: ReadonlySet<number>,
   now: Date,
+  gameFinals?: ReadonlySet<number>,
 ) {
   const totals = new Map<string, LineupTotals>();
   const scoredWeeks = new Set<number>();
@@ -30,7 +31,7 @@ export function scoreLineups(
     existing.projectedPoints[row.week] = Number.parseFloat(row.projectedPoints ?? '0') || 0;
 
     // An editable week is not participation until play begins; closed weeks retain zero-score entries.
-    if (isPlayedLineup(row, startedWeeks.has(row.week), now)) {
+    if (isPlayedLineup(row, startedWeeks.has(row.week), now, gameFinals)) {
       const weekScores = weeklyScores.get(row.week);
       const points = row.slots.reduce((sum, slot) => sum + (slot.playerId ? weekScores?.get(slot.playerId) ?? 0 : 0), 0);
       existing.totalPoints += points;

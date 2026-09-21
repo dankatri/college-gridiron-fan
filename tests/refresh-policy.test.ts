@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { CfbdGame, CfbdGamePlayers } from '../src/server/cfbd';
 import { buildLiveStats, buildTeamSchedules } from '../src/server/cfbd-transform';
-import { weekForDate } from '../src/lib/season-config';
-import { assertLiveCompleteness, refreshWeeks, shouldDiscover } from '../scripts/lib/refresh-policy';
+import { weekBoundary, weekForDate } from '../src/lib/season-config';
+import { assertLiveCompleteness, assertScheduleCompleteness, refreshWeeks, shouldDiscover } from '../scripts/lib/refresh-policy';
 import { cacheContentVersion, IncompleteSourceError } from '../scripts/lib/cache';
+import type { TeamSchedule, WeeklyGame } from '../src/lib/types';
 
 const game = (id: number, startDate = '2026-09-07T18:00:00.000Z'): CfbdGame => ({
   id, season: 2026, week: 1, seasonType: 'regular', startDate, startTimeTBD: false,
@@ -70,4 +71,55 @@ test('content versions ignore observation clocks but accept reduced and removed 
   const observed = { stats: [{ lastUpdated: 'new', passingYards: 100 }], updatedAt: 'new', week: 1 };
   assert.equal(cacheContentVersion(first), cacheContentVersion(observed));
   assert.notEqual(cacheContentVersion(first), cacheContentVersion({ ...first, stats: [] }));
+});
+
+const monday = new Date('2026-09-21T08:00:00Z');
+const finalGame: WeeklyGame = {
+  week: 3, gameId: 'a', isHomeGame: true, isByeWeek: false,
+  isCompleted: true, teamPoints: 21, opponentPoints: 0,
+};
+const schedule = (games: WeeklyGame[], teamId = 'alpha'): TeamSchedule => ({
+  teamId, teamName: teamId, conference: 'FBS', byeWeeks: [], weeklyGames: games,
+});
+
+test('schedule publication cannot reopen final weeks or erase their terminal evidence', () => {
+  const previous = [schedule([finalGame])];
+  for (const games of [
+    [{ ...finalGame, isCompleted: false }],
+    [{ ...finalGame, week: 4 }],
+    [{ ...finalGame, teamPoints: undefined }],
+    [finalGame, { ...finalGame, gameId: 'new', isCompleted: false }],
+    [finalGame, { ...finalGame, gameId: 'new' }],
+    [{ ...finalGame, gameId: 'replacement' }],
+  ]) {
+    assert.throws(() => assertScheduleCompleteness(previous, [schedule(games)], monday), IncompleteSourceError);
+  }
+  assert.doesNotThrow(() => assertScheduleCompleteness(previous, [schedule([{ ...finalGame, teamPoints: 14 }])], monday),
+    'Downward score corrections must remain publishable');
+  assert.doesNotThrow(() => assertScheduleCompleteness(previous, [
+    schedule([finalGame, { ...finalGame, gameId: 'late-discovered', isCompleted: false }]),
+  ], weekBoundary(4)), 'Once the calendar closes editing, a late fixture cannot reopen the week');
+});
+
+test('missing unfinished fixtures cannot manufacture a final slate, but explicit reschedules can move them', () => {
+  const waiting = { ...finalGame, gameId: 'b', isCompleted: false };
+  const previous = [schedule([finalGame, waiting])];
+  assert.throws(() => assertScheduleCompleteness(previous, [schedule([finalGame])], monday), IncompleteSourceError);
+  assert.doesNotThrow(() => assertScheduleCompleteness(previous, [schedule([finalGame, { ...waiting, week: 4 }])], monday));
+  const future = [schedule([{ ...waiting, week: 4 }, { ...waiting, gameId: 'c', week: 5 }])];
+  assert.doesNotThrow(() => assertScheduleCompleteness(future, [schedule([{ ...waiting, gameId: 'c', week: 5 }])], monday));
+  assert.doesNotThrow(() => assertScheduleCompleteness(
+    [schedule([{ ...finalGame, week: 4 }])],
+    [schedule([{ ...finalGame, week: 4 }, { ...waiting, week: 4 }])], monday,
+  ), 'An unopened week is not frozen by anomalous final flags');
+});
+
+test('every duplicate representation is checked, including an unfinished team row disappearing', () => {
+  const inconsistent = [schedule([finalGame]), schedule([{ ...finalGame, isCompleted: false }], 'beta')];
+  assert.throws(() => assertScheduleCompleteness(null, inconsistent, monday), IncompleteSourceError);
+  assert.throws(() => assertScheduleCompleteness(inconsistent, [
+    schedule([finalGame]), schedule([{ ...finalGame, gameId: 'future', week: 4, isCompleted: false }], 'beta'),
+  ], monday), IncompleteSourceError);
+  const consistent = [schedule([finalGame]), schedule([{ ...finalGame, isHomeGame: false, teamPoints: 0, opponentPoints: 21 }], 'beta')];
+  assert.doesNotThrow(() => assertScheduleCompleteness(null, consistent, monday));
 });

@@ -15,6 +15,7 @@ import { lockedTeamsForWeek } from '../lib/week-lock';
 import type { TeamSchedule } from '../lib/types';
 import type { LineupSlotInput } from './lineup-utils';
 import { HttpError } from './http';
+import { scheduleCompletionSchema } from './week-completion';
 
 type CachedPlayer = { id: string; name?: string; team?: string };
 
@@ -57,7 +58,7 @@ const cachedSchedules = z.array(z.object({
     gameDate: z.string().datetime({ offset: true }).optional(),
     isCompleted: z.boolean().optional(),
   }).passthrough()),
-})).nonempty();
+})).nonempty().and(scheduleCompletionSchema);
 const cachedPlayers = z.array(z.object({
   id: z.string().min(1), team: z.string().min(1), name: z.string().optional(),
 })).nonempty();

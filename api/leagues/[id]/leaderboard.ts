@@ -9,6 +9,7 @@ import type { PlayerStats } from '../../../src/lib/types';
 import { cacheQueryMode, projectWeeklyScores } from '../../../src/server/cache-projections';
 import { jsonResponse } from '../../../src/server/http';
 import { countWinningWeeks } from '../../../src/lib/leaderboard-wins';
+import { loadCompletedGameWeeks } from '../../../src/server/week-completion';
 
 type LiveCachePayload = {
   week?: number;
@@ -119,11 +120,11 @@ export default async function handler(request: Request): Promise<Response> {
         ...row.slots.flatMap(slot => slot.playerId ? [slot.playerId] : []),
       ])];
     }
-    const { byWeek: weeklyScores, availableWeeks, startedWeeks } = lineupRows.length
-      ? await loadWeeklyScores(requested)
-      : { byWeek: new Map<number, Map<string, number>>(), availableWeeks: new Set<number>(), startedWeeks: new Set<number>() };
+    const [{ byWeek: weeklyScores, availableWeeks, startedWeeks }, gameFinals] = lineupRows.length
+      ? await Promise.all([loadWeeklyScores(requested), loadCompletedGameWeeks()])
+      : [{ byWeek: new Map<number, Map<string, number>>(), availableWeeks: new Set<number>(), startedWeeks: new Set<number>() }, new Set<number>()];
     const now = new Date();
-    const { totals, scoredWeeks } = scoreLineups(lineupRows, weeklyScores, startedWeeks, now);
+    const { totals, scoredWeeks } = scoreLineups(lineupRows, weeklyScores, startedWeeks, now, gameFinals);
 
     const leaderboard = members
       .map((member) => {
@@ -143,7 +144,7 @@ export default async function handler(request: Request): Promise<Response> {
         ...entry,
         rank: index + 1,
       }));
-    const winningWeeks = countWinningWeeks(leaderboard, availableWeeks, now);
+    const winningWeeks = countWinningWeeks(leaderboard, availableWeeks, now, gameFinals);
 
     return jsonResponse({
       leaderboard: leaderboard.map(entry => ({

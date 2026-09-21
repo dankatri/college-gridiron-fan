@@ -13,7 +13,7 @@ interface LineupPositionGroupProps {
   onRemovePlayer?: (slotIndex: number) => void;
   /** Whether this individual slot is frozen, usually because its game began. */
   isSlotLocked?: (slot: LineupSlot) => boolean;
-  /** Real points for a played week; absent means show the projection. */
+  /** Recorded points or an explicit pending, unavailable or no-game state. */
   weekPointsFor?: (slot: LineupSlot) => WeekPointsDisplay | undefined;
 }
 
@@ -82,11 +82,11 @@ function LineupSlotRow({ slot, onRemovePlayer, isLocked, weekPoints }: LineupSlo
   }
 
   const player = slot.player;
-  const pointsText = weekPoints
-    ? weekPoints.text === '-'
-      ? 'no game'
-      : `${weekPoints.text} pts`
-    : `${player.projectedPoints.toFixed(1)} pts`;
+  const hasScore = weekPoints?.label === 'Scored';
+  const pointsText = hasScore
+    ? `${weekPoints.text} pts`
+    : weekPoints?.label === 'No game' ? 'no game'
+      : weekPoints?.label === 'Unavailable' ? 'Unavailable' : 'Awaiting stats';
 
   return (
     <div
@@ -107,12 +107,13 @@ function LineupSlotRow({ slot, onRemovePlayer, isLocked, weekPoints }: LineupSlo
 
       <div className="flex flex-shrink-0 flex-col items-end leading-tight" title={weekPoints?.title}>
         <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-          {weekPoints?.label ?? 'Proj'}
+          {hasScore ? 'Scored' : 'Points'}
         </span>
         <span
           className={cn(
-            'text-sm font-semibold tabular-nums',
-            weekPoints?.muted ? 'text-muted-foreground' : 'text-accent-foreground',
+            'font-semibold tabular-nums',
+            hasScore ? 'text-sm' : 'text-xs',
+            !weekPoints || weekPoints.muted ? 'text-muted-foreground' : 'text-accent-foreground',
           )}
         >
           {pointsText}

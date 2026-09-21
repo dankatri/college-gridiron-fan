@@ -21,6 +21,7 @@ import { toast } from 'sonner';
 
 interface LeagueDashboardProps {
   currentWeek: number;
+  gameFinals: ReadonlySet<number>;
   weeklyLineups: WeeklyLineup[];
   currentUserId: string;
   currentUsername: string;
@@ -33,6 +34,7 @@ interface LeagueDashboardProps {
 
 export function LeagueDashboard({
   currentWeek,
+  gameFinals,
   weeklyLineups,
   currentUserId,
   currentUsername,
@@ -112,6 +114,7 @@ export function LeagueDashboard({
   if (selectedLeague) {
     return (
       <LeagueView key={selectedLeague.id} league={selectedLeague} currentWeek={currentWeek}
+        gameFinals={gameFinals}
         currentUserId={currentUserId} viewCache={viewCache} onBack={handleBackToLeagues}
         onRefreshLeagues={fetchMyLeagues} onLineupsChanged={onLineupsChanged} />
     );

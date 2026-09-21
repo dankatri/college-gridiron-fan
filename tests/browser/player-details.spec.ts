@@ -75,7 +75,7 @@ for (const { width, height, position, gameCount } of cases) {
     await expect(table.getByRole('row').last().getByRole('cell').last()).toBeInViewport();
     const body = dialog.getByRole('region', { name: 'Player statistics', exact: true });
     await body.evaluate(element => { element.scrollTop = element.scrollHeight; });
-    await expect(dialog.getByRole('heading', { name: 'Season totals used for projection' })).toBeInViewport();
+    await expect(dialog.getByRole('heading', { name: '2025 season totals' })).toBeInViewport();
     await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeInViewport();
     await dialog.getByRole('button', { name: 'Close', exact: true }).click();
     await expect(dialog).toHaveCount(0);

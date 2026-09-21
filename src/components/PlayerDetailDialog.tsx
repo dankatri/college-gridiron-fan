@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Player, PlayerStats } from '@/lib/types';
-import { WEEK_LABELS } from '@/lib/season-config';
+import { PROJECTION_YEAR, WEEK_LABELS } from '@/lib/season-config';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -185,12 +185,7 @@ export function PlayerDetailDialog({ player, open, onOpenChange }: PlayerDetailD
           tabIndex={0}
           className="min-h-0 min-w-0 space-y-4 overflow-y-auto outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
         >
-          <div className="grid grid-cols-1 gap-2 min-[360px]:grid-cols-3 sm:gap-3">
-            <div className="rounded-md border p-2 sm:p-3">
-              <div className="text-xs uppercase tracking-wide text-muted-foreground">Projected</div>
-              <div className="text-xl font-bold">{player.projectedPoints.toFixed(1)}</div>
-              <div className="text-xs text-muted-foreground">points per game</div>
-            </div>
+          <div className="grid grid-cols-1 gap-2 min-[360px]:grid-cols-2 sm:gap-3">
             <div className="rounded-md border p-2 sm:p-3">
               <div className="text-xs uppercase tracking-wide text-muted-foreground">Season points</div>
               <div className="flex flex-wrap items-center gap-1 text-xl font-bold">
@@ -279,7 +274,7 @@ export function PlayerDetailDialog({ player, open, onOpenChange }: PlayerDetailD
             <>
               <Separator />
               <div>
-                <h4 className="mb-2 text-sm font-semibold">Season totals used for projection</h4>
+                <h4 className="mb-2 text-sm font-semibold">{PROJECTION_YEAR} season totals</h4>
                 <div className="grid grid-cols-1 gap-x-6 gap-y-1 min-[360px]:grid-cols-2 sm:grid-cols-3">
                   {seasonStats.map((stat) => (
                     <div key={String(stat.key)} className="flex items-baseline justify-between gap-2 text-sm">

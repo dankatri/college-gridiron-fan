@@ -14,6 +14,7 @@ import { adminSaveLineupSchema } from '../../../src/server/lineup-input';
 import { saveLineup } from '../../../src/server/save-lineup';
 import { jsonResponse, errorResponse } from '../../../src/server/http';
 import { projectStartedWeeks } from '../../../src/server/cache-projections';
+import { loadCompletedGameWeeks } from '../../../src/server/week-completion';
 
 export const config = {
   runtime: 'edge',
@@ -128,11 +129,14 @@ export default async function handler(request: Request): Promise<Response> {
         .from(lineups)
         .where(and(eq(lineups.leagueId, leagueId), eq(lineups.season, SEASON_YEAR)));
 
-      const startedWeeks = seasonLineups.length
-        ? new Set((await db.execute<{ week: number }>(
+      const [startedWeeks, gameFinals] = await Promise.all([
+        seasonLineups.length
+        ? db.execute<{ week: number }>(
           projectStartedWeeks(SEASON_YEAR, [...new Set(seasonLineups.map(row => row.week))]),
-        )).rows.map(row => row.week))
-        : new Set<number>();
+        ).then(result => new Set(result.rows.map(row => row.week)))
+        : Promise.resolve(new Set<number>()),
+        loadCompletedGameWeeks(),
+      ]);
       const now = new Date();
       const memberPayload = members.map((member) => {
         const forMember = seasonLineups.filter((row) => row.userId === member.userId);
@@ -145,7 +149,7 @@ export default async function handler(request: Request): Promise<Response> {
           avatarUrl: member.avatarUrl,
           role: member.userId === ownership.league.ownerId ? 'owner' : member.role,
           joinedAt: member.joinedAt,
-          weeksSet: forMember.filter(row => isPlayedLineup(row, startedWeeks.has(row.week), now)).length,
+          weeksSet: forMember.filter(row => isPlayedLineup(row, startedWeeks.has(row.week), now, gameFinals)).length,
           lineup: weekLineup,
           playerUsage: Array.from(usage.entries()).map(([playerId, timesUsed]) => ({ playerId, timesUsed })),
         };
@@ -154,7 +158,7 @@ export default async function handler(request: Request): Promise<Response> {
       return jsonResponse({
         week,
         season: SEASON_YEAR,
-        isWeekLocked: isWeekComplete(week),
+        isWeekLocked: isWeekComplete(week, now, gameFinals),
         members: memberPayload,
         auditLog: await loadAuditLog(leagueId),
       });
