@@ -11,7 +11,7 @@ import { useWeekActuals } from '@/hooks/use-week-actuals';
 import { useWeekLocks } from '@/hooks/use-week-locks';
 import { isWeekComplete } from '@/lib/week-lock';
 import { useWeekMatchups } from '@/hooks/use-week-matchups';
-import { describeWeekPoints, sumActualPoints } from '@/lib/week-actuals';
+import { describeWeekPoints, sumActualPoints, type WeekDataStatus } from '@/lib/week-actuals';
 import {
   hydrateSlots,
   toSlotPayload,
@@ -116,14 +116,24 @@ function App() {
   const draftBaseline = useRef<{ key: string; signature: string } | null>(null);
 
   // Show recorded points for the selected week.
-  const { actuals: weekActuals, hasStarted: weekHasStarted, hasData: hasActuals, isReliable: actualsReliable, error: actualsError } =
-    useWeekActuals(isAuthenticated ? currentWeek : undefined);
+  const {
+    actuals: weekActuals, hasStarted: weekHasStarted, isLoading: actualsLoading,
+    hasData: hasActuals, isReliable: actualsReliable, error: actualsError,
+  } = useWeekActuals(isAuthenticated ? currentWeek : undefined);
   const { matchups: weekMatchups } = useWeekMatchups(isAuthenticated ? currentWeek : undefined);
   // Players lock one by one as their games kick off; the week itself stays
   // open until all games finish or the following Wednesday boundary.
   const weekLocks = useWeekLocks(isAuthenticated ? currentWeek : undefined);
   const showWeekActuals = weekHasStarted;
   const weekName = `Week ${currentWeek}`;
+
+  // An accepted snapshot stays usable while it is being re-observed, so a
+  // finished week keeps showing its recorded scores during a refresh or after
+  // one is rejected. Only a week with nothing accepted yet is unavailable, and
+  // one still arriving is merely awaited.
+  const weekDataStatus: WeekDataStatus = hasActuals && !weekLocks.isLoading
+    ? 'ready'
+    : actualsLoading || (weekLocks.isLoading && !weekLocks.error) ? 'loading' : 'missing';
 
   const lineupSlotPoints = useCallback(
     (slot: LineupSlot) =>
@@ -133,10 +143,10 @@ function App() {
             stats: weekActuals.get(slot.player.id),
             game: weekMatchups.get(slot.player.team.toLowerCase())?.game,
             weekName,
-            available: actualsReliable && !weekLocks.isLoading,
+            status: weekDataStatus,
           })
         : undefined,
-    [showWeekActuals, weekActuals, weekMatchups, weekName, actualsReliable, weekLocks.isLoading],
+    [showWeekActuals, weekActuals, weekMatchups, weekName, weekDataStatus],
   );
 
   // The reset screen clears the token from the URL once the password is updated.

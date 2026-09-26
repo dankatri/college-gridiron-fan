@@ -18,20 +18,37 @@ export interface WeekPoints {
 }
 
 /**
+ * What the app holds for a week's recorded scoring and schedule.
+ *
+ * - `ready`   both are loaded, so a player missing from a finished game's box
+ *             score really did record nothing
+ * - `loading` they are still arriving, so nothing can be concluded yet
+ * - `missing` nothing usable is held, so absent scores must not read as zero
+ *
+ * A refresh being in flight, or a rejected refresh, does not make the accepted
+ * snapshot unusable. It stays `ready`: the last accepted scores are still real
+ * recorded scores, and a finished week must not relabel them as unavailable
+ * every time the source is re-observed.
+ */
+export type WeekDataStatus = 'ready' | 'loading' | 'missing';
+
+/**
  * Resolve each player's actual score independently in a partially played week.
  * Pending or unavailable scores must never be replaced with a predicted number.
  */
 export function resolveWeekPoints(
   stats: PlayerStats | undefined,
   game: WeeklyGame | undefined,
-  available = true,
+  status: WeekDataStatus = 'ready',
 ): WeekPoints {
   if (stats) return { kind: 'actual', points: stats.fantasyPoints };
   if (game?.isByeWeek) return { kind: 'none' };
-  if (!available) return game && !game.isCompleted
-    ? { kind: 'pending' }
-    : { kind: 'unavailable' };
-  if (!game || game.isByeWeek) return { kind: 'none' };
+  if (status !== 'ready') {
+    return status === 'loading' || (game && !game.isCompleted)
+      ? { kind: 'pending' }
+      : { kind: 'unavailable' };
+  }
+  if (!game) return { kind: 'none' };
   if (game.isCompleted) return { kind: 'zero', points: 0 };
   return { kind: 'pending' };
 }
@@ -75,12 +92,12 @@ export interface WeekPointsDisplay {
  * so tables and lineup cards describe a played week the same way.
  */
 export function describeWeekPoints(
-  options: { showActuals: boolean; stats?: PlayerStats; game?: WeeklyGame; weekName: string; available?: boolean },
+  options: { showActuals: boolean; stats?: PlayerStats; game?: WeeklyGame; weekName: string; status?: WeekDataStatus },
 ): WeekPointsDisplay {
   const { showActuals, stats, game, weekName } = options;
 
   const resolved: WeekPoints = showActuals
-    ? resolveWeekPoints(stats, game, options.available)
+    ? resolveWeekPoints(stats, game, options.status)
     : { kind: game?.isByeWeek ? 'none' : 'pending' };
   const { kind, points } = resolved;
 

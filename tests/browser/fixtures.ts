@@ -70,14 +70,14 @@ export async function mockApp(page: Page) {
   const requests: string[] = [];
   const errors: string[] = [];
   const state: {
-    currentUser: typeof user | null; schedulesFail: boolean; liveFail: boolean; seasonFail: boolean;
+    currentUser: typeof user | null; schedulesFail: boolean; liveFail: boolean; liveRefreshing: boolean; seasonFail: boolean;
     seasonStats: SeasonStatsPayload;
     leagues: typeof league[];
     playerPool: Player[]; lineups: typeof lineup[]; usage: Array<{ playerId: string; timesUsed: number }>;
   } = {
     currentUser: user,
     leagues: [structuredClone(league)],
-    schedulesFail: false, liveFail: false, seasonFail: false, playerPool: players,
+    schedulesFail: false, liveFail: false, liveRefreshing: false, seasonFail: false, playerPool: players,
     seasonStats: {
       season: 2026, updatedAt: now, availableWeeks: [0, 1], missingWeeks: [],
       stats: live.stats.map(({ week: _week, lastUpdated: _lastUpdated, ...stats }) => stats),
@@ -112,7 +112,12 @@ export async function mockApp(page: Page) {
       state.schedulesFail ? 503 : 200,
     );
     if (url.pathname === '/api/live') return respond(
-      state.liveFail ? { error: 'Live unavailable' } : { ...live, week: Number(url.searchParams.get('week') ?? 1) },
+      state.liveFail
+        ? { error: 'Live unavailable' }
+        : {
+            ...live, week: Number(url.searchParams.get('week') ?? 1),
+            ...(state.liveRefreshing ? { sourceStatus: 'refreshing' } : {}),
+          },
       state.liveFail ? 503 : 200,
     );
     if (url.pathname === '/api/leagues/league-a/lineups') {

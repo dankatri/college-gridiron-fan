@@ -53,7 +53,12 @@ on each leaderboard request, including later corrections and audited lineup edit
 Projected points are temporarily removed from all user-facing player, lineup,
 live-scoring and league views, including comparisons and progress bars against
 predictions. Pending players show **Awaiting stats**, not an estimated score;
-unavailable data is not presented as a confirmed zero. Actual scores and season
+unavailable data is not presented as a confirmed zero. A player absent from a
+finished game in the week's accepted box-score snapshot scored zero, and keeps
+reading as zero while that snapshot is being re-observed or after a refresh is
+rejected: an in-flight or failed refresh does not discard accepted scores. Only
+a week with no accepted snapshot reads as unavailable, and one whose snapshot is
+still arriving reads as awaiting stats. Actual scores and season
 totals are unchanged. Historical player totals are labelled with their source
 year. Existing projection fields and storage are retained for compatibility,
 but are not displayed or used as fallback scores.

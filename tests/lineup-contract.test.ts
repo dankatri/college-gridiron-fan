@@ -38,7 +38,7 @@ test('completion locks a player, while absence of that team is conservatively lo
 
 test('unavailable weekly scoring is not a final zero and private responses never enter shared caches', () => {
   const points = describeWeekPoints({
-    showActuals: true, available: false, weekName: 'Week 1',
+    showActuals: true, status: 'missing', weekName: 'Week 1',
     game: { week: 1, isByeWeek: false, isHomeGame: true, isCompleted: true },
   });
   assert.equal(points.label, 'Unavailable');
