@@ -2,7 +2,7 @@ import type { CfbdGame, CfbdGamePlayers } from '../../src/server/cfbd';
 import type { GameStatus, Player, PlayerStats, TeamSchedule, WeeklyGame } from '../../src/lib/types';
 import { ALL_WEEKS, FIRST_WEEK, LAST_WEEK } from '../../src/lib/types';
 import { weekBoundary, weekForDate } from '../../src/lib/season-config';
-import { effectiveKickoff } from '../../src/server/cfbd-transform';
+import { buildLiveStats, effectiveKickoff } from '../../src/server/cfbd-transform';
 import { IncompleteSourceError } from './cache';
 import { completedGameWeeks, hasWeekStarted, isFinalGame, isWeekComplete } from '../../src/lib/week-lock';
 import { scheduleCompletionSchema } from '../../src/server/week-completion';
@@ -96,11 +96,17 @@ export function assertScheduleCompleteness(previous: TeamSchedule[] | null, next
 }
 
 export type AcceptedLiveSnapshot = { stats?: PlayerStats[]; games?: GameStatus[] };
+export type LiveHold = { gameId: number; team: string; reason: string };
 
-/** Retain the entire accepted aggregate if its game-level inputs are ambiguous. */
-export function assertLiveCompleteness(
+/**
+ * Structural ambiguity (unresolvable accepted stat lines, vanished stat-bearing
+ * games) retains the entire accepted aggregate. A single team whose box score is
+ * missing or not yet consistent is instead held on its own, so one lagging game
+ * cannot freeze scoring for the rest of the week.
+ */
+export function assessLiveCompleteness(
   games: CfbdGame[], boxes: CfbdGamePlayers[], previous: AcceptedLiveSnapshot | null, players: Player[],
-) {
+): LiveHold[] {
   const boxesById = new Map(boxes.map(box => [box.id, box]));
   const teamsByPlayer = new Map(players.map(player => [player.id, player.team]));
   // CFBD does not reliably publish box-score stats for non-FBS opponents in an
@@ -119,6 +125,7 @@ export function assertLiveCompleteness(
       throw new IncompleteSourceError('A stat-bearing game disappeared from this week; historical reconciliation is required');
     }
   }
+  const holds: LiveHold[] = [];
   for (const game of games) {
     const required = game.completed || previouslyScoredTeams.has(game.homeTeam) || previouslyScoredTeams.has(game.awayTeam);
     if (!required) continue;
@@ -126,15 +133,38 @@ export function assertLiveCompleteness(
     for (const [name, score] of [[game.homeTeam, game.homePoints], [game.awayTeam, game.awayPoints]] as const) {
       if (!rosterTeams.has(name)) continue;
       const team = box?.teams.find(candidate => candidate.team === name);
+      let reason: string | undefined;
       if (!team || !Array.isArray(team.categories) || !team.categories.length) {
-        throw new IncompleteSourceError('A completed or previously scored game has missing team statistics');
+        reason = 'A completed or previously scored game has missing team statistics';
+      } else if (game.completed && (typeof score !== 'number' || team.points !== score)) {
+        reason = 'Final box scores do not yet agree with the game scoreboard';
+      } else if (!['passing', 'rushing', 'receiving'].every(category => team.categories.some(row => row.name === category))) {
+        reason = 'Core box-score categories are incomplete';
       }
-      if (game.completed && (typeof score !== 'number' || team.points !== score)) {
-        throw new IncompleteSourceError('Final box scores do not yet agree with the game scoreboard');
-      }
-      if (!['passing', 'rushing', 'receiving'].every(category => team.categories.some(row => row.name === category))) {
-        throw new IncompleteSourceError('Core box-score categories are incomplete');
-      }
+      if (reason) holds.push({ gameId: game.id, team: name, reason });
     }
   }
+  return holds;
+}
+
+/**
+ * Score fresh box scores for every verified team, and keep the last accepted
+ * stat lines verbatim for players on held teams. Held teams are never scored
+ * from a partial box, so accepted points cannot regress while a source lags.
+ */
+export function buildAcceptedLiveStats(options: {
+  games: CfbdGame[]; boxes: CfbdGamePlayers[]; previous: AcceptedLiveSnapshot | null; players: Player[];
+  idByAthlete: Map<string, string>; week: number; now?: Date;
+}): { stats: PlayerStats[]; holds: LiveHold[] } {
+  const { games, boxes, previous, players, idByAthlete, week, now } = options;
+  const holds = assessLiveCompleteness(games, boxes, previous, players);
+  const heldTeams = new Set(holds.map(hold => hold.team));
+  const teamsByPlayer = new Map(players.map(player => [player.id, player.team]));
+  const verifiedBoxes = boxes.map(box => ({ ...box, teams: (box.teams ?? []).filter(team => !heldTeams.has(team.team)) }));
+  const fresh = buildLiveStats({
+    gamePlayers: verifiedBoxes, week, idByAthlete, gameIds: new Set(games.map(game => String(game.id))), now,
+  }).filter(stat => !heldTeams.has(teamsByPlayer.get(stat.playerId) ?? ''));
+  const retained = (previous?.stats ?? []).filter(stat => heldTeams.has(teamsByPlayer.get(stat.playerId) ?? ''));
+  const stats = [...fresh, ...retained].sort((a, b) => b.fantasyPoints - a.fantasyPoints);
+  return { stats, holds };
 }
