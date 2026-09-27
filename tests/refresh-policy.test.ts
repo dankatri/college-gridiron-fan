@@ -41,10 +41,19 @@ test('partial completed boxes retain the whole snapshot, complete downward corre
   const player = { id: 'qb-a', name: 'Alpha', team: 'Alpha', position: 'QB' as const, conference: 'FBS', projectedPoints: 10 };
   const prior = buildLiveStats({ gamePlayers: [box(1, 300)], week: 1, idByAthlete: new Map([['1', 'qb-a']]) });
   assert.throws(() => assertLiveCompleteness([game(1)], [], { stats: prior }, [player]), IncompleteSourceError);
-  assert.throws(() => assertLiveCompleteness([game(1)], [{ ...box(1, 300), teams: box(1, 300).teams.slice(0, 1) }], { stats: prior }, [player]), IncompleteSourceError);
+  assert.throws(() => assertLiveCompleteness([game(1)], [{ ...box(1, 300), teams: box(1, 300).teams.slice(1) }], { stats: prior }, [player]), IncompleteSourceError);
   assert.doesNotThrow(() => assertLiveCompleteness([game(1)], [box(1, 100)], { stats: prior }, [player]));
   const corrected = buildLiveStats({ gamePlayers: [box(1, 100)], week: 1, idByAthlete: new Map([['1', 'qb-a']]) });
   assert.ok(corrected[0].fantasyPoints < prior[0].fantasyPoints);
+});
+
+test('a non-FBS opponent missing its box score entirely does not block the FBS side', () => {
+  const player = { id: 'qb-a', name: 'Alpha', team: 'Alpha', position: 'QB' as const, conference: 'FBS', projectedPoints: 10 };
+  // CFBD frequently never publishes box-score stats for an FCS opponent in an
+  // FBS-vs-FCS game; only 'Alpha' is in our tracked roster pool.
+  assert.doesNotThrow(() => assertLiveCompleteness(
+    [game(1)], [{ ...box(1, 100), teams: box(1, 100).teams.slice(0, 1) }], null, [player],
+  ));
 });
 
 test('overlapping source chunks are not counted twice, but distinct games for a player are added', () => {
