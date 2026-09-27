@@ -103,6 +103,11 @@ export function assertLiveCompleteness(
 ) {
   const boxesById = new Map(boxes.map(box => [box.id, box]));
   const teamsByPlayer = new Map(players.map(player => [player.id, player.team]));
+  // CFBD does not reliably publish box-score stats for non-FBS opponents in an
+  // FBS-vs-FCS game; that gap is permanent, not a source that will catch up on
+  // a later refresh. A team outside our tracked roster pool is treated as such
+  // an opponent and is exempt from the box-score checks below.
+  const rosterTeams = new Set(players.map(player => player.team));
   const previouslyScoredTeams = new Set<string>();
   for (const stat of previous?.stats ?? []) {
     const team = teamsByPlayer.get(stat.playerId);
@@ -119,6 +124,7 @@ export function assertLiveCompleteness(
     if (!required) continue;
     const box = boxesById.get(game.id);
     for (const [name, score] of [[game.homeTeam, game.homePoints], [game.awayTeam, game.awayPoints]] as const) {
+      if (!rosterTeams.has(name)) continue;
       const team = box?.teams.find(candidate => candidate.team === name);
       if (!team || !Array.isArray(team.categories) || !team.categories.length) {
         throw new IncompleteSourceError('A completed or previously scored game has missing team statistics');
