@@ -15,7 +15,11 @@ export function shouldDiscover(schedules: TeamSchedule[] | null, checkedAt: stri
   if (sweep || !Array.isArray(schedules) || !schedules.length || !Number.isFinite(age) || age > HOUR) return true;
   if (schedules.some(team => !team || !Array.isArray(team.weeklyGames) || team.weeklyGames.some(game => !game))) return true;
   return schedules.some(team => team.weeklyGames.some(game => {
-    if (!game.gameDate || game.isByeWeek || game.isCompleted) return false;
+    if (!game.gameDate || game.isByeWeek) return false;
+    // A game staying in the window after it is marked complete is deliberate:
+    // CFBD flips /games to completed before /games/players finishes settling,
+    // so stopping at the final whistle would leave that box score to the
+    // hourly sweep and freeze those players for up to an hour.
     const elapsed = now.getTime() - new Date(game.gameDate).getTime();
     if (!Number.isFinite(elapsed)) return true;
     return elapsed >= -HOUR && elapsed <= 8 * HOUR;

@@ -35,11 +35,17 @@ export type WeekDataStatus = 'ready' | 'loading' | 'missing';
 /**
  * Resolve each player's actual score independently in a partially played week.
  * Pending or unavailable scores must never be replaced with a predicted number.
+ *
+ * `teamPending` marks a team whose box score the source has not published or
+ * verified yet. Their game can be final on the scoreboard while no stat line
+ * exists for anyone in it, so a confirmed zero cannot be concluded even though
+ * the week's data is otherwise ready.
  */
 export function resolveWeekPoints(
   stats: PlayerStats | undefined,
   game: WeeklyGame | undefined,
   status: WeekDataStatus = 'ready',
+  teamPending = false,
 ): WeekPoints {
   if (stats) return { kind: 'actual', points: stats.fantasyPoints };
   if (game?.isByeWeek) return { kind: 'none' };
@@ -49,6 +55,7 @@ export function resolveWeekPoints(
       : { kind: 'unavailable' };
   }
   if (!game) return { kind: 'none' };
+  if (teamPending) return { kind: 'pending' };
   if (game.isCompleted) return { kind: 'zero', points: 0 };
   return { kind: 'pending' };
 }
@@ -92,12 +99,15 @@ export interface WeekPointsDisplay {
  * so tables and lineup cards describe a played week the same way.
  */
 export function describeWeekPoints(
-  options: { showActuals: boolean; stats?: PlayerStats; game?: WeeklyGame; weekName: string; status?: WeekDataStatus },
+  options: {
+    showActuals: boolean; stats?: PlayerStats; game?: WeeklyGame; weekName: string;
+    status?: WeekDataStatus; teamPending?: boolean;
+  },
 ): WeekPointsDisplay {
   const { showActuals, stats, game, weekName } = options;
 
   const resolved: WeekPoints = showActuals
-    ? resolveWeekPoints(stats, game, options.status)
+    ? resolveWeekPoints(stats, game, options.status, options.teamPending)
     : { kind: game?.isByeWeek ? 'none' : 'pending' };
   const { kind, points } = resolved;
 

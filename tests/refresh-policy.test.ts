@@ -81,6 +81,17 @@ test('a non-FBS opponent missing its box score entirely does not block the FBS s
   ), []);
 });
 
+test('a final game the source never published a box for is held, not scored as zero', () => {
+  // CFBD published game 401856881 as final while omitting it from
+  // /games/players entirely, which read as 0.0 for every player in it.
+  const { stats, holds } = buildAcceptedLiveStats({
+    games: [game(1)], boxes: [], previous: null, players: [alphaQb], idByAthlete: ids, week: 1,
+  });
+  assert.deepEqual(stats, []);
+  assert.deepEqual(holds.map(hold => hold.team), ['Alpha'],
+    'The team must be reported as pending so its players are not read as having scored zero');
+});
+
 test('overlapping source chunks are not counted twice, but distinct games for a player are added', () => {
   const stats = buildLiveStats({
     gamePlayers: [box(1, 100), box(1, 100), box(2, 200)], week: 1,
@@ -114,6 +125,19 @@ const finalGame: WeeklyGame = {
 };
 const schedule = (games: WeeklyGame[], teamId = 'alpha'): TeamSchedule => ({
   teamId, teamName: teamId, conference: 'FBS', byeWeeks: [], weeklyGames: games,
+});
+
+test('a completed game keeps its polling window open while its box score settles', () => {
+  const kickoff = new Date('2026-09-19T23:00:00.000Z');
+  const played: WeeklyGame = { week: 3, gameId: 'a', gameDate: kickoff, isHomeGame: true, isByeWeek: false, isCompleted: true };
+  const settling = new Date('2026-09-20T03:30:00.000Z');
+  assert.equal(
+    shouldDiscover([schedule([played])], settling.toISOString(), settling, false), true,
+    'A scoreboard marked final before its box score lands must not stop the gameday refresh',
+  );
+  const stale = new Date('2026-09-20T09:00:00.000Z');
+  assert.equal(shouldDiscover([schedule([played])], stale.toISOString(), stale, false), false,
+    'The window is still bounded, so a settled game falls back to the hourly sweep');
 });
 
 test('schedule publication cannot reopen final weeks or erase their terminal evidence', () => {

@@ -119,6 +119,7 @@ function App() {
   const {
     actuals: weekActuals, hasStarted: weekHasStarted, isLoading: actualsLoading,
     hasData: hasActuals, isReliable: actualsReliable, error: actualsError,
+    pendingTeams: actualsPendingTeams,
   } = useWeekActuals(isAuthenticated ? currentWeek : undefined);
   const { matchups: weekMatchups } = useWeekMatchups(isAuthenticated ? currentWeek : undefined);
   // Players lock one by one as their games kick off; the week itself stays
@@ -144,9 +145,10 @@ function App() {
             game: weekMatchups.get(slot.player.team.toLowerCase())?.game,
             weekName,
             status: weekDataStatus,
+            teamPending: actualsPendingTeams.has(slot.player.team.toLowerCase()),
           })
         : undefined,
-    [showWeekActuals, weekActuals, weekMatchups, weekName, weekDataStatus],
+    [showWeekActuals, weekActuals, weekMatchups, weekName, weekDataStatus, actualsPendingTeams],
   );
 
   // The reset screen clears the token from the URL once the password is updated.

@@ -53,7 +53,7 @@ export async function refreshLiveWeeks(
   const limit = pLimit(3);
   const requests = new Map<string, Promise<{ data: CfbdGamePlayers[] } | { error: unknown }>>();
   let playerContext: Promise<{ players: Player[]; idByAthlete: Map<string, string> }> | undefined;
-  let failed = false;
+  const failures: number[] = [];
   for (const week of weeks) {
     try {
       await refreshCache(liveStatsCacheKey(SEASON_YEAR, week), run, async () => {
@@ -71,11 +71,23 @@ export async function refreshLiveWeeks(
           requests.set(pair, limit(() => getGamePlayerStats(SEASON_YEAR, game.week, game.seasonType))
             .then(data => ({ data }), error => ({ error })));
         }
+        // A box-score source that fails for one CFBD week must not discard the
+        // ones that succeeded. Games left without a box are held at their last
+        // accepted stat lines below, exactly as a lagging source is, so the
+        // rest of the week still publishes fresh scores.
         const boxes: CfbdGamePlayers[] = [];
+        const unreachable: string[] = [];
         for (const pair of pairs.keys()) {
           const result = await requests.get(pair)!;
-          if ('error' in result) throw result.error;
+          if ('error' in result) {
+            unreachable.push(pair);
+            console.error(`Box scores for ${pair} are unreachable; its games stay held`, result.error);
+            continue;
+          }
           boxes.push(...result.data);
+        }
+        if (pairs.size && unreachable.length === pairs.size) {
+          throw new Error(`No box-score source could be reached for week ${week}`);
         }
         const uniqueBoxes = [...new Map(boxes.map(box => [box.id, box])).values()];
         const previous = await readCache<AcceptedLiveSnapshot>(liveStatsCacheKey(SEASON_YEAR, week));
@@ -85,13 +97,17 @@ export async function refreshLiveWeeks(
         });
         if (holds.length) logStep('live teams held at last accepted stats', { week, holds });
         const statuses = buildGameStatuses(weekGames, week, observedAt);
-        logStep('live candidate', { week, players: stats.length, games: statuses.length });
-        return { week, updatedAt: observedAt.toISOString(), stats, games: statuses };
+        // A held team has no verified box score, so its players must not be
+        // read as having scored zero. Publishing the names lets the client tell
+        // "recorded nothing" apart from "nothing recorded yet".
+        const pendingTeams = [...new Set(holds.map(hold => hold.team))].sort();
+        logStep('live candidate', { week, players: stats.length, games: statuses.length, pendingTeams, unreachable });
+        return { week, updatedAt: observedAt.toISOString(), stats, games: statuses, pendingTeams };
       });
     } catch (error) {
-      failed = true;
+      failures.push(week);
       console.error(`Live week ${week} refresh failed; keeping its last accepted snapshot`, error);
     }
   }
-  if (failed) throw new Error('One or more live weeks could not be refreshed');
+  if (failures.length) throw new Error(`Live weeks could not be refreshed: ${failures.join(', ')}`);
 }

@@ -71,6 +71,22 @@ test('a finished week keeps its recorded zeros while its snapshot arrives or is 
   assert.equal(display.text, '0.0');
 });
 
+test('a final game whose box score was never published reads as pending, not a zero score', () => {
+  // CFBD marked West Virginia vs Oklahoma State final while omitting it from
+  // /games/players, so nobody in the game had a stat line. Reading that as 0.0
+  // reported a wrong score for every player in it.
+  const final = { ...game, isCompleted: true };
+  assert.deepEqual(resolveWeekPoints(undefined, final, 'ready', true), { kind: 'pending' });
+  const display = describeWeekPoints({ showActuals: true, game: final, status: 'ready', teamPending: true, weekName: 'Week 4' });
+  assert.equal(display.label, 'Pending');
+  assert.equal(display.summary, 'Awaiting stats');
+  // A verified box score still reports a real zero, and a recorded line wins
+  // over the team-level hold.
+  assert.deepEqual(resolveWeekPoints(undefined, final, 'ready', false), { kind: 'zero', points: 0 });
+  const recorded = { ...createEmptyStats(player.id, 4), fantasyPoints: 12 };
+  assert.deepEqual(resolveWeekPoints(recorded, final, 'ready', true), { kind: 'actual', points: 12 });
+});
+
 test('cards and lineup rows never fall back to stored projected points when scores are absent', () => {
   const summary = renderToStaticMarkup(createElement(LineupSummary, { lineup: slots }));
   const row = renderToStaticMarkup(createElement(LineupPositionGroup, { position: 'QB', slots }));

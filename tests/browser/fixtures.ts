@@ -71,6 +71,7 @@ export async function mockApp(page: Page) {
   const errors: string[] = [];
   const state: {
     currentUser: typeof user | null; schedulesFail: boolean; liveFail: boolean; liveRefreshing: boolean; seasonFail: boolean;
+    liveStatsMissing: boolean; livePendingTeams: string[] | null;
     seasonStats: SeasonStatsPayload;
     leagues: typeof league[];
     playerPool: Player[]; lineups: typeof lineup[]; usage: Array<{ playerId: string; timesUsed: number }>;
@@ -78,6 +79,7 @@ export async function mockApp(page: Page) {
     currentUser: user,
     leagues: [structuredClone(league)],
     schedulesFail: false, liveFail: false, liveRefreshing: false, seasonFail: false, playerPool: players,
+    liveStatsMissing: false, livePendingTeams: null,
     seasonStats: {
       season: 2026, updatedAt: now, availableWeeks: [0, 1], missingWeeks: [],
       stats: live.stats.map(({ week: _week, lastUpdated: _lastUpdated, ...stats }) => stats),
@@ -116,6 +118,8 @@ export async function mockApp(page: Page) {
         ? { error: 'Live unavailable' }
         : {
             ...live, week: Number(url.searchParams.get('week') ?? 1),
+            ...(state.liveStatsMissing ? { stats: [] } : {}),
+            ...(state.livePendingTeams ? { pendingTeams: state.livePendingTeams } : {}),
             ...(state.liveRefreshing ? { sourceStatus: 'refreshing' } : {}),
           },
       state.liveFail ? 503 : 200,

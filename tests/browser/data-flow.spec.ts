@@ -155,6 +155,31 @@ test('a source refresh in flight does not relabel a finished game score as unava
   expect(app.errors).toEqual([]);
 });
 
+test('a final game the source never published a box score for awaits stats instead of reading zero', async ({ page }) => {
+  const app = await mockApp(page);
+  // CFBD marked West Virginia vs Oklahoma State final while omitting it from
+  // /games/players, so no player in the game had a stat line and every one of
+  // them was shown a 0.0 they had not actually scored.
+  app.state.liveStatsMissing = true;
+  app.state.livePendingTeams = ['Completed University'];
+  await page.goto('/');
+  const card = page.locator('[data-slot="card"]').filter({ hasText: 'Your Lineup' }).filter({ visible: true }).first();
+  await expect(card.getByText('Alex Finished', { exact: true })).toBeVisible();
+  await expect(card).toContainText('Awaiting stats');
+  await expect(card).not.toContainText('0.0 pts');
+  expect(app.errors).toEqual([]);
+});
+
+test('a verified box score still reports a real zero for a player who recorded nothing', async ({ page }) => {
+  const app = await mockApp(page);
+  app.state.liveStatsMissing = true;
+  await page.goto('/');
+  const card = page.locator('[data-slot="card"]').filter({ hasText: 'Your Lineup' }).filter({ visible: true }).first();
+  await expect(card.getByText('Alex Finished', { exact: true })).toBeVisible();
+  await expect(card).toContainText('0.0 pts');
+  expect(app.errors).toEqual([]);
+});
+
 test('a failed session check offers retry rather than pretending the user signed out', async ({ page }) => {  await mockApp(page);
   await page.route('**/api/me', route => route.fulfill({ status: 503, json: { error: 'Unavailable' } }));
   await page.goto('/');

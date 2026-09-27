@@ -58,7 +58,11 @@ finished game in the week's accepted box-score snapshot scored zero, and keeps
 reading as zero while that snapshot is being re-observed or after a refresh is
 rejected: an in-flight or failed refresh does not discard accepted scores. Only
 a week with no accepted snapshot reads as unavailable, and one whose snapshot is
-still arriving reads as awaiting stats. Actual scores and season
+still arriving reads as awaiting stats. A team whose box score the source has
+not published or verified is listed in the snapshot's `pendingTeams`, and its
+players read as awaiting stats rather than zero — the source can mark a game
+final while publishing no box score for it at all, and nobody in that game has
+scored zero merely because the source is behind. Actual scores and season
 totals are unchanged. Historical player totals are labelled with their source
 year. Existing projection fields and storage are retained for compatibility,
 but are not displayed or used as fallback scores.
@@ -270,8 +274,11 @@ old/new IDs. Neither discovery sweeps nor manual backfills bypass these guards.
 The daily job refreshes projections, rosters, schedules and live facts.
 Projection/player failures do not suppress independent schedule/live work.
 During January and August-December, frequent jobs cover all days/hours, but
-skip upstream work when a healthy schedule has no active game window. Hourly
-safety discovery still checks season-level games even if cached schedules
+skip upstream work when a healthy schedule has no active game window. That
+window stays open for several hours after a game is marked complete, because
+the source flips a game to final before its box score finishes settling and
+stopping at the final whistle would strand those players until the next sweep.
+Hourly safety discovery still checks season-level games even if cached schedules
 are absent, stale or malformed.
 
 Gameday refreshes reuse one games/teams discovery and deduplicate CFBD
@@ -291,7 +298,12 @@ weeks, row/game counts, publication outcome and actual upstream attempts.
 A tracked team with missing completed-game box scores/categories or an
 inconsistent final scoreboard is **held**: its players keep their last
 accepted stat lines verbatim (never scored from the partial box) while every
-other verified game publishes, and the holds are logged. Accepted stat lines
+other verified game publishes, and the holds are logged. Held teams are also
+published in the snapshot's `pendingTeams`, so the app can show their players
+as awaiting stats instead of reading the absent line as a zero score. A CFBD
+box-score request that fails for one source week no longer discards the ones
+that succeeded: its games are simply held too, and only a week where every
+box-score request failed is rejected outright. Accepted stat lines
 that no longer resolve to the player pool, or stat-bearing games that vanish
 from the week, still retain the **entire** accepted live snapshot and expose
 an incomplete status. Complete downward corrections and removed stat lines are allowed;
