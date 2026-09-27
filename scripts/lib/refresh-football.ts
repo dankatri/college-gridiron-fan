@@ -1,14 +1,14 @@
 import pLimit from 'p-limit';
 import { z } from 'zod';
 import { SEASON_YEAR, REGULAR_SEASON_LAST_WEEK, weekForDate } from '../../src/lib/season-config';
-import { buildGameStatuses, buildLiveStats, buildTeamSchedules, effectiveKickoff } from '../../src/server/cfbd-transform';
+import { buildGameStatuses, buildTeamSchedules, effectiveKickoff } from '../../src/server/cfbd-transform';
 import { getFbsTeams, getGames, getGamePlayerStats, type CfbdGame, type CfbdGamePlayers, type CfbdTeam } from '../../src/server/cfbd';
 import { liveStatsCacheKey, playersCacheKey, schedulesCacheKey, teamsCacheKey } from '../../src/server/cache-keys';
 import type { Player, TeamSchedule } from '../../src/lib/types';
 import type { CacheRun } from '../../src/server/cache-publication';
 import { readPublishedCache } from '../../src/server/read-published-cache';
 import { readCache, refreshCache } from './cache';
-import { assertLiveCompleteness, assertScheduleCompleteness, refreshWeeks, type AcceptedLiveSnapshot } from './refresh-policy';
+import { assertScheduleCompleteness, buildAcceptedLiveStats, refreshWeeks, type AcceptedLiveSnapshot } from './refresh-policy';
 import { logStep } from './runner';
 
 export async function loadGameContext(): Promise<{ teams: CfbdTeam[]; games: CfbdGame[] }> {
@@ -79,9 +79,11 @@ export async function refreshLiveWeeks(
         }
         const uniqueBoxes = [...new Map(boxes.map(box => [box.id, box])).values()];
         const previous = await readCache<AcceptedLiveSnapshot>(liveStatsCacheKey(SEASON_YEAR, week));
-        assertLiveCompleteness(weekGames, uniqueBoxes, previous, players);
         const observedAt = new Date();
-        const stats = buildLiveStats({ gamePlayers: uniqueBoxes, week, idByAthlete, gameIds: new Set(weekGames.map(game => String(game.id))), now: observedAt });
+        const { stats, holds } = buildAcceptedLiveStats({
+          games: weekGames, boxes: uniqueBoxes, previous, players, idByAthlete, week, now: observedAt,
+        });
+        if (holds.length) logStep('live teams held at last accepted stats', { week, holds });
         const statuses = buildGameStatuses(weekGames, week, observedAt);
         logStep('live candidate', { week, players: stats.length, games: statuses.length });
         return { week, updatedAt: observedAt.toISOString(), stats, games: statuses };

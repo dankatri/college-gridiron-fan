@@ -288,9 +288,13 @@ replacing newer accepted snapshots. Unchanged facts do not rewrite large
 JSONB bodies just to update a clock. Structured logs include requested
 weeks, row/game counts, publication outcome and actual upstream attempts.
 
-Missing completed-game teams/categories or inconsistent final scoreboards
-retain the **entire** accepted live snapshot and expose an incomplete
-status. Complete downward corrections and removed stat lines are allowed;
+A tracked team with missing completed-game box scores/categories or an
+inconsistent final scoreboard is **held**: its players keep their last
+accepted stat lines verbatim (never scored from the partial box) while every
+other verified game publishes, and the holds are logged. Accepted stat lines
+that no longer resolve to the player pool, or stat-bearing games that vanish
+from the week, still retain the **entire** accepted live snapshot and expose
+an incomplete status. Complete downward corrections and removed stat lines are allowed;
 scores are never merged by maximum. Historical per-game contributions are
 not stored, so ambiguous moved/removed games require operator review,
 not a guessed partial merge.

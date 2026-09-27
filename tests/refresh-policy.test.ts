@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import type { CfbdGame, CfbdGamePlayers } from '../src/server/cfbd';
 import { buildLiveStats, buildTeamSchedules } from '../src/server/cfbd-transform';
 import { weekBoundary, weekForDate } from '../src/lib/season-config';
-import { assertLiveCompleteness, assertScheduleCompleteness, refreshWeeks, shouldDiscover } from '../scripts/lib/refresh-policy';
+import { assessLiveCompleteness, assertScheduleCompleteness, buildAcceptedLiveStats, refreshWeeks, shouldDiscover } from '../scripts/lib/refresh-policy';
 import { cacheContentVersion, IncompleteSourceError } from '../scripts/lib/cache';
 import type { TeamSchedule, WeeklyGame } from '../src/lib/types';
 
@@ -37,23 +37,48 @@ test('Monday games, overdue games and closed-week correction sweeps remain disco
   assert.throws(() => refreshWeeks([], new Date(), true, 19));
 });
 
-test('partial completed boxes retain the whole snapshot, complete downward corrections are accepted', () => {
-  const player = { id: 'qb-a', name: 'Alpha', team: 'Alpha', position: 'QB' as const, conference: 'FBS', projectedPoints: 10 };
-  const prior = buildLiveStats({ gamePlayers: [box(1, 300)], week: 1, idByAthlete: new Map([['1', 'qb-a']]) });
-  assert.throws(() => assertLiveCompleteness([game(1)], [], { stats: prior }, [player]), IncompleteSourceError);
-  assert.throws(() => assertLiveCompleteness([game(1)], [{ ...box(1, 300), teams: box(1, 300).teams.slice(1) }], { stats: prior }, [player]), IncompleteSourceError);
-  assert.doesNotThrow(() => assertLiveCompleteness([game(1)], [box(1, 100)], { stats: prior }, [player]));
-  const corrected = buildLiveStats({ gamePlayers: [box(1, 100)], week: 1, idByAthlete: new Map([['1', 'qb-a']]) });
+const alphaQb = { id: 'qb-a', name: 'Alpha', team: 'Alpha', position: 'QB' as const, conference: 'FBS', projectedPoints: 10 };
+const ids = new Map([['1', 'qb-a']]);
+
+test('structural ambiguity still retains the whole accepted snapshot', () => {
+  const prior = buildLiveStats({ gamePlayers: [box(1, 300)], week: 1, idByAthlete: ids });
+  assert.throws(() => assessLiveCompleteness([game(1)], [box(1, 300)], { stats: prior }, []), IncompleteSourceError);
+  assert.throws(() => assessLiveCompleteness([], [], { stats: prior }, [alphaQb]), IncompleteSourceError);
+});
+
+test('partial completed boxes hold that team at its accepted stats, complete downward corrections are accepted', () => {
+  const prior = buildLiveStats({ gamePlayers: [box(1, 300)], week: 1, idByAthlete: ids });
+  for (const boxes of [[], [{ ...box(1, 100), teams: box(1, 100).teams.slice(1) }], [{ ...box(1, 100), teams: box(1, 100).teams.map(team => ({ ...team, points: 0 })) }]]) {
+    const { stats, holds } = buildAcceptedLiveStats({ games: [game(1)], boxes, previous: { stats: prior }, players: [alphaQb], idByAthlete: ids, week: 1 });
+    assert.deepEqual(holds.map(hold => hold.team), ['Alpha']);
+    assert.deepEqual(stats, prior, 'A held team keeps its accepted stat lines rather than regressing');
+  }
+  const { stats: corrected, holds } = buildAcceptedLiveStats({ games: [game(1)], boxes: [box(1, 100)], previous: { stats: prior }, players: [alphaQb], idByAthlete: ids, week: 1 });
+  assert.deepEqual(holds, []);
   assert.ok(corrected[0].fantasyPoints < prior[0].fantasyPoints);
 });
 
+test('one team missing its box score does not freeze scoring for the rest of the week', () => {
+  const betaWr = { id: 'wr-b', name: 'Beta', team: 'Beta', position: 'WR' as const, conference: 'FBS', projectedPoints: 5 };
+  const betaGame: CfbdGame = { ...game(2), homeId: 3, homeTeam: 'Beta', homePoints: 14, awayId: 4, awayTeam: 'Gamma', awayPoints: 3 };
+  const betaBox: CfbdGamePlayers = { id: 2, teams: [{ team: 'Beta', conference: 'FBS', homeAway: 'home', points: 14, categories: [
+    { name: 'passing', types: [] }, { name: 'rushing', types: [] },
+    { name: 'receiving', types: [{ name: 'YDS', athletes: [{ id: '2', name: 'Fixture', stat: '90' }] }] },
+  ] }] };
+  const idsBoth = new Map([['1', 'qb-a'], ['2', 'wr-b']]);
+  const { stats, holds } = buildAcceptedLiveStats({
+    games: [game(1), betaGame], boxes: [betaBox], previous: null, players: [alphaQb, betaWr], idByAthlete: idsBoth, week: 1,
+  });
+  assert.deepEqual(holds, [{ gameId: 1, team: 'Alpha', reason: 'A completed or previously scored game has missing team statistics' }]);
+  assert.deepEqual(stats.map(stat => [stat.playerId, stat.receivingYards]), [['wr-b', 90]]);
+});
+
 test('a non-FBS opponent missing its box score entirely does not block the FBS side', () => {
-  const player = { id: 'qb-a', name: 'Alpha', team: 'Alpha', position: 'QB' as const, conference: 'FBS', projectedPoints: 10 };
   // CFBD frequently never publishes box-score stats for an FCS opponent in an
   // FBS-vs-FCS game; only 'Alpha' is in our tracked roster pool.
-  assert.doesNotThrow(() => assertLiveCompleteness(
-    [game(1)], [{ ...box(1, 100), teams: box(1, 100).teams.slice(0, 1) }], null, [player],
-  ));
+  assert.deepEqual(assessLiveCompleteness(
+    [game(1)], [{ ...box(1, 100), teams: box(1, 100).teams.slice(0, 1) }], null, [alphaQb],
+  ), []);
 });
 
 test('overlapping source chunks are not counted twice, but distinct games for a player are added', () => {
