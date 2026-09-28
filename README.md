@@ -273,12 +273,18 @@ old/new IDs. Neither discovery sweeps nor manual backfills bypass these guards.
 
 The daily job refreshes projections, rosters, schedules and live facts.
 Projection/player failures do not suppress independent schedule/live work.
-During January and August-December, frequent jobs cover all days/hours, but
-skip upstream work when a healthy schedule has no active game window. That
-window stays open for several hours after a game is marked complete, because
-the source flips a game to final before its box score finishes settling and
-stopping at the final whistle would strand those players until the next sweep.
-Hourly safety discovery still checks season-level games even if cached schedules
+During January and August-December, gameday jobs poll every 10 minutes, but
+only in the UTC windows where a game can actually be in progress: these are
+derived from the season's kickoff distribution and cover every game with at
+least two polls. Polling around the clock instead spent a billed minute per
+run — Actions rounds each job up to a whole minute — while roughly 90% of
+runs exited immediately with no active game window, so the early exit saved
+upstream calls but no CI time. Within a window, a run still skips upstream
+work when a healthy schedule has nothing active. That window stays open for
+several hours after a game is marked complete, because the source flips a
+game to final before its box score finishes settling and stopping at the
+final whistle would strand those players until the next sweep. Six-hourly
+safety discovery still checks season-level games even if cached schedules
 are absent, stale or malformed.
 
 Gameday refreshes reuse one games/teams discovery and deduplicate CFBD
