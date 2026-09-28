@@ -11,19 +11,43 @@ const HOUR = 60 * 60 * 1000;
 export const CORRECTION_WINDOW_MS = 96 * HOUR;
 
 export function shouldDiscover(schedules: TeamSchedule[] | null, checkedAt: string | null, now: Date, sweep: boolean) {
+  return shouldDiscoverGate(scheduleGate(schedules), checkedAt, now, sweep);
+}
+
+/**
+ * The only schedule facts the discovery gate needs. Producing this in SQL
+ * keeps a poll's read down to a few kilobytes of kickoff timestamps instead of
+ * the whole season.
+ */
+export interface ScheduleGate {
+  present: boolean;
+  malformed: boolean;
+  kickoffs: Array<string | Date>;
+}
+
+export function scheduleGate(schedules: TeamSchedule[] | null): ScheduleGate {
+  if (!Array.isArray(schedules) || !schedules.length) return { present: false, malformed: false, kickoffs: [] };
+  const malformed = schedules.some(team => !team || !Array.isArray(team.weeklyGames) || team.weeklyGames.some(game => !game));
+  if (malformed) return { present: true, malformed, kickoffs: [] };
+  const kickoffs = schedules.flatMap(team => team.weeklyGames.flatMap(
+    game => game.gameDate && !game.isByeWeek ? [game.gameDate] : [],
+  ));
+  return { present: true, malformed, kickoffs };
+}
+
+export function shouldDiscoverGate(gate: ScheduleGate, checkedAt: string | null, now: Date, sweep: boolean) {
   const age = checkedAt ? now.getTime() - Date.parse(checkedAt) : NaN;
-  if (sweep || !Array.isArray(schedules) || !schedules.length || !Number.isFinite(age) || age > HOUR) return true;
-  if (schedules.some(team => !team || !Array.isArray(team.weeklyGames) || team.weeklyGames.some(game => !game))) return true;
-  return schedules.some(team => team.weeklyGames.some(game => {
-    if (!game.gameDate || game.isByeWeek) return false;
+  if (sweep || !gate.present || !Number.isFinite(age) || age > HOUR) return true;
+  if (gate.malformed) return true;
+  return gate.kickoffs.some(kickoff => {
     // A game staying in the window after it is marked complete is deliberate:
     // CFBD flips /games to completed before /games/players finishes settling,
     // so stopping at the final whistle would leave that box score to the
     // hourly sweep and freeze those players for up to an hour.
-    const elapsed = now.getTime() - new Date(game.gameDate).getTime();
+    const elapsed = now.getTime() - new Date(kickoff).getTime();
     if (!Number.isFinite(elapsed)) return true;
     return elapsed >= -HOUR && elapsed <= 8 * HOUR;
-  }));
+  });
 }
 
 export function refreshWeeks(games: CfbdGame[], now: Date, sweep: boolean, forcedWeek?: number): number[] {

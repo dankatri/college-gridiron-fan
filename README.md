@@ -280,7 +280,15 @@ least two polls. Polling around the clock instead spent a billed minute per
 run — Actions rounds each job up to a whole minute — while roughly 90% of
 runs exited immediately with no active game window, so the early exit saved
 upstream calls but no CI time. Within a window, a run still skips upstream
-work when a healthy schedule has nothing active. That window stays open for
+work when a healthy schedule has nothing active. That check reads the gate
+facts — whether a schedule is published, whether it is well formed, and its
+kickoff timestamps — through a SQL projection rather than downloading the
+season. Each poll used to pull the whole schedule out of Neon to decide one
+boolean, and because every run paid that cost it dominated the database's
+network transfer; the projection cuts a poll's read by roughly 92%. Kickoffs
+are still compared in JavaScript so the window rule has a single definition,
+and `tests/integration/schedule-gate.test.ts` holds the SQL and the
+in-memory gate to identical decisions. That window stays open for
 several hours after a game is marked complete, because the source flips a
 game to final before its box score finishes settling and stopping at the
 final whistle would strand those players until the next sweep. Six-hourly
