@@ -7,10 +7,26 @@ on:
   schedule:
     # Rosters, teams and schedules once a day (07:15 UTC).
     - cron: '15 7 * * *'
-    # Season-wide coverage. Healthy idle schedules skip upstream work; hourly
-    # discovery still runs if a game moved or the cache is incomplete.
-    - cron: '*/10 * * 1,8-12 *'
-    - cron: '7 * * 1,8-12 *'
+    # Gameday polling is scoped to the hours a game can actually be in
+    # progress. Running every 10 minutes around the clock spent a billed minute
+    # per run (jobs round up) while ~90% of them exited immediately with no
+    # active game window. The windows below come from the season's kickoff
+    # distribution in UTC and cover every game with at least two polls.
+    #
+    # Main slate: Saturday afternoon through Sunday morning.
+    - cron: '*/10 16-23 * 1,8-12 6'
+    - cron: '*/10 0-7 * 1,8-12 0'
+    # Midweek and Friday night games: weekday evenings, and the following
+    # early hours in UTC.
+    - cron: '*/10 17-23 * 1,8-12 2-5'
+    - cron: '*/10 0-5 * 1,8-12 3-6'
+    # Sunday evening and the Labor Day Monday carry a handful of games that no
+    # other window reaches.
+    - cron: '*/10 20-23 * 1,8-12 0'
+    - cron: '*/10 0-2,23 * 1,8-12 1'
+    # Safety discovery still runs off-window to pick up moved games and box
+    # scores the source published late.
+    - cron: '7 */6 * 1,8-12 *'
   workflow_dispatch:
     inputs:
       job:
@@ -104,4 +120,4 @@ jobs:
         if: ${{ !cancelled() && steps.scope.outputs.job == 'gameday' }}
         run: npm run refresh:gameday
         env:
-          DISCOVERY_SWEEP: ${{ (github.event_name == 'workflow_dispatch' || github.event.schedule == '7 * * 1,8-12 *') && '1' || '' }}
+          DISCOVERY_SWEEP: ${{ (github.event_name == 'workflow_dispatch' || github.event.schedule == '7 */6 * 1,8-12 *') && '1' || '' }}

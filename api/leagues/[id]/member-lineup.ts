@@ -10,6 +10,7 @@ import { FIRST_WEEK, LAST_WEEK } from '../../../src/lib/types';
 import type { PlayerStats } from '../../../src/lib/types';
 import { cacheQueryMode, projectPlayers } from '../../../src/server/cache-projections';
 import { jsonResponse } from '../../../src/server/http';
+import { loadCompletedGameWeeks } from '../../../src/server/week-completion';
 
 export const config = {
   runtime: 'edge',
@@ -90,7 +91,9 @@ export default async function handler(request: Request): Promise<Response> {
 
     // Your own lineup is always yours to see; everyone else's stays sealed
     // until the week has been played out.
-    if (targetUserId !== user.id && !isWeekComplete(week)) {
+    const gameFinals = targetUserId !== user.id ? await loadCompletedGameWeeks() : undefined;
+    const now = new Date();
+    if (targetUserId !== user.id && !isWeekComplete(week, now, gameFinals)) {
       return jsonResponse(
         { error: `Week ${week} is not finished yet — lineups are revealed once the week ends` },
         403,
@@ -131,7 +134,7 @@ export default async function handler(request: Request): Promise<Response> {
 
     const availableWeeks = otherWeeks
       .map((row) => row.week)
-      .filter((candidate) => targetUserId === user.id || isWeekComplete(candidate))
+      .filter((candidate) => targetUserId === user.id || isWeekComplete(candidate, now, gameFinals))
       .sort((a, b) => a - b);
 
     if (!lineupRow) {

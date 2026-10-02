@@ -1,8 +1,7 @@
 import { PlayerStats, Player } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
-import { Activity, TrendUp as TrendingUp, Clock, User } from '@phosphor-icons/react';
+import { Activity, Clock, User } from '@phosphor-icons/react';
 
 interface LiveStatsCardProps {
   player: Player;
@@ -115,8 +114,6 @@ export function LiveStatsCard({ player, stats, isInLineup = false }: LiveStatsCa
   };
 
   const keyStats = getStatsByPosition();
-  const pointsDiff = stats.fantasyPoints - player.projectedPoints;
-  const progressValue = Math.min((stats.fantasyPoints / player.projectedPoints) * 100, 100);
 
   return (
     <Card className={`${isInLineup ? 'border-accent bg-accent/5' : ''} transition-all duration-200`}>
@@ -178,26 +175,9 @@ export function LiveStatsCard({ player, stats, isInLineup = false }: LiveStatsCa
       
       <CardContent className="space-y-3">
         {/* Fantasy Points */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">Fantasy Points</span>
-            <div className="flex items-center gap-2">
-              <span className="text-lg font-bold">{stats.fantasyPoints}</span>
-              <div className={`flex items-center gap-1 text-xs ${
-                pointsDiff >= 0 ? 'text-green-600' : 'text-red-600'
-              }`}>
-                <TrendingUp size={12} className={pointsDiff < 0 ? 'rotate-180' : ''} />
-                {pointsDiff >= 0 ? '+' : ''}{pointsDiff.toFixed(1)}
-              </div>
-            </div>
-          </div>
-          <div className="space-y-1">
-            <Progress value={progressValue} className="h-2" />
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>vs. Projection</span>
-              <span>{player.projectedPoints} pts</span>
-            </div>
-          </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium">Fantasy Points</span>
+          <span className="text-lg font-bold">{stats.fantasyPoints}</span>
         </div>
 
         {/* Key Stats Grid */}

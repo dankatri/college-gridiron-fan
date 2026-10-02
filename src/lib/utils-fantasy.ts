@@ -130,8 +130,7 @@ export function getCurrentWeek(): number {
   return FIRST_WEEK;
 }
 
-export function getWeekStatus(week: number): 'upcoming' | 'current' | 'locked' | 'preseason' {
-  const now = new Date();
+export function getWeekStatus(week: number, now: Date = new Date(), gameFinals?: ReadonlySet<number>): 'upcoming' | 'current' | 'locked' | 'preseason' {
   const firstWeekStart = weekBoundary(FIRST_WEEK)!;
 
   // Before season starts, everything is preseason / upcoming
@@ -139,13 +138,11 @@ export function getWeekStatus(week: number): 'upcoming' | 'current' | 'locked' |
     return 'preseason';
   }
 
-  const currentWeek = getCurrentWeek();
-
   // 'locked' means the week is finished; a week that is merely under way is
   // still 'current', because its unplayed slots can still be changed.
-  if (isWeekComplete(week)) {
+  if (isWeekComplete(week, now, gameFinals)) {
     return 'locked';
-  } else if (week === currentWeek || hasWeekStarted(week)) {
+  } else if (hasWeekStarted(week, now)) {
     return 'current';
   } else {
     return 'upcoming';

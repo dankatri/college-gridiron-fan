@@ -15,14 +15,20 @@ export interface WeekActuals {
   error: Error | null;
   hasData: boolean;
   isReliable: boolean;
+  /**
+   * Teams whose box score is not yet verified for this week, lowercased to
+   * match how the app keys teams. A player on one of these has no recorded
+   * stat line *yet* — that is not a zero score.
+   */
+  pendingTeams: Set<string>;
 }
 
 const EMPTY = new Map<string, PlayerStats>();
+const NO_PENDING_TEAMS = new Set<string>();
 
 /**
- * Load a week's actual fantasy scores so past weeks can show what players
- * really did instead of a projection. Weeks that have not kicked off yet are
- * never fetched, since there is nothing to show.
+ * Load actual fantasy scores for an opened week. Future weeks are not fetched
+ * before their editing window opens.
  */
 export function useWeekActuals(week?: number): WeekActuals {
   const now = useMinuteClock();
@@ -35,9 +41,15 @@ export function useWeekActuals(week?: number): WeekActuals {
     () => hasStarted && state.data ? new Map(state.data.stats.map(stat => [stat.playerId, stat])) : EMPTY,
     [hasStarted, state.data],
   );
+  const pendingTeams = useMemo(
+    () => hasStarted && state.data?.pendingTeams?.length
+      ? new Set(state.data.pendingTeams.map(team => team.toLowerCase()))
+      : NO_PENDING_TEAMS,
+    [hasStarted, state.data],
+  );
   return {
     isLoading: hasStarted && state.data === undefined && !state.error,
-    hasStarted, actuals, error: state.error, hasData: !!state.data,
+    hasStarted, actuals, error: state.error, hasData: !!state.data, pendingTeams,
     isReliable: !!state.data && !state.error && state.sourceStatus !== 'refreshing',
   };
 }

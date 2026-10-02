@@ -5,7 +5,7 @@ import { WEEK_LABELS } from '@/lib/season-config';
 import { usePlayers } from '@/hooks/use-players';
 import { hydrateSlots, toSlotPayload, type ApiLineupSlot } from '@/lib/lineup-state';
 import { calculateProjectedPoints, createEmptyLineup } from '@/lib/utils-fantasy';
-import { hasWeekStarted } from '@/lib/week-lock';
+import { hasWeekStarted, isWeekComplete } from '@/lib/week-lock';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -21,6 +21,7 @@ import { toast } from 'sonner';
 
 interface LeagueAdminProps {
   leagueId: string;
+  gameFinals: ReadonlySet<number>;
   currentWeek: number;
   isOwner: boolean;
   onSaved: () => Promise<void>;
@@ -71,7 +72,7 @@ function describeChange(entry: AuditEntry, playersById: Map<string, Player>): st
   return changes.length > 0 ? changes : ['Saved with no slot changes'];
 }
 
-export function LeagueAdmin({ leagueId, currentWeek, isOwner, onSaved }: LeagueAdminProps) {
+export function LeagueAdmin({ leagueId, currentWeek, gameFinals, isOwner, onSaved }: LeagueAdminProps) {
   const [week, setWeek] = useState<number>(currentWeek);
   const [members, setMembers] = useState<ApiMember[]>([]);
   const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
@@ -243,7 +244,7 @@ export function LeagueAdmin({ leagueId, currentWeek, isOwner, onSaved }: LeagueA
             {locked && (
               <Badge variant="destructive" className="mb-2 flex items-center gap-1">
                 <LockSimple size={12} />
-                Week under way — edits are overrides
+                {isWeekComplete(week, new Date(), gameFinals) ? 'Week finished' : 'Week under way'} — edits are overrides
               </Badge>
             )}
           </div>
@@ -310,7 +311,7 @@ export function LeagueAdmin({ leagueId, currentWeek, isOwner, onSaved }: LeagueA
                     <div>
                       <p className="font-semibold">{selectedMember.displayName}</p>
                       <p className="text-xs text-muted-foreground">
-                        {WEEK_LABELS[week] ?? `Week ${week}`} · Projected {projected.toFixed(1)} pts
+                        {WEEK_LABELS[week] ?? `Week ${week}`}
                       </p>
                     </div>
                     <Button
@@ -383,7 +384,7 @@ export function LeagueAdmin({ leagueId, currentWeek, isOwner, onSaved }: LeagueA
                                             <div className="min-w-0">
                                               <div className="truncate">{player.name}</div>
                                               <div className="truncate text-xs text-muted-foreground">
-                                                {player.team} · {player.projectedPoints} pts
+                                                {player.team}
                                               </div>
                                             </div>
                                             <Badge

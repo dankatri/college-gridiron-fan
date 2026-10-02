@@ -10,11 +10,12 @@ export function countWinningWeeks(
   entries: readonly WeeklyScores[],
   availableWeeks: Iterable<number> = ALL_WEEKS,
   now: Date = new Date(),
+  gameFinals?: ReadonlySet<number>,
 ): Map<string, number> {
   const wins = new Map(entries.map(entry => [entry.userId, 0]));
   const available = new Set(availableWeeks);
   for (const week of ALL_WEEKS) {
-    if (!available.has(week) || !isWeekComplete(week, now)) continue;
+    if (!available.has(week) || !isWeekComplete(week, now, gameFinals)) continue;
     let highest = -Infinity;
     let winners: string[] = [];
     for (const entry of entries) {

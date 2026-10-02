@@ -11,7 +11,7 @@ import { useWeekActuals } from '@/hooks/use-week-actuals';
 import { useWeekLocks } from '@/hooks/use-week-locks';
 import { isWeekComplete } from '@/lib/week-lock';
 import { useWeekMatchups } from '@/hooks/use-week-matchups';
-import { describeWeekPoints, sumActualPoints } from '@/lib/week-actuals';
+import { describeWeekPoints, sumActualPoints, type WeekDataStatus } from '@/lib/week-actuals';
 import {
   hydrateSlots,
   toSlotPayload,
@@ -115,28 +115,40 @@ function App() {
   const lineupRequest = useRef(0);
   const draftBaseline = useRef<{ key: string; signature: string } | null>(null);
 
-  // Past weeks show what a lineup really scored instead of its projection.
-  const { actuals: weekActuals, hasStarted: weekHasStarted, hasData: hasActuals, isReliable: actualsReliable, error: actualsError } =
-    useWeekActuals(isAuthenticated ? currentWeek : undefined);
+  // Show recorded points for the selected week.
+  const {
+    actuals: weekActuals, hasStarted: weekHasStarted, isLoading: actualsLoading,
+    hasData: hasActuals, isReliable: actualsReliable, error: actualsError,
+    pendingTeams: actualsPendingTeams,
+  } = useWeekActuals(isAuthenticated ? currentWeek : undefined);
   const { matchups: weekMatchups } = useWeekMatchups(isAuthenticated ? currentWeek : undefined);
   // Players lock one by one as their games kick off; the week itself stays
-  // open for edits until its following Wednesday boundary.
+  // open until all games finish or the following Wednesday boundary.
   const weekLocks = useWeekLocks(isAuthenticated ? currentWeek : undefined);
   const showWeekActuals = weekHasStarted;
   const weekName = `Week ${currentWeek}`;
 
+  // An accepted snapshot stays usable while it is being re-observed, so a
+  // finished week keeps showing its recorded scores during a refresh or after
+  // one is rejected. Only a week with nothing accepted yet is unavailable, and
+  // one still arriving is merely awaited.
+  const weekDataStatus: WeekDataStatus = hasActuals && !weekLocks.isLoading
+    ? 'ready'
+    : actualsLoading || (weekLocks.isLoading && !weekLocks.error) ? 'loading' : 'missing';
+
   const lineupSlotPoints = useCallback(
     (slot: LineupSlot) =>
       slot.player
-        ? describeWeekPoints(slot.player, {
+        ? describeWeekPoints({
             showActuals: showWeekActuals,
             stats: weekActuals.get(slot.player.id),
             game: weekMatchups.get(slot.player.team.toLowerCase())?.game,
             weekName,
-            available: actualsReliable && !weekLocks.isLoading,
+            status: weekDataStatus,
+            teamPending: actualsPendingTeams.has(slot.player.team.toLowerCase()),
           })
         : undefined,
-    [showWeekActuals, weekActuals, weekMatchups, weekName, actualsReliable, weekLocks.isLoading],
+    [showWeekActuals, weekActuals, weekMatchups, weekName, weekDataStatus, actualsPendingTeams],
   );
 
   // The reset screen clears the token from the URL once the password is updated.
@@ -155,10 +167,10 @@ function App() {
           lineup: hydrateSlots(row.slots, playersById),
           totalPoints: Number.parseFloat(row.projectedPoints ?? '0') || 0,
           actualPoints: row.actualPoints ? Number.parseFloat(row.actualPoints) : undefined,
-          isLocked: !!row.lockedAt || isWeekComplete(row.week),
+          isLocked: !!row.lockedAt || isWeekComplete(row.week, new Date(), weekLocks.gameFinals),
         }))
         .sort((a, b) => a.week - b.week),
-    [savedLineupRows, playersById],
+    [savedLineupRows, playersById, weekLocks.gameFinals],
   );
 
   const fetchLeagues = useCallback(async () => {
@@ -557,7 +569,7 @@ function App() {
         </div>
 
         <div className="space-y-2">
-          <WeekNavigation currentWeek={currentWeek} onWeekChange={setCurrentWeek} />
+          <WeekNavigation currentWeek={currentWeek} onWeekChange={setCurrentWeek} gameFinals={weekLocks.gameFinals} />
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             {(() => {
               const seasonStart = weekBoundary(1)!;
@@ -924,6 +936,7 @@ function App() {
             <LeagueDashboard
               key={currentUser?.id}
               currentWeek={currentWeek}
+              gameFinals={weekLocks.gameFinals}
               weeklyLineups={weeklyLineups}
               currentUserId={currentUser?.id || ''}
               currentUsername={currentUser?.displayName || ''}

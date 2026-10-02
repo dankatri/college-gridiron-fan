@@ -10,6 +10,8 @@ export interface LiveDataPayload {
   updatedAt: string | null;
   stats: PlayerStats[];
   games: GameStatus[];
+  /** Teams with no verified box score yet; their players have not scored zero. */
+  pendingTeams?: string[];
 }
 
 const date = z.string().datetime({ offset: true }).transform(value => new Date(value));
@@ -31,6 +33,7 @@ const payloadSchema = z.object({
     quarter: z.number().optional(), timeRemaining: z.string().optional(),
     team1Score: z.number(), team2Score: z.number(), lastUpdated: date,
   })),
+  pendingTeams: z.array(z.string()).optional(),
 }).merge(sourceMetadataFields);
 
 const resources = new Map<string, AsyncResource<LiveDataPayload | null>>();

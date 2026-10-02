@@ -14,11 +14,12 @@ import { groupNavigationWeeks } from '@/lib/week-navigation';
 interface WeekNavigationProps {
   currentWeek: number;
   onWeekChange: (week: number) => void;
+  gameFinals: ReadonlySet<number>;
 }
 
-export function WeekNavigation({ currentWeek, onWeekChange }: WeekNavigationProps) {
+export function WeekNavigation({ currentWeek, onWeekChange, gameFinals }: WeekNavigationProps) {
   const now = useMinuteClock();
-  const { completed, regular, postseason } = groupNavigationWeeks(new Date(now));
+  const { completed, regular, postseason } = groupNavigationWeeks(new Date(now), gameFinals);
   const groups = [
     { label: 'Completed weeks', weeks: completed },
     { label: 'Regular season', weeks: regular },
@@ -64,7 +65,7 @@ export function WeekNavigation({ currentWeek, onWeekChange }: WeekNavigationProp
             {weeks.map(week => (
               <DropdownMenuRadioItem key={week} value={week.toString()}>
                 {getWeekTooltip(week)}
-                {getWeekStatus(week) === 'current' && <span className="ml-auto size-1.5 rounded-full bg-green-500" aria-hidden="true" />}
+                {getWeekStatus(week, new Date(now), gameFinals) === 'current' && <span className="ml-auto size-1.5 rounded-full bg-green-500" aria-hidden="true" />}
               </DropdownMenuRadioItem>
             ))}
           </DropdownMenuRadioGroup>
@@ -101,7 +102,7 @@ export function WeekNavigation({ currentWeek, onWeekChange }: WeekNavigationProp
           <Tabs className="min-w-0 flex-1" value={currentWeek.toString()} onValueChange={selectWeek}>
             <TabsList aria-label="Regular-season weeks" className="h-auto min-h-11 w-full justify-start gap-1 overflow-x-auto p-1">
               {regular.map((week) => {
-                const status = getWeekStatus(week);
+                const status = getWeekStatus(week, new Date(now), gameFinals);
                 return (
                   <TabsTrigger
                     key={week}

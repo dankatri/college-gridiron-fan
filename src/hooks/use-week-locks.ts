@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 import { useScheduleData } from './use-schedule-data';
 import { useMinuteClock } from './use-minute-clock';
-import { finishedTeamsForWeek, isWeekComplete, lockedTeamsForWeek } from '@/lib/week-lock';
+import { completedGameWeeks, finishedTeamsForWeek, isWeekComplete, lockedTeamsForWeek } from '@/lib/week-lock';
+import { LAST_WEEK } from '@/lib/types';
 
 export interface WeekLocks {
   isLoading: boolean;
@@ -10,8 +11,9 @@ export interface WeekLocks {
   lockedTeams: Set<string>;
   /** Those of `lockedTeams` whose game is over rather than still being played. */
   finishedTeams: Set<string>;
-  /** True once the week is over and nothing in it can change. */
+  /** True once members can no longer edit. Score corrections remain possible. */
   isComplete: boolean;
+  gameFinals: ReadonlySet<number>;
   /** Whether this player is frozen because their own game has begun. */
   isPlayerLocked: (team?: string | null) => boolean;
 }
@@ -31,18 +33,21 @@ const NO_TEAMS = new Set<string>();
 export function useWeekLocks(week?: number): WeekLocks {
   const now = useMinuteClock();
   const { data: schedules, error } = useScheduleData(
-    week !== undefined && !isWeekComplete(week, new Date(now)),
+    // Keep all navigation groups current even when viewing a historical week.
+    week !== undefined && !isWeekComplete(LAST_WEEK, new Date(now)),
     week !== undefined,
   );
 
   return useMemo(() => {
+    const gameFinals = completedGameWeeks(schedules ?? []);
     if (schedules === undefined || week === undefined) {
       return {
+        gameFinals,
         isLoading: schedules === undefined,
         error,
         lockedTeams: NO_TEAMS,
         finishedTeams: NO_TEAMS,
-        isComplete: week === undefined ? false : isWeekComplete(week, new Date(now)),
+        isComplete: week === undefined ? false : isWeekComplete(week, new Date(now), gameFinals),
         isPlayerLocked: () => schedules === undefined,
       };
     }
@@ -50,11 +55,12 @@ export function useWeekLocks(week?: number): WeekLocks {
     const lockedTeams = lockedTeamsForWeek(schedules, week, new Date(now));
 
     return {
+      gameFinals,
       isLoading: false,
       error,
       lockedTeams,
       finishedTeams: finishedTeamsForWeek(schedules, week),
-      isComplete: isWeekComplete(week, new Date(now)),
+      isComplete: isWeekComplete(week, new Date(now), gameFinals),
       isPlayerLocked: (team?: string | null) => (team ? lockedTeams.has(team.toLowerCase()) : false),
     };
   }, [schedules, week, now, error]);

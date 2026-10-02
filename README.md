@@ -4,9 +4,12 @@ Build a weekly lineup of two quarterbacks, two running backs and two wide
 receivers. Partial lineups can be saved. Each player may be used three times
 per league/season and locks when their first game in that app week kicks off.
 
-The week's editing and member-lineup reveal boundary is the following
-configured Wednesday, not the moment the last known game finishes. Week 0 is
-valid. The final configured week also has a closing boundary, without adding
+An opened week automatically closes for member editing and reveals member
+lineups when every non-bye game in its accepted schedule is confirmed final,
+with a stable game ID and both scores present. Every team representation must
+agree; empty or unavailable schedules cannot close a week early. The following
+configured Wednesday remains the fallback cutoff. Week 0 is valid.
+The final configured week also has a closing boundary, without adding
 another selectable week. Owners may make audited overrides, including partial
 lineups, but cannot exceed the season usage cap.
 
@@ -14,7 +17,9 @@ The week bar keeps completed weeks in a **Completed weeks** menu and groups
 everything after Rivalry Week, including conference championships, under
 **Post season**. The remaining regular-season weeks stay visible in one
 horizontally scrollable row. The compact mobile selector uses the same groups.
-Grouping changes at the normal week boundary without changing the selected week.
+Grouping changes when the slate finishes or the normal boundary passes, without
+changing the selected week. Score corrections continue after early closure;
+ending a week does not freeze its recorded points.
 
 **Weeks played** requires at least one selected player and a week that has
 actually begun playing, not merely opened for editing. An open week starts
@@ -44,6 +49,23 @@ the highest actual score. Tied leaders each receive a win. Open/future weeks,
 weeks without an available scoring snapshot, and members without a lineup for
 that week do not receive wins. Counts are recalculated from the accepted scores
 on each leaderboard request, including later corrections and audited lineup edits.
+
+Projected points are temporarily removed from all user-facing player, lineup,
+live-scoring and league views, including comparisons and progress bars against
+predictions. Pending players show **Awaiting stats**, not an estimated score;
+unavailable data is not presented as a confirmed zero. A player absent from a
+finished game in the week's accepted box-score snapshot scored zero, and keeps
+reading as zero while that snapshot is being re-observed or after a refresh is
+rejected: an in-flight or failed refresh does not discard accepted scores. Only
+a week with no accepted snapshot reads as unavailable, and one whose snapshot is
+still arriving reads as awaiting stats. A team whose box score the source has
+not published or verified is listed in the snapshot's `pendingTeams`, and its
+players read as awaiting stats rather than zero — the source can mark a game
+final while publishing no box score for it at all, and nobody in that game has
+scored zero merely because the source is behind. Actual scores and season
+totals are unchanged. Historical player totals are labelled with their source
+year. Existing projection fields and storage are retained for compatibility,
+but are not displayed or used as fallback scores.
 
 The player selection list shows season-to-date actual points and statistics,
 independent of the selected week; schedule, usage and kickoff locks still follow
@@ -190,7 +212,7 @@ works. Do not merge production-writer changes while those gates are blocked.
 | Resource | Browser freshness | Shared HTTP caching |
 | --- | --- | --- |
 | Player catalogue | 30 minutes; filters/search/sorts stay local | 1 hour + 24-hour stale window |
-| Schedules | 45 seconds; 60-second active-week polling | 60 seconds + 300-second stale window |
+| Schedules | 45 seconds; one 60-second visible poll until the season cutoff | 60 seconds + 300-second stale window |
 | Per-week live facts | 45 seconds; 60-second active-week polling | 60 seconds + 300-second stale window |
 | Season player totals | 45 seconds; one shared 60-second poll | 60 seconds + 300-second stale window |
 | Team logo directory | 1 hour; reused across schedule weeks | 1 hour + 24-hour stale window |
@@ -229,10 +251,47 @@ measure conditional-request benefits before adding more database checks.
 
 ## Source refresh and recovery
 
+Schedule publication preserves the evidence used to close weeks: completed
+games cannot disappear, change app weeks, revert to unfinished, or lose their
+final scores. Known open-week fixtures cannot silently disappear; a reschedule
+must retain the same game ID. An already-final slate cannot change membership
+before its calendar cutoff. Failed or incomplete refresh attempts retain the
+accepted schedule, so they do not reopen member editing. Numeric score
+corrections remain allowed, and live scoring continues refreshing independently.
+
+When deploying this rule, first self-check the accepted schedules with
+`assertScheduleCompleteness(current, current, now)`, drain refresh runs using
+older code, and run the hardened schedule refresh before enabling the new app.
+Compare the known fixture IDs with the source, not just game counts.
+If a legitimate late fixture trips the membership guard, keep the last-good
+snapshot and inspect the failed refresh/source metadata. Do not clear the cache
+or reopen revealed lineups. Membership reconciliation is permitted after the
+normal cutoff, when calendar locking prevents reopening; rerun the refresh then.
+Completed-game ID changes/removals require an explicitly reviewed source
+reconciliation, preserving closed-week editing restrictions and an audit of the
+old/new IDs. Neither discovery sweeps nor manual backfills bypass these guards.
+
 The daily job refreshes projections, rosters, schedules and live facts.
 Projection/player failures do not suppress independent schedule/live work.
-During January and August-December, frequent jobs cover all days/hours, but
-skip upstream work when a healthy schedule has no active game window. Hourly
+During January and August-December, gameday jobs poll every 10 minutes, but
+only in the UTC windows where a game can actually be in progress: these are
+derived from the season's kickoff distribution and cover every game with at
+least two polls. Polling around the clock instead spent a billed minute per
+run — Actions rounds each job up to a whole minute — while roughly 90% of
+runs exited immediately with no active game window, so the early exit saved
+upstream calls but no CI time. Within a window, a run still skips upstream
+work when a healthy schedule has nothing active. That check reads the gate
+facts — whether a schedule is published, whether it is well formed, and its
+kickoff timestamps — through a SQL projection rather than downloading the
+season. Each poll used to pull the whole schedule out of Neon to decide one
+boolean, and because every run paid that cost it dominated the database's
+network transfer; the projection cuts a poll's read by roughly 92%. Kickoffs
+are still compared in JavaScript so the window rule has a single definition,
+and `tests/integration/schedule-gate.test.ts` holds the SQL and the
+in-memory gate to identical decisions. That window stays open for
+several hours after a game is marked complete, because the source flips a
+game to final before its box score finishes settling and stopping at the
+final whistle would strand those players until the next sweep. Six-hourly
 safety discovery still checks season-level games even if cached schedules
 are absent, stale or malformed.
 
@@ -250,9 +309,18 @@ replacing newer accepted snapshots. Unchanged facts do not rewrite large
 JSONB bodies just to update a clock. Structured logs include requested
 weeks, row/game counts, publication outcome and actual upstream attempts.
 
-Missing completed-game teams/categories or inconsistent final scoreboards
-retain the **entire** accepted live snapshot and expose an incomplete
-status. Complete downward corrections and removed stat lines are allowed;
+A tracked team with missing completed-game box scores/categories or an
+inconsistent final scoreboard is **held**: its players keep their last
+accepted stat lines verbatim (never scored from the partial box) while every
+other verified game publishes, and the holds are logged. Held teams are also
+published in the snapshot's `pendingTeams`, so the app can show their players
+as awaiting stats instead of reading the absent line as a zero score. A CFBD
+box-score request that fails for one source week no longer discards the ones
+that succeeded: its games are simply held too, and only a week where every
+box-score request failed is rejected outright. Accepted stat lines
+that no longer resolve to the player pool, or stat-bearing games that vanish
+from the week, still retain the **entire** accepted live snapshot and expose
+an incomplete status. Complete downward corrections and removed stat lines are allowed;
 scores are never merged by maximum. Historical per-game contributions are
 not stored, so ambiguous moved/removed games require operator review,
 not a guessed partial merge.

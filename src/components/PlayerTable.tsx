@@ -442,7 +442,7 @@ export function PlayerTable({
           <div role="alert" className="mb-3 rounded-md border border-destructive p-3 text-sm">
             {season.hasData
               ? 'Showing last available season stats. Totals may be incomplete.'
-              : 'Season stats are unavailable. Missing scores are not counted as zero or replaced with projections.'}
+              : 'Season stats are unavailable. Missing scores are not counted as zero.'}
             <Button variant="outline" size="sm" className="ml-2" onClick={() => void seasonStatsResource.refresh(true)}>
               Retry season stats
             </Button>

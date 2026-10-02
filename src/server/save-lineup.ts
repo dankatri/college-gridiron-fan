@@ -10,6 +10,7 @@ import { saveLineupSchema } from './lineup-input';
 import { HttpError } from './http';
 import { withLineupTransaction, type LineupTransaction } from './lineup-transaction';
 import { lockLineupMember, replaceUsage } from './lineup-storage';
+import { completedGameWeeksFromCache } from './week-completion';
 
 export interface SaveLineupInput {
   leagueId: string;
@@ -50,16 +51,17 @@ export async function saveLineupInTransaction(
   const previousSlots = existing.find(row => row.week === week)?.slots ?? null;
   const schedulesKey = schedulesCacheKey(SEASON_YEAR);
   const playersKey = playersCacheKey(SEASON_YEAR);
-  const sourceRows = admin ? [] : await transaction.select({ key: dataCache.key, data: dataCache.data })
-    .from(dataCache).where(inArray(dataCache.key, [schedulesKey, playersKey]));
+  const sourceRows = await transaction.select({ key: dataCache.key, data: dataCache.data })
+    .from(dataCache).where(inArray(dataCache.key, admin ? [schedulesKey] : [schedulesKey, playersKey]));
+  const scheduleData = sourceRows.find(row => row.key === schedulesKey)?.data;
 
   // Sampling before SELECT FOR UPDATE would allow a waiting request past kickoff.
   const now = clock();
-  const closed = isWeekComplete(week, now);
+  const closed = isWeekComplete(week, now, completedGameWeeksFromCache(scheduleData));
   if (!admin) {
     if (closed) throw new HttpError(409, `Week ${week} is over and can no longer be changed`);
     const locked = lockedPlayersFromData(
-      sourceRows.find(row => row.key === schedulesKey)?.data,
+      scheduleData,
       sourceRows.find(row => row.key === playersKey)?.data,
       week, now,
     );

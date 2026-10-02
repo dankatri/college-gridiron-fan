@@ -4,7 +4,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { eq, sql } from 'drizzle-orm';
 import { fixture, isolatedDatabaseURL, partial } from './fixture';
 import { saveLineupInTransaction } from '../../src/server/save-lineup';
-import { leagueMembers, lineupAuditLog, lineups, playerUsage } from '../../src/server/schema';
+import { dataCache, leagueMembers, lineupAuditLog, lineups, playerUsage } from '../../src/server/schema';
+import { playersCacheKey, schedulesCacheKey } from '../../src/server/cache-keys';
 import { HttpError } from '../../src/server/http';
 import { weekBoundary } from '../../src/lib/season-config';
 import { LAST_WEEK } from '../../src/lib/types';
@@ -124,6 +125,28 @@ test('isolated Neon transaction and concurrency release gate', { timeout: 120_00
     const afterFinal = () => weekBoundary(LAST_WEEK + 1)!;
     await assert.rejects(f.run(tx => saveLineupInTransaction(tx, input, afterFinal)), (error: unknown) => error instanceof HttpError && error.status === 409);
     const result = await f.run(tx => saveLineupInTransaction(tx, { ...input, actorId: f.ownerId, admin: true }, afterFinal));
+    assert.equal(result.auditEntry?.wasLocked, 1);
+    assert.equal(result.lineup.slots.filter(slot => slot.playerId).length, 1);
+  });
+
+  await suite.test('all-final Week 3 rejects even empty member saves on Monday and audits owner overrides', async t => {
+    const f = await fixture(t, url);
+    await f.run(tx => tx.update(dataCache).set({ data: [{
+      teamId: 'alpha', teamName: 'Alpha', conference: 'Test', byeWeeks: [],
+      weeklyGames: [{
+        week: 3, gameId: 'final-3', isHomeGame: true, isByeWeek: false,
+        isCompleted: true, teamPoints: 21, opponentPoints: 7,
+      }],
+    }] }).where(eq(dataCache.key, schedulesCacheKey(2026))));
+    const monday = () => new Date('2026-09-21T08:00:00Z');
+    const input = { leagueId: f.leagueId, actorId: f.userId, targetUserId: f.userId, week: 3, slots: partial(null) };
+    await assert.rejects(f.run(tx => saveLineupInTransaction(tx, input, monday)),
+      (error: unknown) => error instanceof HttpError && error.status === 409 && error.message.includes('Week 3 is over'));
+    assert.equal((await f.run(tx => tx.select().from(lineups))).length, 0);
+    await f.run(tx => tx.delete(dataCache).where(eq(dataCache.key, playersCacheKey(2026))));
+    const result = await f.run(tx => saveLineupInTransaction(tx, {
+      ...input, actorId: f.ownerId, admin: true, slots: partial(),
+    }, monday));
     assert.equal(result.auditEntry?.wasLocked, 1);
     assert.equal(result.lineup.slots.filter(slot => slot.playerId).length, 1);
   });

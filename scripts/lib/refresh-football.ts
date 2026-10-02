@@ -1,14 +1,14 @@
 import pLimit from 'p-limit';
 import { z } from 'zod';
 import { SEASON_YEAR, REGULAR_SEASON_LAST_WEEK, weekForDate } from '../../src/lib/season-config';
-import { buildGameStatuses, buildLiveStats, buildTeamSchedules, effectiveKickoff } from '../../src/server/cfbd-transform';
+import { buildGameStatuses, buildTeamSchedules, effectiveKickoff } from '../../src/server/cfbd-transform';
 import { getFbsTeams, getGames, getGamePlayerStats, type CfbdGame, type CfbdGamePlayers, type CfbdTeam } from '../../src/server/cfbd';
 import { liveStatsCacheKey, playersCacheKey, schedulesCacheKey, teamsCacheKey } from '../../src/server/cache-keys';
 import type { Player, TeamSchedule } from '../../src/lib/types';
 import type { CacheRun } from '../../src/server/cache-publication';
 import { readPublishedCache } from '../../src/server/read-published-cache';
 import { readCache, refreshCache } from './cache';
-import { assertLiveCompleteness, assertScheduleCompleteness, refreshWeeks, type AcceptedLiveSnapshot } from './refresh-policy';
+import { assertScheduleCompleteness, buildAcceptedLiveStats, refreshWeeks, type AcceptedLiveSnapshot } from './refresh-policy';
 import { logStep } from './runner';
 
 export async function loadGameContext(): Promise<{ teams: CfbdTeam[]; games: CfbdGame[] }> {
@@ -53,7 +53,7 @@ export async function refreshLiveWeeks(
   const limit = pLimit(3);
   const requests = new Map<string, Promise<{ data: CfbdGamePlayers[] } | { error: unknown }>>();
   let playerContext: Promise<{ players: Player[]; idByAthlete: Map<string, string> }> | undefined;
-  let failed = false;
+  const failures: number[] = [];
   for (const week of weeks) {
     try {
       await refreshCache(liveStatsCacheKey(SEASON_YEAR, week), run, async () => {
@@ -71,25 +71,43 @@ export async function refreshLiveWeeks(
           requests.set(pair, limit(() => getGamePlayerStats(SEASON_YEAR, game.week, game.seasonType))
             .then(data => ({ data }), error => ({ error })));
         }
+        // A box-score source that fails for one CFBD week must not discard the
+        // ones that succeeded. Games left without a box are held at their last
+        // accepted stat lines below, exactly as a lagging source is, so the
+        // rest of the week still publishes fresh scores.
         const boxes: CfbdGamePlayers[] = [];
+        const unreachable: string[] = [];
         for (const pair of pairs.keys()) {
           const result = await requests.get(pair)!;
-          if ('error' in result) throw result.error;
+          if ('error' in result) {
+            unreachable.push(pair);
+            console.error(`Box scores for ${pair} are unreachable; its games stay held`, result.error);
+            continue;
+          }
           boxes.push(...result.data);
+        }
+        if (pairs.size && unreachable.length === pairs.size) {
+          throw new Error(`No box-score source could be reached for week ${week}`);
         }
         const uniqueBoxes = [...new Map(boxes.map(box => [box.id, box])).values()];
         const previous = await readCache<AcceptedLiveSnapshot>(liveStatsCacheKey(SEASON_YEAR, week));
-        assertLiveCompleteness(weekGames, uniqueBoxes, previous, players);
         const observedAt = new Date();
-        const stats = buildLiveStats({ gamePlayers: uniqueBoxes, week, idByAthlete, gameIds: new Set(weekGames.map(game => String(game.id))), now: observedAt });
+        const { stats, holds } = buildAcceptedLiveStats({
+          games: weekGames, boxes: uniqueBoxes, previous, players, idByAthlete, week, now: observedAt,
+        });
+        if (holds.length) logStep('live teams held at last accepted stats', { week, holds });
         const statuses = buildGameStatuses(weekGames, week, observedAt);
-        logStep('live candidate', { week, players: stats.length, games: statuses.length });
-        return { week, updatedAt: observedAt.toISOString(), stats, games: statuses };
+        // A held team has no verified box score, so its players must not be
+        // read as having scored zero. Publishing the names lets the client tell
+        // "recorded nothing" apart from "nothing recorded yet".
+        const pendingTeams = [...new Set(holds.map(hold => hold.team))].sort();
+        logStep('live candidate', { week, players: stats.length, games: statuses.length, pendingTeams, unreachable });
+        return { week, updatedAt: observedAt.toISOString(), stats, games: statuses, pendingTeams };
       });
     } catch (error) {
-      failed = true;
+      failures.push(week);
       console.error(`Live week ${week} refresh failed; keeping its last accepted snapshot`, error);
     }
   }
-  if (failed) throw new Error('One or more live weeks could not be refreshed');
+  if (failures.length) throw new Error(`Live weeks could not be refreshed: ${failures.join(', ')}`);
 }

@@ -1,5 +1,49 @@
 import { sql } from 'drizzle-orm';
 import { playersCacheKey, schedulesCacheKey } from './cache-keys';
+import { sourceMetadataKey } from './cache-publication';
+import { ALL_WEEKS } from '../lib/types';
+
+/** Mirrors completedGameWeeks without transferring the whole schedule snapshot. */
+export function projectCompletedGameWeeks(year: number) {
+  return sql`
+    with teams as materialized (
+      select t.value
+      from data_cache c
+      cross join lateral jsonb_array_elements(
+        case when jsonb_typeof(c.data) = 'array' then c.data else '[]'::jsonb end
+      ) t(value)
+      where c.key = ${schedulesCacheKey(year)}
+    ), games as materialized (
+      select g.value
+      from teams t
+      cross join lateral jsonb_array_elements(
+        case when jsonb_typeof(t.value->'weeklyGames') = 'array'
+          then t.value->'weeklyGames' else '[]'::jsonb end
+      ) g(value)
+    )
+    select g.value->'week' as week
+    from games g
+    where g.value->'isByeWeek' = 'false'::jsonb
+      and ${JSON.stringify(ALL_WEEKS)}::jsonb @> jsonb_build_array(g.value->'week')
+      and not exists (select 1 from teams t where
+        jsonb_typeof(t.value->'weeklyGames') is distinct from 'array')
+      and not exists (select 1 from games invalid where not coalesce(
+        case when jsonb_typeof(invalid.value->'week') = 'number'
+          then (invalid.value->>'week')::numeric = trunc((invalid.value->>'week')::numeric)
+          else false end
+        and jsonb_typeof(invalid.value->'isByeWeek') = 'boolean'
+        and (not (invalid.value ? 'gameId') or jsonb_typeof(invalid.value->'gameId') = 'string')
+        and (not (invalid.value ? 'isCompleted') or jsonb_typeof(invalid.value->'isCompleted') = 'boolean')
+        and (not (invalid.value ? 'teamPoints') or jsonb_typeof(invalid.value->'teamPoints') = 'number')
+        and (not (invalid.value ? 'opponentPoints') or jsonb_typeof(invalid.value->'opponentPoints') = 'number'),
+        false))
+    group by g.value->'week'
+    having bool_and(coalesce(
+      length(g.value->>'gameId') > 0 and g.value->'isCompleted' = 'true'::jsonb
+      and jsonb_typeof(g.value->'teamPoints') = 'number'
+      and jsonb_typeof(g.value->'opponentPoints') = 'number', false))
+    order by week`;
+}
 
 /** Explicit rollout switches, never an exception-driven fallback. */
 export function cacheQueryMode(name: 'LEADERBOARD_QUERY_MODE' | 'PLAYER_LOG_QUERY_MODE' | 'MEMBER_LINEUP_QUERY_MODE') {
@@ -85,4 +129,47 @@ export function projectTeamSchedule(year: number, team: string) {
       where s.value->>'teamName' = ${team}
     ) as data
     from data_cache c where c.key = ${schedulesCacheKey(year)}`;
+}
+
+/**
+ * Answers the gameday discovery gate without transferring the schedule. Every
+ * poll used to download the whole season to decide a boolean, and the polls
+ * that then exited on "no active game window" dominated Neon's egress.
+ * Kickoffs are still compared in JavaScript so the window rule has one
+ * definition; only the timestamps cross the boundary.
+ */
+export function projectScheduleGate(year: number) {
+  const key = schedulesCacheKey(year);
+  return sql`
+    with teams as materialized (
+      select t.value
+      from data_cache c
+      cross join lateral jsonb_array_elements(
+        case when jsonb_typeof(c.data) = 'array' then c.data else '[]'::jsonb end
+      ) t(value)
+      where c.key = ${key}
+    ), games as materialized (
+      select g.value
+      from teams t
+      cross join lateral jsonb_array_elements(
+        case when jsonb_typeof(t.value->'weeklyGames') = 'array'
+          then t.value->'weeklyGames' else '[]'::jsonb end
+      ) g(value)
+    )
+    select c.key,
+      case when c.key = ${sourceMetadataKey(key)} then c.data end as data,
+      to_char(c.updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as revision,
+      (select count(*) > 0 from teams) as present,
+      (exists (select 1 from teams t
+          where jsonb_typeof(t.value) is distinct from 'object'
+            or jsonb_typeof(t.value->'weeklyGames') is distinct from 'array')
+        or exists (select 1 from games g
+          where jsonb_typeof(g.value) is distinct from 'object')) as malformed,
+      (select coalesce(jsonb_agg(distinct g.value->>'gameDate'), '[]'::jsonb)
+        from games g
+        where g.value->'isByeWeek' is distinct from 'true'::jsonb
+          and g.value->>'gameDate' is not null
+          and g.value->>'gameDate' <> '') as kickoffs
+    from data_cache c
+    where c.key in (${key}, ${sourceMetadataKey(key)})`;
 }

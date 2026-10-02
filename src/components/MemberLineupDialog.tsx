@@ -15,7 +15,6 @@ interface MemberLineupSlot {
   playerId: string | null;
   name: string | null;
   team: string | null;
-  projectedPoints: number | null;
   actualPoints: number | null;
 }
 
@@ -26,12 +25,12 @@ interface MemberLineup {
   week: number;
   slots: MemberLineupSlot[];
   totalPoints: number;
-  projectedPoints: number;
   availableWeeks: number[];
 }
 
 interface MemberLineupDialogProps {
   leagueId: string;
+  gameFinals: ReadonlySet<number>;
   member: { userId: string; username: string; avatarUrl?: string } | null;
   /** The week selected at the top of the page — the dialog follows it. */
   week: number;
@@ -43,8 +42,7 @@ interface MemberLineupDialogProps {
 const weekLabel = (week: number) => WEEK_LABELS[week] ?? `Week ${week}`;
 
 /**
- * When a week's lineups become public: the moment its window closes, which is
- * the start of the next week, including the terminal season boundary.
+ * The fallback reveal date if the schedule has not already confirmed all finals.
  */
 function revealDate(week: number): Date | undefined {
   return weekBoundary(week + 1);
@@ -67,6 +65,7 @@ export function MemberLineupDialog({
   leagueId,
   member,
   week,
+  gameFinals,
   currentUserId,
   open,
   onOpenChange,
@@ -80,7 +79,7 @@ export function MemberLineupDialog({
   // week to finish. Checked here as well as on the server so the dialog can
   // explain the wait instead of firing a request it knows will be refused.
   const isOwnLineup = member !== null && member.userId === currentUserId;
-  const isHidden = !isOwnLineup && !isWeekComplete(week, new Date(now));
+  const isHidden = !isOwnLineup && !isWeekComplete(week, new Date(now), gameFinals);
   const revealsAt = revealDate(week);
 
   useEffect(() => {
@@ -141,7 +140,7 @@ export function MemberLineupDialog({
               <p className="font-medium">{weekLabel(week)} is not finished yet</p>
               <p className="text-sm text-muted-foreground">
                 {revealsAt
-                  ? <>Come back on {formatRevealDate(revealsAt)} to see everyone's lineups for this week.</>
+                  ? <>Lineups are revealed when all games finish, or at the week cutoff on {formatRevealDate(revealsAt)}.</>
                   : <>Lineups for this week are revealed once it is over.</>}
               </p>
             </div>
@@ -162,15 +161,9 @@ export function MemberLineupDialog({
           </p>
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-lg bg-muted/30 p-3 text-center">
-                <div className="text-2xl font-bold text-accent">{lineup!.totalPoints.toFixed(1)}</div>
-                <div className="text-xs text-muted-foreground">Points scored</div>
-              </div>
-              <div className="rounded-lg bg-muted/30 p-3 text-center">
-                <div className="text-2xl font-bold">{lineup!.projectedPoints.toFixed(1)}</div>
-                <div className="text-xs text-muted-foreground">Projected</div>
-              </div>
+            <div className="rounded-lg bg-muted/30 p-3 text-center">
+              <div className="text-2xl font-bold text-accent">{lineup!.totalPoints.toFixed(1)}</div>
+              <div className="text-xs text-muted-foreground">Points scored</div>
             </div>
 
             <Separator />
