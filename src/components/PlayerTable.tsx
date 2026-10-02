@@ -31,6 +31,7 @@ import {
 
 type SortKey = SeasonStatKey;
 type SortDirection = 'asc' | 'desc';
+interface ExtraStat { label: string; value?: number }
 const PlayerDetailDialog = optionalFeature('Player Details', () => import('./PlayerDetailDialog').then(module => ({ default: module.PlayerDetailDialog })));
 
 /**
@@ -312,6 +313,33 @@ export function PlayerTable({
     };
   };
 
+  // Compact, position-specific key stats for the mobile card view
+  const pluralTD = (count: number) => (count === 1 ? 'TD' : 'TDs');
+
+  const tdYardsSummary = (tds?: number, yds?: number, extra?: ExtraStat): string | undefined => {
+    if (tds === undefined || yds === undefined || (extra && extra.value === undefined)) return undefined;
+    const base = `${tds} ${pluralTD(tds)} / ${yds.toLocaleString()} yds`;
+    return extra ? `${base} / ${extra.value} ${extra.label}` : base;
+  };
+
+  const keyStatsDisplay = (player: Player): string | undefined => {
+    const stats = season.actuals.get(player.id);
+    const value = (key: SeasonStatKey) => seasonStatValue(stats, key, season.complete);
+
+    switch (player.position) {
+      case 'QB':
+        return tdYardsSummary(value('passingTDs'), value('passingYards'), {
+          label: 'INT', value: value('interceptions'),
+        });
+      case 'RB':
+        return tdYardsSummary(value('rushingTDs'), value('rushingYards'));
+      case 'WR':
+        return tdYardsSummary(value('receivingTDs'), value('receivingYards'));
+      default:
+        return undefined;
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -426,6 +454,7 @@ export function PlayerTable({
             const playerStatus = getPlayerStatus(player);
             const canSelect = !isLocked && (playerStatus.status === 'available' || playerStatus.status === 'used');
             const points = seasonPointsDisplay(player);
+            const keyStats = keyStatsDisplay(player);
 
             return (
               <div
@@ -500,6 +529,12 @@ export function PlayerTable({
                     isLoading={isLoadingMatchups}
                   />
                 </div>
+
+                {keyStats && (
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {keyStats}
+                  </div>
+                )}
               </div>
             );
           })}
