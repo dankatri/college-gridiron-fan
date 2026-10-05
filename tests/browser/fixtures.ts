@@ -12,7 +12,7 @@ export const now = '2026-09-07T12:00:00.000Z';
 export const teamLogo = `data:image/svg+xml,${encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><path fill="#123abc" d="M2 2h20v20H2z"/></svg>',
 )}`;
-export const user = { id: 'test-user', displayName: 'Test Member', email: 'member@example.test', hasPasskey: true };
+export const user = { id: 'test-user', displayName: 'Test Member', email: 'member@example.test', hasPasskey: true, lineupReminders: true };
 export const league = {
   id: 'league-a', name: 'Test League', ownerId: user.id, ownerName: user.displayName,
   season: 2026, maxMembers: 20, isPublic: false, allowLateJoins: true,
@@ -70,13 +70,14 @@ export async function mockApp(page: Page) {
   const requests: string[] = [];
   const errors: string[] = [];
   const state: {
-    currentUser: typeof user | null; schedulesFail: boolean; liveFail: boolean; liveRefreshing: boolean; seasonFail: boolean;
+    currentUser: typeof user | null; preferencesFail: boolean; schedulesFail: boolean; liveFail: boolean; liveRefreshing: boolean; seasonFail: boolean;
     liveStatsMissing: boolean; livePendingTeams: string[] | null;
     seasonStats: SeasonStatsPayload;
     leagues: typeof league[];
     playerPool: Player[]; lineups: typeof lineup[]; usage: Array<{ playerId: string; timesUsed: number }>;
   } = {
     currentUser: user,
+    preferencesFail: false,
     leagues: [structuredClone(league)],
     schedulesFail: false, liveFail: false, liveRefreshing: false, seasonFail: false, playerPool: players,
     liveStatsMissing: false, livePendingTeams: null,
@@ -94,6 +95,12 @@ export async function mockApp(page: Page) {
     requests.push(`${request.method()} ${url.pathname}${url.search}`);
     const respond = (json: unknown, status = 200) => route.fulfill({ json, status });
     if (url.pathname === '/api/me') return respond({ user: state.currentUser });
+    if (url.pathname === '/api/notifications/preferences') {
+      if (state.preferencesFail) return respond({ error: 'Failed to update email reminders' }, 503);
+      const lineupReminders = request.postDataJSON().lineupReminders as boolean;
+      if (state.currentUser) state.currentUser = { ...state.currentUser, lineupReminders };
+      return respond({ lineupReminders });
+    }
     if (url.pathname === '/api/auth/logout') {
       state.currentUser = null;
       return respond({ ok: true });

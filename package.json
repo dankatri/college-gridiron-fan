@@ -26,6 +26,7 @@
     "refresh:schedules": "tsx scripts/refresh-schedules.ts",
     "refresh:live": "tsx scripts/refresh-live.ts",
     "refresh:gameday": "tsx scripts/refresh-gameday.ts",
+    "notify:lineups": "tsx scripts/notify-lineups.ts",
     "audit:usage": "tsx scripts/audit-usage.ts",
     "measure:build": "tsx scripts/measure-build.ts"
   },

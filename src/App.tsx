@@ -52,6 +52,7 @@ import {
   Medal,
   ArrowClockwise as RefreshCw,
   Calendar,
+  Envelope,
   SignOut,
 } from '@phosphor-icons/react';
 import { toast } from 'sonner';
@@ -87,7 +88,7 @@ function App() {
   const [isSaving, setIsSaving] = useState(false);
   const savePending = useRef(false);
 
-  const { user: currentUser, isLoading, sessionError, retrySession, registerPasskey, signOut } = useAuth();
+  const { user: currentUser, isLoading, sessionError, retrySession, registerPasskey, setLineupReminders, signOut } = useAuth();
   const sessionUserId = useRef(currentUser?.id);
   sessionUserId.current = currentUser?.id;
   const leagues = leagueList.userId === currentUser?.id ? leagueList.data : EMPTY_LEAGUES;
@@ -96,6 +97,8 @@ function App() {
   const isAuthenticated = !!currentUser;
   const { players, isLoading: isLoadingPlayers, error: playersError } = usePlayers(isAuthenticated);
   const hasPasskey = !!currentUser?.hasPasskey;
+  const remindersEnabled = currentUser?.lineupReminders !== false;
+  const [isSavingReminders, setIsSavingReminders] = useState(false);
   const [hasPasswordResetLink, setHasPasswordResetLink] = useState(
     () =>
       typeof window !== 'undefined' &&
@@ -424,6 +427,20 @@ function App() {
     toast.success('Logged out successfully');
   };
 
+  const handleToggleReminders = async () => {
+    const next = !remindersEnabled;
+    setIsSavingReminders(true);
+    try {
+      await setLineupReminders(next);
+      toast.success(next ? 'Lineup reminder emails are on' : 'Lineup reminder emails are off');
+    } catch (error) {
+      console.error('Failed to update lineup reminders', { error });
+      toast.error(error instanceof Error ? error.message : 'Failed to update email reminders');
+    } finally {
+      setIsSavingReminders(false);
+    }
+  };
+
   const handleAddPasskey = async () => {
     try {
       await registerPasskey();
@@ -559,6 +576,20 @@ function App() {
                 Add Passkey
               </Button>
             )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void handleToggleReminders()}
+              disabled={isSavingReminders}
+              aria-pressed={remindersEnabled}
+              title={remindersEnabled
+                ? 'Email me when my lineup is not set. Click to turn off.'
+                : 'Lineup reminder emails are off. Click to turn on.'}
+              className="flex items-center justify-center gap-2 w-full sm:w-auto"
+            >
+              <Envelope size={14} />
+              Reminders: {remindersEnabled ? 'On' : 'Off'}
+            </Button>
             <div className="hidden md:flex">
               <Button variant="outline" size="sm" onClick={() => void handleLogout()} className="flex items-center justify-center gap-2 w-full sm:w-auto">
                 <SignOut size={14} />

@@ -36,6 +36,7 @@ export default async function handler(request: Request): Promise<Response> {
         email: users.email,
         displayName: users.displayName,
         avatarUrl: users.avatarUrl,
+        lineupRemindersEnabled: users.lineupRemindersEnabled,
       })
       .from(users)
       .where(eq(users.id, userId))
@@ -52,9 +53,11 @@ export default async function handler(request: Request): Promise<Response> {
       .where(eq(webauthnCredentials.userId, user.id))
       .limit(1);
 
+    const { lineupRemindersEnabled, ...profile } = user;
     return jsonResponse({
       user: {
-        ...user,
+        ...profile,
+        lineupReminders: lineupRemindersEnabled === 1,
         hasPasskey: credentialRows.length > 0,
       },
     });
