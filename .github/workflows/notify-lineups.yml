@@ -1,0 +1,54 @@
+name: Lineup reminders
+
+on:
+  schedule:
+    # Two nudges a week, both at 13:00 UTC (8am ET / 7am CT):
+    # Thursday, before the Thursday night games open the slate...
+    - cron: '0 13 * 1,8-12 4'
+    # ...and Saturday, a few hours before the main slate, for anyone still unset.
+    - cron: '0 13 * 1,8-12 6'
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: Which nudge to send
+        type: choice
+        options: [thursday, saturday]
+        default: thursday
+      dry_run:
+        description: List recipients without sending anything
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: notify-lineups
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      MAIL_FROM: ${{ secrets.MAIL_FROM }}
+      APP_URL: ${{ vars.APP_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - run: npm ci
+
+      # A manual run defaults to a dry run so the recipient list can be checked
+      # before anyone is actually mailed.
+      - name: Send reminders
+        env:
+          REMINDER_STAGE: ${{ github.event.inputs.stage || (github.event.schedule == '0 13 * 1,8-12 6' && 'saturday' || 'thursday') }}
+          DRY_RUN: ${{ github.event.inputs.dry_run == 'true' && '1' || '' }}
+        run: npm run notify:lineups

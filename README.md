@@ -112,8 +112,8 @@ variables; do not put credentials in source files or `VITE_*` variables.
 | --- | --- |
 | `DATABASE_URL` | Application/refresh database connection |
 | `SESSION_SECRET` | Session signing secret |
-| `RESEND_API_KEY`, `MAIL_FROM` | Recovery email and verified sending address |
-| `APP_URL` | Public origin used in password recovery links |
+| `RESEND_API_KEY`, `MAIL_FROM` | Recovery and reminder email, plus the verified sending address |
+| `APP_URL` | Public origin used in password recovery and reminder links |
 | `WEBAUTHN_RP_ID`, `WEBAUTHN_ORIGIN` | Optional explicit passkey host/origin |
 | `CFBD_API_KEY` | Refresh jobs only; never sent to the browser |
 | `DATABASE_URL_TEST` | Optional pre-provisioned isolated Neon database; hosted gates otherwise provision a disposable project |
@@ -353,6 +353,48 @@ After reviewing the differences, the same scoped command with `APPLY=1`
 rebuilds only `player_usage` under the member lock. It does not rewrite
 historical lineups, scores or audit history. Do not run a broad, unscoped
 production reconciliation.
+
+## Lineup reminder emails
+
+Members are emailed when a playable week is under way and their lineup still
+has an empty slot. An incomplete lineup counts, not just an untouched one,
+because a half-filled lineup scores zero for the missing slots just as surely
+as an empty one.
+
+Two nudges go out per week, both at 13:00 UTC: Thursday, when the week opens,
+and Saturday, a few hours before the main slate. `.github/workflows/notify-lineups.yml`
+owns both crons and a `workflow_dispatch` entry whose `dry_run` input defaults
+to **true**, so a manual run prints the recipient list without sending.
+
+A member receives at most one message per stage covering **all** of their
+leagues, rather than one per league. Weeks that are locked, complete or out of
+season are skipped before any member is read. Sent stages are recorded in
+`lineup_reminders`, whose primary key `(user_id, season, week, stage)` is the
+real duplicate guarantee; the row is written only after the provider accepts
+the message, so a failed send is retried rather than silently suppressed.
+
+Candidate selection is a SQL projection: filled slots are counted with
+`jsonb_array_elements` and already-notified members are removed by anti-join,
+so no lineup bodies cross the wire. `tests/integration/lineup-reminders.test.ts`
+asserts the returned rows never carry slot data.
+
+Every message carries a `List-Unsubscribe` header and an in-body link to
+`/api/notifications/unsubscribe`, which acts on an opaque per-user
+`notify_token` and needs no login. Signed-in members can toggle reminders from
+the **Reminders** button in the app header, which writes through
+`PATCH /api/notifications/preferences`.
+
+Unlike the read optimisations above, this feature **does** need schema changes:
+`users.lineup_reminders_enabled`, `users.notify_token` and the
+`lineup_reminders` table, applied through the approved database-management
+process. The workflow additionally needs the `RESEND_API_KEY` and `MAIL_FROM`
+repository secrets and an `APP_URL` repository variable.
+
+Locally:
+
+```sh
+DRY_RUN=1 REMINDER_STAGE=thursday npm run notify:lineups
+```
 
 ## Database read rollout and rollback
 

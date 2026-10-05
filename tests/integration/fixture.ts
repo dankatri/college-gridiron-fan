@@ -43,7 +43,10 @@ export async function fixture(context: TestContext, url: string) {
   await run(async tx => {
     await tx.execute(sql`
       create table users (id uuid primary key default gen_random_uuid(), email text unique not null,
-        display_name text not null, password_hash text not null, avatar_url text, created_at timestamptz not null default now());
+        display_name text not null, password_hash text not null, avatar_url text,
+        lineup_reminders_enabled integer not null default 1,
+        notify_token uuid not null unique default gen_random_uuid(),
+        created_at timestamptz not null default now());
       create table leagues (id uuid primary key default gen_random_uuid(), name text not null, description text,
         owner_id uuid not null references users(id), season integer not null, join_code text unique not null,
         max_members integer not null default 8, is_public integer not null default 0,
@@ -65,6 +68,10 @@ export async function fixture(context: TestContext, url: string) {
         subject_user_id uuid not null references users(id), actor_user_id uuid not null references users(id),
         season integer not null, week integer not null, previous_slots jsonb, new_slots jsonb not null,
         reason text, was_locked integer not null default 0, created_at timestamptz not null default now());
+      create table lineup_reminders (user_id uuid not null references users(id) on delete cascade,
+        season integer not null, week integer not null, stage text not null,
+        league_count integer not null, sent_at timestamptz not null default now(),
+        primary key(user_id,season,week,stage));
       create table data_cache (key text primary key, data jsonb not null, updated_at timestamptz not null default now());
     `);
     await tx.insert(users).values([

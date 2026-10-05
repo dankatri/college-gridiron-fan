@@ -6,6 +6,8 @@ export type User = {
   displayName: string;
   avatarUrl?: string | null;
   hasPasskey?: boolean;
+  /** Whether the weekly "your lineup is not set" emails are on. */
+  lineupReminders?: boolean;
 };
 
 type AuthResponse = {
@@ -35,6 +37,7 @@ interface AuthContextValue {
   registerPasskey: () => Promise<void>;
   requestPasswordReset: (email: string) => Promise<string>;
   resetPassword: (token: string, password: string) => Promise<void>;
+  setLineupReminders: (enabled: boolean) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -242,6 +245,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, [changeSession]);
 
+  const setLineupReminders = useCallback(async (enabled: boolean) => {
+    const response = await fetch('/api/notifications/preferences', {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lineupReminders: enabled }),
+    });
+    const payload = await readJson<{ lineupReminders?: boolean; error?: string }>(response);
+    if (!response.ok || typeof payload.lineupReminders !== 'boolean') {
+      throw new AuthError(toErrorMessage(payload.error, 'Failed to update email reminders'));
+    }
+    const saved = payload.lineupReminders;
+    setUser(previous => (previous ? { ...previous, lineupReminders: saved } : previous));
+  }, []);
+
   const signOut = useCallback(async () => {
     return changeSession(async () => {
       const response = await fetch('/api/auth/logout', {
@@ -266,6 +284,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         registerPasskey,
         requestPasswordReset,
         resetPassword,
+        setLineupReminders,
         signOut,
       }}
     >

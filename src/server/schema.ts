@@ -12,6 +12,10 @@ export const users = pgTable('users', {
   displayName: text('display_name').notNull(),
   passwordHash: text('password_hash').notNull(),
   avatarUrl: text('avatar_url'),
+  lineupRemindersEnabled: integer('lineup_reminders_enabled').notNull().default(1),
+  // Opaque per-user secret so an unsubscribe link works from an email client,
+  // with no session and no user id exposed in the URL.
+  notifyToken: uuid('notify_token').defaultRandom().notNull().unique(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
@@ -108,6 +112,28 @@ export const playerUsage = pgTable(
   },
   (table) => ({
     pk: primaryKey({ columns: [table.leagueId, table.userId, table.season, table.playerId] }),
+  }),
+);
+
+/**
+ * One row per reminder actually delivered. The primary key is the guarantee a
+ * member is never mailed twice for the same week and stage, however often the
+ * job runs or retries.
+ */
+export const lineupReminders = pgTable(
+  'lineup_reminders',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    season: integer('season').notNull(),
+    week: integer('week').notNull(),
+    stage: text('stage').notNull(),
+    leagueCount: integer('league_count').notNull(),
+    sentAt: timestamp('sent_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.userId, table.season, table.week, table.stage] }),
   }),
 );
 

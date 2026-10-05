@@ -173,3 +173,32 @@ export function projectScheduleGate(year: number) {
     from data_cache c
     where c.key in (${key}, ${sourceMetadataKey(key)})`;
 }
+
+/**
+ * The next kickoff still ahead in a week, as a single timestamp.
+ *
+ * Reminder mail wants one date; shipping the whole schedule to find it would
+ * undo the gate work, so the minimum is taken in SQL.
+ */
+export function projectNextKickoff(year: number, week: number) {
+  return sql`
+    with games as materialized (
+      select g.value
+      from data_cache c
+      cross join lateral jsonb_array_elements(
+        case when jsonb_typeof(c.data) = 'array' then c.data else '[]'::jsonb end
+      ) t(value)
+      cross join lateral jsonb_array_elements(
+        case when jsonb_typeof(t.value->'weeklyGames') = 'array'
+          then t.value->'weeklyGames' else '[]'::jsonb end
+      ) g(value)
+      where c.key = ${schedulesCacheKey(year)}
+    )
+    select min((g.value->>'gameDate')::timestamptz) as kickoff
+    from games g
+    where g.value->'isByeWeek' is distinct from 'true'::jsonb
+      and jsonb_typeof(g.value->'week') = 'number'
+      and (g.value->>'week')::numeric = ${week}
+      and g.value->>'gameDate' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T'
+      and (g.value->>'gameDate')::timestamptz > now()`;
+}
