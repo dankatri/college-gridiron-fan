@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, type ReactNode } from 'react';
+import { useState, useMemo, useEffect, useCallback, useId, type ReactNode } from 'react';
 import { Player, PlayerUsage } from '@/lib/types';
 import { MAX_PLAYER_USES } from '@/lib/types';
 import { seasonStatValue, type SeasonStatKey } from '@/lib/season-stats';
@@ -8,6 +8,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { LineupSlot } from '@/lib/types';
@@ -16,6 +19,7 @@ import { WeekMatchup } from '@/components/WeekMatchup';
 import { TeamLogo } from '@/components/TeamLogo';
 import { optionalFeature } from '@/components/optional-feature';
 import { useWeekMatchups } from '@/hooks/use-week-matchups';
+import { useLocalStorage } from '@/hooks/use-local-storage';
 import { useSeasonStats } from '@/hooks/use-season-stats';
 import {
   Users,
@@ -115,6 +119,22 @@ export function PlayerTable({
   const [sortKey, setSortKey] = useState<SortKey>('fantasyPoints');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const { matchups, isLoading: isLoadingMatchups } = useWeekMatchups(currentWeek);
+  const [hideByes, setHideByes] = useLocalStorage('player-table-hide-byes', false);
+  const byeToggleId = useId();
+
+  // Nothing can be hidden without a schedule to hide it by: an absent or
+  // failed schedule must leave the list intact rather than empty it.
+  const canHideByes = !isLoadingMatchups && matchups.size > 0;
+
+  // A team with no game scores nothing whether that is a true bye or a week
+  // its season does not cover, so both are hidden. A team the schedule does
+  // not mention at all stays visible, because that is missing data, not a
+  // known absence.
+  const playsThisWeek = useCallback((player: Player) => {
+    const matchup = matchups.get(player.team.toLowerCase());
+    if (!matchup) return true;
+    return matchup.game !== undefined && !matchup.game.isByeWeek;
+  }, [matchups]);
   const season = useSeasonStats();
   const [detailPlayer, setDetailPlayer] = useState<Player | null>(null);
 
@@ -139,7 +159,7 @@ export function PlayerTable({
   }, [players, conferenceFilter, teams]);
 
   // Filter players based on position and filters
-  const filteredPlayers = useMemo(() => {
+  const matchedPlayers = useMemo(() => {
     let filtered = players.filter(p => p.position === position);
     
     if (conferenceFilter !== 'All Conferences') {
@@ -181,6 +201,12 @@ export function PlayerTable({
     });
   }, [players, names, position, conferenceFilter, teamFilter, searchTerm, sortKey, sortDirection, season.actuals, season.complete]);
 
+  const filteredPlayers = useMemo(
+    () => (hideByes && canHideByes ? matchedPlayers.filter(playsThisWeek) : matchedPlayers),
+    [matchedPlayers, hideByes, canHideByes, playsThisWeek],
+  );
+  const hiddenByeCount = matchedPlayers.length - filteredPlayers.length;
+
   const totalPlayers = filteredPlayers.length;
   const totalPages = Math.max(1, Math.ceil(totalPlayers / pageSize));
   const paginatedPlayers = useMemo(() => {
@@ -199,7 +225,7 @@ export function PlayerTable({
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [conferenceFilter, teamFilter, searchTerm, position, pageSize, sortKey, sortDirection]);
+  }, [conferenceFilter, teamFilter, searchTerm, position, pageSize, sortKey, sortDirection, hideByes]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -423,6 +449,41 @@ export function PlayerTable({
             </Select>
             
             {/* Status badges - only show if we have useful data */}
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      id={byeToggleId}
+                      aria-label="Hide byes"
+                      checked={hideByes && canHideByes}
+                      onCheckedChange={setHideByes}
+                      disabled={!canHideByes}
+                    />
+                    <Label
+                      htmlFor={byeToggleId}
+                      className={`text-xs font-normal ${canHideByes ? '' : 'text-muted-foreground'}`}
+                    >
+                      Hide byes
+                    </Label>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>
+                    {canHideByes
+                      ? `Hide players whose team has no game in ${weekName}, including byes.`
+                      : 'Schedules are unavailable, so no player can be hidden yet.'}
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
+            {hiddenByeCount > 0 && (
+              <Badge variant="outline" className="text-xs">
+                {hiddenByeCount} hidden with no game
+              </Badge>
+            )}
+
             {conferences.length > 1 && (
               <Badge variant="outline" className="text-xs">
                 {conferences.length - 1} conferences
@@ -682,6 +743,12 @@ export function PlayerTable({
               </>
             ) : (
               'No players found matching your filters.'
+            )}
+            {hiddenByeCount > 0 && (
+              <p className="text-xs mt-1">
+                {hiddenByeCount} {hiddenByeCount === 1 ? 'player is' : 'players are'} hidden because their team has no
+                game in {weekName}.
+              </p>
             )}
           </div>
         )}
