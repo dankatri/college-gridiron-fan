@@ -122,8 +122,10 @@ export function PlayerTable({
   const [hideByes, setHideByes] = useLocalStorage('player-table-hide-byes', false);
   const byeToggleId = useId();
 
-  // Nothing can be hidden without a schedule to hide it by: an absent or
-  // failed schedule must leave the list intact rather than empty it.
+  // Nothing can be hidden without a schedule to hide it by, so a list that has
+  // never loaded stays whole. A schedule that loaded once is enough even if a
+  // later refresh fails: it is the same snapshot the rows draw their BYE badges
+  // from, and restoring players the list still labels BYE would contradict it.
   const canHideByes = !isLoadingMatchups && matchups.size > 0;
 
   // A team with no game scores nothing whether that is a true bye or a week

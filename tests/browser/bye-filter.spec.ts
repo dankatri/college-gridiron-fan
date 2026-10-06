@@ -52,6 +52,29 @@ test('the choice is remembered across a reload and applies to every position', a
   expect(app.errors).toEqual([]);
 });
 
+test('the mobile picker and the desktop table never disagree about hiding', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 900 });
+  const app = await scheduleWithByes(page);
+  await page.goto('/');
+
+  // Both tables are mounted at every width, so a change in one has to reach
+  // the other without waiting for a reload.
+  await page.getByRole('button', { name: 'Browse Available Players', exact: true }).click();
+  const picker = page.getByRole('dialog', { name: 'Available Players', exact: true });
+  await picker.getByRole('switch', { name: 'Hide byes' }).click();
+  await expect(picker.getByRole('button', { name: 'Jamie Quarterback', exact: true })).toHaveCount(0);
+
+  await page.keyboard.press('Escape');
+  // The picker's own switch has to be gone before the desktop one is read,
+  // otherwise the assertion can match the closing sheet instead.
+  await expect(picker).toHaveCount(0);
+  await page.setViewportSize({ width: 1280, height: 900 });
+
+  await expect(toggle(page)).toBeChecked();
+  await expect(page.getByRole('button', { name: 'Jamie Quarterback', exact: true })).toHaveCount(0);
+  expect(app.errors).toEqual([]);
+});
+
 test('an unavailable schedule disables the toggle rather than emptying the list', async ({ page }) => {
   const app = await mockApp(page);
   app.state.schedulesFail = true;
