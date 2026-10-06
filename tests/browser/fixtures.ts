@@ -70,13 +70,14 @@ export async function mockApp(page: Page) {
   const requests: string[] = [];
   const errors: string[] = [];
   const state: {
-    currentUser: typeof user | null; schedulesFail: boolean; liveFail: boolean; liveRefreshing: boolean; seasonFail: boolean;
+    currentUser: typeof user | null; schedulesFail: boolean; schedules: typeof schedules; liveFail: boolean; liveRefreshing: boolean; seasonFail: boolean;
     liveStatsMissing: boolean; livePendingTeams: string[] | null;
     seasonStats: SeasonStatsPayload;
     leagues: typeof league[];
     playerPool: Player[]; lineups: typeof lineup[]; usage: Array<{ playerId: string; timesUsed: number }>;
   } = {
     currentUser: user,
+    schedules: structuredClone(schedules),
     leagues: [structuredClone(league)],
     schedulesFail: false, liveFail: false, liveRefreshing: false, seasonFail: false, playerPool: players,
     liveStatsMissing: false, livePendingTeams: null,
@@ -110,7 +111,7 @@ export async function mockApp(page: Page) {
       state.seasonFail ? 503 : 200,
     );
     if (url.pathname === '/api/schedules') return respond(
-      state.schedulesFail ? { error: 'Schedule unavailable' } : { schedules, updatedAt: now },
+      state.schedulesFail ? { error: 'Schedule unavailable' } : { schedules: state.schedules, updatedAt: now },
       state.schedulesFail ? 503 : 200,
     );
     if (url.pathname === '/api/live') return respond(
