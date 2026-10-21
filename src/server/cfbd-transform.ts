@@ -330,7 +330,7 @@ export function buildLiveStats(options: {
   const { gamePlayers, week, idByAthlete, gameIds, now = new Date() } = options;
   const byPlayer = new Map<string, PlayerStats>();
 
-  const ensure = (athleteId: string, gameId: number): PlayerStats | undefined => {
+  const ensure = (athleteId: string, gameId: number, team: string | undefined): PlayerStats | undefined => {
     const playerId = idByAthlete.get(athleteId);
     if (!playerId) return undefined; // Not a skill-position player we track.
     const key = `${gameId}:${playerId}`;
@@ -339,6 +339,7 @@ export function buildLiveStats(options: {
       stats = {
         playerId,
         week,
+        ...(team ? { team } : {}),
         passingYards: 0,
         passingTDs: 0,
         completions: 0,
@@ -368,7 +369,7 @@ export function buildLiveStats(options: {
       for (const category of team.categories ?? []) {
         for (const type of category.types ?? []) {
           for (const athlete of type.athletes ?? []) {
-            const stats = ensure(athlete.id, game.id);
+            const stats = ensure(athlete.id, game.id, team.team);
             if (!stats) continue;
 
             const value = toNumber(athlete.stat);

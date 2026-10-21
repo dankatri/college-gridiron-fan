@@ -30,6 +30,14 @@ export interface Player {
 export interface PlayerStats {
   playerId: string;
   week: number;
+  /**
+   * The team the line was scored for, recorded when the line is accepted.
+   *
+   * Optional because snapshots written before this field existed are still
+   * valid. It lets an accepted line keep its team even after the player leaves
+   * the roster pool, which is otherwise the only place a team can be read from.
+   */
+  team?: string;
   // Passing stats
   passingYards: number;
   passingTDs: number;

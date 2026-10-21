@@ -42,8 +42,68 @@ const ids = new Map([['1', 'qb-a']]);
 
 test('structural ambiguity still retains the whole accepted snapshot', () => {
   const prior = buildLiveStats({ gamePlayers: [box(1, 300)], week: 1, idByAthlete: ids });
-  assert.throws(() => assessLiveCompleteness([game(1)], [box(1, 300)], { stats: prior }, []), IncompleteSourceError);
   assert.throws(() => assessLiveCompleteness([], [], { stats: prior }, [alphaQb]), IncompleteSourceError);
+});
+
+const alphaBox = (rushers: { id: string; stat: string }[]): CfbdGamePlayers => ({
+  id: 1, teams: [{
+    team: 'Alpha', conference: 'FBS', homeAway: 'home', points: 21,
+    categories: [
+      { name: 'passing', types: [{ name: 'YDS', athletes: [{ id: '1', name: 'Fixture', stat: '300' }] }] },
+      { name: 'rushing', types: [{ name: 'YDS', athletes: rushers.map(rusher => ({ ...rusher, name: 'Departed' })) }] },
+      { name: 'receiving', types: [] },
+    ],
+  }],
+});
+
+test('a player who left the roster pool keeps their accepted stat line instead of wedging the week', () => {
+  // CFBD dropped Braylin Presley (Oklahoma State) from the 2026 roster after he
+  // had already been scored in week 7, so his accepted line no longer resolved
+  // to any player. He is never coming back, so failing was permanent.
+  const idsWithDeparted = new Map([['1', 'qb-a'], ['3', 'rb-gone']]);
+  const gameIds = new Set(['1']);
+  const prior = buildLiveStats({ gamePlayers: [alphaBox([{ id: '3', stat: '50' }])], week: 1, idByAthlete: idsWithDeparted, gameIds });
+  assert.equal(prior.find(stat => stat.playerId === 'rb-gone')?.team, 'Alpha', 'the team is recorded when the line is accepted');
+
+  const { stats, holds } = buildAcceptedLiveStats({
+    games: [game(1)], boxes: [alphaBox([])], previous: { stats: prior }, players: [alphaQb], idByAthlete: ids, week: 1,
+  });
+  assert.deepEqual(holds, [], 'the rest of the week still refreshes');
+  assert.deepEqual(stats.map(stat => stat.playerId).sort(), ['qb-a', 'rb-gone']);
+  assert.equal(stats.find(stat => stat.playerId === 'rb-gone')!.rushingYards, 50,
+    'a departed player keeps the points already published for them');
+});
+
+test('a mid-season transfer is judged by the team whose box produced the line, not their new roster team', () => {
+  // A player id carries position and athlete, never the team, so a transfer
+  // keeps the same id. Judging their week-7 line by the team they moved to
+  // would both reject the verified line and decline to retain the old one.
+  const movedRb = { id: 'rb-moved', name: 'Moved', team: 'Beta', position: 'RB' as const, conference: 'FBS', projectedPoints: 5 };
+  const betaGame: CfbdGame = { ...game(2), homeId: 3, homeTeam: 'Beta', homePoints: 14, awayId: 4, awayTeam: 'Gamma', awayPoints: 3 };
+  const idsBoth = new Map([['1', 'qb-a'], ['3', 'rb-moved']]);
+  const scoredForAlpha = [alphaBox([{ id: '3', stat: '50' }])];
+  const prior = buildLiveStats({ gamePlayers: scoredForAlpha, week: 1, idByAthlete: idsBoth, gameIds: new Set(['1']) });
+
+  // Beta has no box at all, so Beta is held while Alpha stays verified.
+  const { stats, holds } = buildAcceptedLiveStats({
+    games: [game(1), betaGame], boxes: scoredForAlpha, previous: { stats: prior },
+    players: [alphaQb, movedRb], idByAthlete: idsBoth, week: 1,
+  });
+  assert.deepEqual(holds.map(hold => hold.team), ['Beta']);
+  assert.equal(stats.find(stat => stat.playerId === 'rb-moved')?.rushingYards, 50,
+    'the line Alpha verified must survive the transfer');
+});
+
+test('an orphaned line from a snapshot predating recorded teams is retained, not dropped', () => {  const idsWithDeparted = new Map([['1', 'qb-a'], ['3', 'rb-gone']]);
+  const gameIds = new Set(['1']);
+  const legacy = buildLiveStats({ gamePlayers: [alphaBox([{ id: '3', stat: '50' }])], week: 1, idByAthlete: idsWithDeparted, gameIds })
+    .map(({ team: _team, ...rest }) => rest);
+
+  const { stats, holds } = buildAcceptedLiveStats({
+    games: [game(1)], boxes: [alphaBox([])], previous: { stats: legacy }, players: [alphaQb], idByAthlete: ids, week: 1,
+  });
+  assert.deepEqual(holds, []);
+  assert.equal(stats.find(stat => stat.playerId === 'rb-gone')!.rushingYards, 50);
 });
 
 test('partial completed boxes hold that team at its accepted stats, complete downward corrections are accepted', () => {
