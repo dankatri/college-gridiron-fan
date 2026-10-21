@@ -127,10 +127,35 @@ export type AcceptedLiveSnapshot = { stats?: PlayerStats[]; games?: GameStatus[]
 export type LiveHold = { gameId: number; team: string; reason: string };
 
 /**
- * Structural ambiguity (unresolvable accepted stat lines, vanished stat-bearing
- * games) retains the entire accepted aggregate. A single team whose box score is
- * missing or not yet consistent is instead held on its own, so one lagging game
- * cannot freeze scoring for the rest of the week.
+ * The team an accepted stat line belongs to, or undefined when nothing records it.
+ *
+ * The line's own `team` is preferred because it was recorded when the line was
+ * accepted and cannot drift. The pool is the fallback for snapshots written
+ * before that field existed.
+ */
+function acceptedStatTeam(stat: PlayerStats, teamsByPlayer: Map<string, string>): string | undefined {
+  return stat.team ?? teamsByPlayer.get(stat.playerId);
+}
+
+/**
+ * Whether an accepted stat line can still be rebuilt from a box score.
+ *
+ * Rosters lose players mid-season (transfers, departures, a position change
+ * that rewrites the id), and CFBD drops them outright. Such a line is no
+ * longer derivable: the athlete is absent from the pool, so `buildLiveStats`
+ * can never emit it again. It is retained verbatim instead — dropping it would
+ * regress an already published score, and failing the week would wedge the
+ * refresh permanently, because the player is never coming back.
+ */
+function isOrphanedStat(stat: PlayerStats, teamsByPlayer: Map<string, string>): boolean {
+  return !teamsByPlayer.has(stat.playerId);
+}
+
+/**
+ * Structural ambiguity (vanished stat-bearing games) retains the entire
+ * accepted aggregate. A single team whose box score is missing or not yet
+ * consistent is instead held on its own, so one lagging game cannot freeze
+ * scoring for the rest of the week.
  */
 export function assessLiveCompleteness(
   games: CfbdGame[], boxes: CfbdGamePlayers[], previous: AcceptedLiveSnapshot | null, players: Player[],
@@ -144,9 +169,11 @@ export function assessLiveCompleteness(
   const rosterTeams = new Set(players.map(player => player.team));
   const previouslyScoredTeams = new Set<string>();
   for (const stat of previous?.stats ?? []) {
-    const team = teamsByPlayer.get(stat.playerId);
-    if (!team) throw new IncompleteSourceError('An accepted stat line cannot be resolved to the current player pool');
-    previouslyScoredTeams.add(team);
+    const team = acceptedStatTeam(stat, teamsByPlayer);
+    // An orphaned line from a snapshot that predates recorded teams has no
+    // team to check a slate against. It is still retained; it just cannot
+    // contribute to the checks below.
+    if (team) previouslyScoredTeams.add(team);
   }
   for (const team of previouslyScoredTeams) {
     if (!games.some(game => game.homeTeam === team || game.awayTeam === team)) {
@@ -179,6 +206,10 @@ export function assessLiveCompleteness(
  * Score fresh box scores for every verified team, and keep the last accepted
  * stat lines verbatim for players on held teams. Held teams are never scored
  * from a partial box, so accepted points cannot regress while a source lags.
+ *
+ * Lines for players who have left the roster pool are retained the same way.
+ * They can no longer be rebuilt from a box score, so the only alternatives are
+ * dropping a published score or failing the week forever.
  */
 export function buildAcceptedLiveStats(options: {
   games: CfbdGame[]; boxes: CfbdGamePlayers[]; previous: AcceptedLiveSnapshot | null; players: Player[];
@@ -192,7 +223,10 @@ export function buildAcceptedLiveStats(options: {
   const fresh = buildLiveStats({
     gamePlayers: verifiedBoxes, week, idByAthlete, gameIds: new Set(games.map(game => String(game.id))), now,
   }).filter(stat => !heldTeams.has(teamsByPlayer.get(stat.playerId) ?? ''));
-  const retained = (previous?.stats ?? []).filter(stat => heldTeams.has(teamsByPlayer.get(stat.playerId) ?? ''));
+  // Fresh lines are only ever emitted for players in the pool, so an orphan
+  // can never duplicate one.
+  const retained = (previous?.stats ?? []).filter(stat =>
+    isOrphanedStat(stat, teamsByPlayer) || heldTeams.has(acceptedStatTeam(stat, teamsByPlayer) ?? ''));
   const stats = [...fresh, ...retained].sort((a, b) => b.fantasyPoints - a.fantasyPoints);
   return { stats, holds };
 }

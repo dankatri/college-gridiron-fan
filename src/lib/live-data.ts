@@ -25,7 +25,7 @@ const payloadSchema = z.object({
     attempts: z.number(), interceptions: z.number(), rushingYards: z.number(),
     rushingTDs: z.number(), receivingYards: z.number(), receptions: z.number(),
     receivingTDs: z.number(), kickReturnYards: z.number(), puntReturnYards: z.number(),
-    fantasyPoints: z.number(), lastUpdated: date,
+    fantasyPoints: z.number(), lastUpdated: date, team: z.string().optional(),
   })),
   games: z.array(z.object({
     week: z.number().int(), team1: z.string(), team2: z.string(),
