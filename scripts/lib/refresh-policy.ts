@@ -129,9 +129,11 @@ export type LiveHold = { gameId: number; team: string; reason: string };
 /**
  * The team an accepted stat line belongs to, or undefined when nothing records it.
  *
- * The line's own `team` is preferred because it was recorded when the line was
- * accepted and cannot drift. The pool is the fallback for snapshots written
- * before that field existed.
+ * A line belongs to the team whose box score produced it, which is what a hold
+ * is a judgement about — not to wherever the player is rostered now. Those
+ * differ for a mid-season transfer, because a player id carries position and
+ * athlete but never the team. The pool is only a fallback for snapshots
+ * written before the team was recorded.
  */
 function acceptedStatTeam(stat: PlayerStats, teamsByPlayer: Map<string, string>): string | undefined {
   return stat.team ?? teamsByPlayer.get(stat.playerId);
@@ -222,7 +224,7 @@ export function buildAcceptedLiveStats(options: {
   const verifiedBoxes = boxes.map(box => ({ ...box, teams: (box.teams ?? []).filter(team => !heldTeams.has(team.team)) }));
   const fresh = buildLiveStats({
     gamePlayers: verifiedBoxes, week, idByAthlete, gameIds: new Set(games.map(game => String(game.id))), now,
-  }).filter(stat => !heldTeams.has(teamsByPlayer.get(stat.playerId) ?? ''));
+  }).filter(stat => !heldTeams.has(acceptedStatTeam(stat, teamsByPlayer) ?? ''));
   // Fresh lines are only ever emitted for players in the pool, so an orphan
   // can never duplicate one.
   const retained = (previous?.stats ?? []).filter(stat =>

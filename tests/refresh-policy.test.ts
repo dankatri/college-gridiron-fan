@@ -74,8 +74,27 @@ test('a player who left the roster pool keeps their accepted stat line instead o
     'a departed player keeps the points already published for them');
 });
 
-test('an orphaned line from a snapshot predating recorded teams is retained, not dropped', () => {
-  const idsWithDeparted = new Map([['1', 'qb-a'], ['3', 'rb-gone']]);
+test('a mid-season transfer is judged by the team whose box produced the line, not their new roster team', () => {
+  // A player id carries position and athlete, never the team, so a transfer
+  // keeps the same id. Judging their week-7 line by the team they moved to
+  // would both reject the verified line and decline to retain the old one.
+  const movedRb = { id: 'rb-moved', name: 'Moved', team: 'Beta', position: 'RB' as const, conference: 'FBS', projectedPoints: 5 };
+  const betaGame: CfbdGame = { ...game(2), homeId: 3, homeTeam: 'Beta', homePoints: 14, awayId: 4, awayTeam: 'Gamma', awayPoints: 3 };
+  const idsBoth = new Map([['1', 'qb-a'], ['3', 'rb-moved']]);
+  const scoredForAlpha = [alphaBox([{ id: '3', stat: '50' }])];
+  const prior = buildLiveStats({ gamePlayers: scoredForAlpha, week: 1, idByAthlete: idsBoth, gameIds: new Set(['1']) });
+
+  // Beta has no box at all, so Beta is held while Alpha stays verified.
+  const { stats, holds } = buildAcceptedLiveStats({
+    games: [game(1), betaGame], boxes: scoredForAlpha, previous: { stats: prior },
+    players: [alphaQb, movedRb], idByAthlete: idsBoth, week: 1,
+  });
+  assert.deepEqual(holds.map(hold => hold.team), ['Beta']);
+  assert.equal(stats.find(stat => stat.playerId === 'rb-moved')?.rushingYards, 50,
+    'the line Alpha verified must survive the transfer');
+});
+
+test('an orphaned line from a snapshot predating recorded teams is retained, not dropped', () => {  const idsWithDeparted = new Map([['1', 'qb-a'], ['3', 'rb-gone']]);
   const gameIds = new Set(['1']);
   const legacy = buildLiveStats({ gamePlayers: [alphaBox([{ id: '3', stat: '50' }])], week: 1, idByAthlete: idsWithDeparted, gameIds })
     .map(({ team: _team, ...rest }) => rest);
