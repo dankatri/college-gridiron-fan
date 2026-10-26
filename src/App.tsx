@@ -5,6 +5,10 @@ import { usePlayers } from '@/hooks/use-players';
 import { getLiveResource } from '@/lib/live-data';
 import { seasonStatsResource } from '@/lib/season-stats-data';
 import { SEASON_YEAR, weekBoundary } from '@/lib/season-config';
+import { isPlayerEligibleForWeek, isFcsWeek } from '@/lib/week-divisions';
+import { useSeasonTheme } from '@/hooks/use-season-theme';
+import { HalloweenDecorations } from '@/components/HalloweenDecorations';
+import { JackOLantern } from '@/components/icons/JackOLantern';
 import { useLocalStorage } from '@/hooks/use-local-storage';
 import { useAuth } from '@/hooks/use-auth';
 import { useWeekActuals } from '@/hooks/use-week-actuals';
@@ -36,6 +40,7 @@ import { createLeagueViewCache, type ApiLeague } from '@/lib/league-view-data';
 import { optionalFeature } from '@/components/optional-feature';
 import { schedulesResource } from '@/lib/schedule-data';
 import { ByeWeekAlert } from '@/components/ByeWeekAlert';
+import { DivisionEligibilityAlert } from '@/components/DivisionEligibilityAlert';
 import { LoginScreen } from '@/components/LoginScreen';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -75,6 +80,7 @@ type ApiLineup = {
 
 function App() {
   const [currentWeek, setCurrentWeek] = useState(getCurrentWeek());
+  useSeasonTheme(currentWeek);
   const [currentLineup, setCurrentLineup] = useState<LineupSlot[]>(createEmptyLineup());
   const [selectedPosition, setSelectedPosition] = useState<'QB' | 'RB' | 'WR'>('QB');
   const [activeTab, setActiveTab] = useState<'lineup' | 'schedule' | 'scoring' | 'leagues'>('lineup');
@@ -108,6 +114,13 @@ function App() {
   );
 
   const playersById = useMemo(() => new Map(players.map((player) => [player.id, player])), [players]);
+  // Only the selection list narrows to the week's division. Saved lineups from
+  // other weeks still hydrate from the full pool, and live scoring still has to
+  // resolve whoever is already in a lineup, eligible or not.
+  const selectablePlayers = useMemo(
+    () => players.filter((player) => isPlayerEligibleForWeek(player, currentWeek)),
+    [players, currentWeek],
+  );
   const activeScope = `${currentUser?.id ?? ''}:${currentLeagueId ?? ''}`;
   const scopeRef = useRef(activeScope);
   scopeRef.current = activeScope;
@@ -127,6 +140,16 @@ function App() {
   const weekLocks = useWeekLocks(isAuthenticated ? currentWeek : undefined);
   const showWeekActuals = weekHasStarted;
   const weekName = `Week ${currentWeek}`;
+  const isHalloweenWeek = isFcsWeek(currentWeek);
+  const availablePlayersHeading = isHalloweenWeek ? (
+    <span className="inline-flex items-center gap-1.5">
+      Available Players
+      <JackOLantern size={16} className="text-primary" aria-hidden="true" />
+    </span>
+  ) : 'Available Players';
+  const playersLoadingLabel = isHalloweenWeek
+    ? `Conjuring ${SEASON_YEAR} Halloween players...`
+    : `Loading ${SEASON_YEAR} season players...`;
 
   // An accepted snapshot stays usable while it is being re-observed, so a
   // finished week keeps showing its recorded scores during a refresh or after
@@ -517,7 +540,8 @@ function App() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="container mx-auto p-3 sm:p-4 space-y-6">
+      {isHalloweenWeek && <HalloweenDecorations />}
+      <div className="container relative z-10 mx-auto p-3 sm:p-4 space-y-6">
         {sessionError && <div role="alert" className="rounded-lg border p-3 text-sm">
           Session details could not be refreshed. Your draft is unchanged.
           <Button variant="outline" size="sm" className="ml-2" onClick={() => void retrySession()}>Retry session</Button>
@@ -539,8 +563,8 @@ function App() {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="text-center space-y-2 flex-1 lg:text-left">
             <h1 className="text-2xl sm:text-3xl font-bold flex items-center justify-center lg:justify-start gap-2">
-              <Trophy size={32} className="text-accent" />
-              College Football Pick 'Em
+              {isHalloweenWeek ? <JackOLantern size={32} className="text-accent" /> : <Trophy size={32} className="text-accent" />}
+              {isHalloweenWeek ? "College Football Spook 'Em" : "College Football Pick 'Em"}
             </h1>
           </div>
 
@@ -675,6 +699,7 @@ function App() {
 
                 <div className="md:hidden space-y-4">
                   <ByeWeekAlert lineup={currentLineup} currentWeek={currentWeek} />
+                  <DivisionEligibilityAlert lineup={currentLineup} currentWeek={currentWeek} />
 
                   <Card>
                     <CardHeader>
@@ -703,7 +728,7 @@ function App() {
 
                   <div className="space-y-3">
                     <div>
-                      <h3 className="text-lg font-semibold">Available Players</h3>
+                      <h3 className="text-lg font-semibold">{availablePlayersHeading}</h3>
                       {weekLocks.isComplete ? (
                         <p className="text-sm text-orange-600 mt-1">Week {currentWeek} is over - viewing only</p>
                       ) : lockedSlotCount > 0 ? (
@@ -741,7 +766,7 @@ function App() {
                   <Sheet open={playerSheetOpen} onOpenChange={setPlayerSheetOpen}>
                     <SheetContent side="bottom" className="h-[85vh]">
                       <SheetHeader>
-                        <SheetTitle>Available Players</SheetTitle>
+                        <SheetTitle>{availablePlayersHeading}</SheetTitle>
                       </SheetHeader>
                       <div className="flex-1 overflow-y-auto px-4 pb-16">
                         {isLoadingPlayers ? (
@@ -749,7 +774,7 @@ function App() {
                             <CardContent className="flex items-center justify-center py-12">
                               <div className="flex items-center gap-3 text-muted-foreground">
                                 <RefreshCw size={20} className="animate-spin" />
-                                Loading {SEASON_YEAR} season players...
+                                {playersLoadingLabel}
                               </div>
                             </CardContent>
                           </Card>
@@ -764,7 +789,7 @@ function App() {
                             <TabsContent value={selectedPosition} className="mt-4">
                               <PlayerTable
                                 position={selectedPosition}
-                                players={players}
+                                players={selectablePlayers}
                                 playerUsage={playerUsage}
                                 currentLineup={currentLineup}
                                 currentWeek={currentWeek}
@@ -805,7 +830,7 @@ function App() {
                   <div className="md:col-span-2 space-y-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
-                        <h3 className="text-lg font-semibold">Available Players</h3>
+                        <h3 className="text-lg font-semibold">{availablePlayersHeading}</h3>
                         {weekLocks.isComplete ? (
                           <p className="text-sm text-orange-600 mt-1">Week {currentWeek} is over - viewing only</p>
                         ) : lockedSlotCount > 0 ? (
@@ -842,7 +867,7 @@ function App() {
                         <CardContent className="flex items-center justify-center py-12">
                           <div className="flex items-center gap-3 text-muted-foreground">
                             <RefreshCw size={20} className="animate-spin" />
-                            Loading {SEASON_YEAR} season players...
+                            {playersLoadingLabel}
                           </div>
                         </CardContent>
                       </Card>
@@ -857,7 +882,7 @@ function App() {
                         <TabsContent value={selectedPosition} className="mt-4">
                           <PlayerTable
                             position={selectedPosition}
-                            players={players}
+                            players={selectablePlayers}
                             playerUsage={playerUsage}
                             currentLineup={currentLineup}
                             currentWeek={currentWeek}
@@ -873,6 +898,7 @@ function App() {
 
                   <div className="space-y-4">
                     <ByeWeekAlert lineup={currentLineup} currentWeek={currentWeek} />
+                    <DivisionEligibilityAlert lineup={currentLineup} currentWeek={currentWeek} />
 
                     <Card>
                       <CardHeader>

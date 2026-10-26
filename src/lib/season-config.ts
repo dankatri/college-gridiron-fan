@@ -136,7 +136,7 @@ export const WEEK_LABELS: Record<number, string> = {
   6: 'Week 6',
   7: 'Week 7',
   8: 'Week 8',
-  9: 'Week 9',
+  9: 'Halloween Week',
   10: 'Week 10',
   11: 'Week 11',
   12: 'Week 12',

@@ -12,18 +12,26 @@ import { dataCache } from './schema';
 import { playersCacheKey, schedulesCacheKey } from './cache-keys';
 import { SEASON_YEAR } from '../lib/season-config';
 import { lockedTeamsForWeek } from '../lib/week-lock';
+import { CLASSIFICATIONS, CLASSIFICATION_LABELS, type Classification } from '../lib/classification';
+import { FCS_WEEK, isFcsWeek, isPlayerEligibleForWeek } from '../lib/week-divisions';
 import type { TeamSchedule } from '../lib/types';
 import type { LineupSlotInput } from './lineup-utils';
 import { HttpError } from './http';
 import { scheduleCompletionSchema } from './week-completion';
 
-type CachedPlayer = { id: string; name?: string; team?: string };
+type CachedPlayer = { id: string; name?: string; team?: string; classification?: Classification };
 
-export type LockedPlayers = {
+/** What the cache knows about a player, independent of whether their game has kicked off. */
+export type PlayerIdentities = {
+  /** Display names for cached ids, so errors can name the player. */
+  nameById: Map<string, string>;
+  /** Division per cached id. Undefined means the snapshot predates the field (treated as FBS). */
+  classificationById: Map<string, Classification | undefined>;
+};
+
+export type LockedPlayers = PlayerIdentities & {
   /** Player ids whose game in this week has already started. */
   ids: Set<string>;
-  /** Display names for those ids, so errors can name the player. */
-  nameById: Map<string, string>;
 };
 
 /**
@@ -61,7 +69,33 @@ const cachedSchedules = z.array(z.object({
 })).nonempty().and(scheduleCompletionSchema);
 const cachedPlayers = z.array(z.object({
   id: z.string().min(1), team: z.string().min(1), name: z.string().optional(),
+  classification: z.enum(CLASSIFICATIONS).optional(),
 })).nonempty();
+
+function identitiesFromPlayers(players: CachedPlayer[]): PlayerIdentities {
+  const nameById = new Map<string, string>();
+  const classificationById = new Map<string, Classification | undefined>();
+  for (const player of players) {
+    nameById.set(player.id, player.name ?? player.id);
+    classificationById.set(player.id, player.classification);
+  }
+  return { nameById, classificationById };
+}
+
+/**
+ * What the cache knows about each player id, read without requiring (or
+ * trusting) the schedule data `lockedPlayersFromData` needs.
+ *
+ * Used for the division-eligibility gate on the admin save path, which does
+ * not go through the kickoff-lock machinery at all — see save-lineup.ts.
+ * A cache that fails to parse yields no known players rather than throwing,
+ * so a stale or missing snapshot does not block saves that eligibility
+ * checking does not actually need to reject.
+ */
+export function playerIdentitiesFromData(playerData: unknown): PlayerIdentities {
+  const result = cachedPlayers.safeParse(playerData);
+  return result.success ? identitiesFromPlayers(result.data) : { nameById: new Map(), classificationById: new Map() };
+}
 
 export function lockedPlayersFromData(
   scheduleData: unknown, playerData: unknown, week: number, now: Date,
@@ -81,10 +115,8 @@ export function lockedPlayersFromData(
   const lockedTeams = lockedTeamsForWeek(schedules, week, now);
   const knownTeams = new Set(schedules.map(schedule => schedule.teamName.toLowerCase()));
   const ids = new Set<string>();
-  const nameById = new Map<string, string>();
 
   for (const player of players) {
-    nameById.set(player.id, player.name ?? player.id);
     // An absent team schedule is unknown, not evidence that it is unlocked.
     if (!knownTeams.has(player.team.toLowerCase())) ids.add(player.id);
     if (player.team && lockedTeams.has(player.team.toLowerCase())) {
@@ -92,7 +124,7 @@ export function lockedPlayersFromData(
     }
   }
 
-  return { ids, nameById };
+  return { ids, ...identitiesFromPlayers(players) };
 }
 
 function filledIds(slots: Array<Pick<LineupSlotInput, 'playerId'>>): Set<string> {
@@ -135,5 +167,32 @@ export function findLockedSlotChange(
     }
   }
 
+  return null;
+}
+
+/**
+ * Rejects a slot fielding a player from the wrong division for `week`.
+ *
+ * An id absent from `classificationById` entirely is not judged here — that
+ * is a different failure (the player is not in the current pool at all),
+ * already surfaced elsewhere as a 503. Only ids the cache actually knows
+ * about can be ruled in or out of a division.
+ */
+export function findIneligibleSlot(
+  slots: Array<Pick<LineupSlotInput, 'playerId'>>,
+  identities: PlayerIdentities,
+  week: number,
+): string | null {
+  for (const slot of slots) {
+    const id = slot.playerId;
+    if (!id || !identities.classificationById.has(id)) continue;
+    const classification = identities.classificationById.get(id);
+    if (isPlayerEligibleForWeek({ classification }, week)) continue;
+    const name = identities.nameById.get(id) ?? id;
+    const label = CLASSIFICATION_LABELS[classification ?? 'fbs'];
+    return isFcsWeek(week)
+      ? `${name} is ${label}, but week ${FCS_WEEK} is Halloween's FCS-only week — only FCS players are eligible`
+      : `${name} is ${label}, and only week ${FCS_WEEK} (Halloween) allows FCS players — week ${week} is FBS-only`;
+  }
   return null;
 }

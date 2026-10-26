@@ -1,9 +1,13 @@
+import type { Classification } from './classification';
+
 export interface Player {
   id: string;
   name: string;
   position: 'QB' | 'RB' | 'WR';
   team: string;
   conference: string;
+  /** Division the player's team plays in. Absent on pools cached before FCS support. */
+  classification?: Classification;
   projectedPoints: number;
   // Bye week information
   hasByeWeek?: boolean;
@@ -75,6 +79,8 @@ export interface TeamSchedule {
   teamId: string;
   teamName: string;
   conference: string;
+  /** Division the team plays in. Absent on schedules cached before FCS support. */
+  classification?: Classification;
   weeklyGames: WeeklyGame[];
   byeWeeks: number[];
 }

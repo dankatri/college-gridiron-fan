@@ -74,7 +74,11 @@ export async function fixture(context: TestContext, url: string) {
     await tx.insert(leagues).values({ id: leagueId, ownerId, name: 'Isolated fixture', season: SEASON_YEAR, joinCode: 'TESTONLY' });
     await tx.insert(leagueMembers).values([{ leagueId, userId }, { leagueId, userId: ownerId, role: 'owner' }]);
     await tx.insert(dataCache).values([
-      { key: playersCacheKey(SEASON_YEAR), data: [{ id: 'qb-a', name: 'Alpha QB', team: 'Alpha' }, { id: 'qb-b', name: 'Beta QB', team: 'Alpha' }] },
+      { key: playersCacheKey(SEASON_YEAR), data: [
+        { id: 'qb-a', name: 'Alpha QB', team: 'Alpha' }, { id: 'qb-b', name: 'Beta QB', team: 'Alpha' },
+        { id: 'fbs-a', name: 'Alpha FBS Receiver', team: 'Alpha', classification: 'fbs' },
+        { id: 'fcs-a', name: 'Alpha FCS Receiver', team: 'Alpha', classification: 'fcs' },
+      ] },
       { key: schedulesCacheKey(SEASON_YEAR), data: [{
         teamId: 'alpha', teamName: 'Alpha', conference: 'Test', byeWeeks: [],
         weeklyGames: [{ week: 1, isHomeGame: true, isByeWeek: false, gameDate: '2026-09-05T18:00:00.000Z' }],

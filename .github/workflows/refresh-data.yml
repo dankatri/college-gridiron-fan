@@ -58,6 +58,10 @@ jobs:
     env:
       CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      # Week 9 is an FCS-only slate, so the published pool has to contain FCS
+      # players. Eligibility is enforced per week in src/lib/week-divisions.ts,
+      # not here — this only controls what gets fetched and cached.
+      INCLUDED_DIVISIONS: fbs,fcs
     steps:
       - name: Require a trusted quality gate for this exact revision
         env:

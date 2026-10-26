@@ -10,6 +10,8 @@ import { useMinuteClock } from '@/hooks/use-minute-clock';
 import { getWeekStatus } from '@/lib/utils-fantasy';
 import { WEEK_LABELS } from '@/lib/season-config';
 import { groupNavigationWeeks } from '@/lib/week-navigation';
+import { isFcsWeek } from '@/lib/week-divisions';
+import { JackOLantern } from '@/components/icons/JackOLantern';
 
 interface WeekNavigationProps {
   currentWeek: number;
@@ -44,6 +46,11 @@ export function WeekNavigation({ currentWeek, onWeekChange, gameFinals }: WeekNa
     return WEEK_LABELS[week] || `Week ${week}`;
   };
 
+  // Week 9's only visual tell in the navigation itself — the palette and
+  // decorations live elsewhere, gated the same way (`isFcsWeek`).
+  const weekIcon = (week: number) =>
+    isFcsWeek(week) ? <JackOLantern size={14} className="shrink-0 text-primary" aria-hidden="true" /> : null;
+
   const renderWeekMenu = (label: string, weeks: number[], align: 'start' | 'end') => {
     const selected = weeks.includes(currentWeek);
     return (
@@ -55,7 +62,12 @@ export function WeekNavigation({ currentWeek, onWeekChange, gameFinals }: WeekNa
             disabled={weeks.length === 0}
           >
             {label}
-            {selected && <span className="rounded bg-background/70 px-1.5 py-0.5 font-semibold">{getWeekLabel(currentWeek)}</span>}
+            {selected && (
+              <span className="inline-flex items-center gap-1 rounded bg-background/70 px-1.5 py-0.5 font-semibold">
+                {weekIcon(currentWeek)}
+                {getWeekLabel(currentWeek)}
+              </span>
+            )}
             <CaretDown size={14} aria-hidden="true" />
           </Button>
         </DropdownMenuTrigger>
@@ -64,7 +76,10 @@ export function WeekNavigation({ currentWeek, onWeekChange, gameFinals }: WeekNa
           <DropdownMenuRadioGroup value={currentWeek.toString()} onValueChange={selectWeek}>
             {weeks.map(week => (
               <DropdownMenuRadioItem key={week} value={week.toString()}>
-                {getWeekTooltip(week)}
+                <span className="inline-flex items-center gap-1">
+                  {weekIcon(week)}
+                  {getWeekTooltip(week)}
+                </span>
                 {getWeekStatus(week, new Date(now), gameFinals) === 'current' && <span className="ml-auto size-1.5 rounded-full bg-green-500" aria-hidden="true" />}
               </DropdownMenuRadioItem>
             ))}
@@ -87,7 +102,10 @@ export function WeekNavigation({ currentWeek, onWeekChange, gameFinals }: WeekNa
                 <SelectLabel>{group.label}</SelectLabel>
                 {group.weeks.map(week => (
                   <SelectItem key={week} value={week.toString()}>
-                    Week {week}: {getWeekTooltip(week)}
+                    <span className="inline-flex items-center gap-1">
+                      Week {week}: {getWeekTooltip(week)}
+                      {weekIcon(week)}
+                    </span>
                   </SelectItem>
                 ))}
               </SelectGroup>
@@ -112,7 +130,10 @@ export function WeekNavigation({ currentWeek, onWeekChange, gameFinals }: WeekNa
                     aria-description={status === 'current' ? 'Current game week' : undefined}
                   >
                     <div className="flex flex-col items-center gap-0.5">
-                      <span>{getWeekLabel(week)}</span>
+                      <span className="inline-flex items-center gap-1">
+                        {weekIcon(week)}
+                        {getWeekLabel(week)}
+                      </span>
                       {status === 'current' && <span className="size-1 rounded-full bg-green-500" aria-hidden="true" />}
                     </div>
                   </TabsTrigger>

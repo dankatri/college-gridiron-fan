@@ -4,7 +4,7 @@ import { playersCacheKey, schedulesCacheKey } from './cache-keys';
 import { SEASON_YEAR } from '../lib/season-config';
 import { MAX_PLAYER_USES } from '../lib/types';
 import { isWeekComplete } from '../lib/week-lock';
-import { findLockedSlotChange, lockedPlayersFromData } from './lineup-lock';
+import { findIneligibleSlot, findLockedSlotChange, lockedPlayersFromData, playerIdentitiesFromData } from './lineup-lock';
 import { toUsageMap, type LineupSlotInput } from './lineup-utils';
 import { saveLineupSchema } from './lineup-input';
 import { HttpError } from './http';
@@ -51,20 +51,21 @@ export async function saveLineupInTransaction(
   const previousSlots = existing.find(row => row.week === week)?.slots ?? null;
   const schedulesKey = schedulesCacheKey(SEASON_YEAR);
   const playersKey = playersCacheKey(SEASON_YEAR);
+  // Always loaded, admin included: bypassing a lock is a legitimate
+  // post-kickoff correction, but fielding a player from the wrong division
+  // is a rules violation rather than a correction, so admin saves still need
+  // the player pool to be judged against the week below.
   const sourceRows = await transaction.select({ key: dataCache.key, data: dataCache.data })
-    .from(dataCache).where(inArray(dataCache.key, admin ? [schedulesKey] : [schedulesKey, playersKey]));
+    .from(dataCache).where(inArray(dataCache.key, [schedulesKey, playersKey]));
   const scheduleData = sourceRows.find(row => row.key === schedulesKey)?.data;
+  const playerData = sourceRows.find(row => row.key === playersKey)?.data;
 
   // Sampling before SELECT FOR UPDATE would allow a waiting request past kickoff.
   const now = clock();
   const closed = isWeekComplete(week, now, completedGameWeeksFromCache(scheduleData));
   if (!admin) {
     if (closed) throw new HttpError(409, `Week ${week} is over and can no longer be changed`);
-    const locked = lockedPlayersFromData(
-      scheduleData,
-      sourceRows.find(row => row.key === playersKey)?.data,
-      week, now,
-    );
+    const locked = lockedPlayersFromData(scheduleData, playerData, week, now);
     const before = new Set((previousSlots ?? []).map(slot => slot.playerId).filter(Boolean));
     for (const id of before) {
       if (id && !locked.nameById.has(id)) locked.ids.add(id);
@@ -76,6 +77,11 @@ export async function saveLineupInTransaction(
     }
     const conflict = findLockedSlotChange(previousSlots ?? [], slots, locked);
     if (conflict) throw new HttpError(409, conflict);
+    const ineligible = findIneligibleSlot(slots, locked, week);
+    if (ineligible) throw new HttpError(409, ineligible);
+  } else {
+    const ineligible = findIneligibleSlot(slots, playerIdentitiesFromData(playerData), week);
+    if (ineligible) throw new HttpError(409, ineligible);
   }
 
   // Historic slot layouts are not rewritten or revalidated as new input; every

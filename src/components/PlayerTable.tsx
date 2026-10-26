@@ -4,6 +4,8 @@ import { MAX_PLAYER_USES } from '@/lib/types';
 import { seasonStatValue, type SeasonStatKey } from '@/lib/season-stats';
 import { seasonStatsResource } from '@/lib/season-stats-data';
 import { SEASON_YEAR } from '@/lib/season-config';
+import { CLASSIFICATIONS, CLASSIFICATION_LABELS, type Classification } from '@/lib/classification';
+import { isFcsWeek } from '@/lib/week-divisions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -35,6 +37,7 @@ import {
 
 type SortKey = SeasonStatKey;
 type SortDirection = 'asc' | 'desc';
+const ALL_DIVISIONS = 'All Divisions';
 interface ExtraStat { label: string; value?: number }
 const PlayerDetailDialog = optionalFeature('Player Details', () => import('./PlayerDetailDialog').then(module => ({ default: module.PlayerDetailDialog })));
 
@@ -105,14 +108,30 @@ export function PlayerTable({
   finishedTeams
 }: PlayerTableProps) {
   const pageSizeOptions = ['10', '15', '20', '25'] as const;
+  const [divisionFilter, setDivisionFilter] = useState<Classification | typeof ALL_DIVISIONS>(ALL_DIVISIONS);
   const [conferenceFilter, setConferenceFilter] = useState('All Conferences');
   const showConference = conferenceFilter === 'All Conferences';
   const [searchTerm, setSearchTerm] = useState('');
   const [teamFilter, setTeamFilter] = useState('All Teams');
   const [pageSize, setPageSize] = useState<number>(15);
   const [currentPage, setCurrentPage] = useState(1);
-  const conferences = useMemo(() => ['All Conferences', ...new Set(players.map(p => p.conference).filter(Boolean))].sort((a, b) => a === 'All Conferences' ? -1 : b === 'All Conferences' ? 1 : a.localeCompare(b)), [players]);
-  const teams = useMemo(() => ['All Teams', ...Array.from(new Set(players.map(p => p.team))).sort()], [players]);
+  // FBS-only pools get no division control at all, so nothing changes for a
+  // deployment that has not opted in to FCS.
+  const divisions = useMemo(
+    () => CLASSIFICATIONS.filter(classification => players.some(player => player.classification === classification)),
+    [players],
+  );
+  const showDivision = divisions.length > 1;
+  // A conference or team list spanning both divisions would be unusably long,
+  // so each filter is scoped by the one above it.
+  const divisionPlayers = useMemo(
+    () => (showDivision && divisionFilter !== ALL_DIVISIONS
+      ? players.filter(player => player.classification === divisionFilter)
+      : players),
+    [players, showDivision, divisionFilter],
+  );
+  const conferences = useMemo(() => ['All Conferences', ...new Set(divisionPlayers.map(p => p.conference).filter(Boolean))].sort((a, b) => a === 'All Conferences' ? -1 : b === 'All Conferences' ? 1 : a.localeCompare(b)), [divisionPlayers]);
+  const teams = useMemo(() => ['All Teams', ...Array.from(new Set(divisionPlayers.map(p => p.team))).sort()], [divisionPlayers]);
   const names = useMemo(() => new Map(players.map(player => [player.id, nameIndex(player.name)])), [players]);
   const usageById = useMemo(() => new Map(playerUsage.map(usage => [usage.playerId, usage.timesUsed])), [playerUsage]);
   const selectedIds = useMemo(() => new Set(currentLineup.map(slot => slot.playerId ?? slot.player?.id)), [currentLineup]);
@@ -148,7 +167,7 @@ export function PlayerTable({
     
     // Get teams from players that match the selected conference
     const teamsInConference = Array.from(new Set(
-      players
+      divisionPlayers
         .filter(p => p.conference === conferenceFilter)
         .map(p => p.team)
         .filter(team => team) // Remove empty/undefined team names
@@ -158,11 +177,11 @@ export function PlayerTable({
     const result = ['All Teams', ...teamsInConference];
     
     return result;
-  }, [players, conferenceFilter, teams]);
+  }, [divisionPlayers, conferenceFilter, teams]);
 
   // Filter players based on position and filters
   const matchedPlayers = useMemo(() => {
-    let filtered = players.filter(p => p.position === position);
+    let filtered = divisionPlayers.filter(p => p.position === position);
     
     if (conferenceFilter !== 'All Conferences') {
       filtered = filtered.filter(p => p.conference === conferenceFilter);
@@ -201,7 +220,7 @@ export function PlayerTable({
       if (aValue === bValue) return a.name.localeCompare(b.name);
       return (aValue - bValue) * direction;
     });
-  }, [players, names, position, conferenceFilter, teamFilter, searchTerm, sortKey, sortDirection, season.actuals, season.complete]);
+  }, [divisionPlayers, names, position, conferenceFilter, teamFilter, searchTerm, sortKey, sortDirection, season.actuals, season.complete]);
 
   const filteredPlayers = useMemo(
     () => (hideByes && canHideByes ? matchedPlayers.filter(playsThisWeek) : matchedPlayers),
@@ -225,9 +244,16 @@ export function PlayerTable({
     }
   }, [conferenceFilter]);
 
+  // A conference only exists inside one division, so narrowing the division
+  // would otherwise leave an impossible conference/team pair selected.
+  useEffect(() => {
+    setConferenceFilter('All Conferences');
+    setTeamFilter('All Teams');
+  }, [divisionFilter]);
+
   useEffect(() => {
     setCurrentPage(1);
-  }, [conferenceFilter, teamFilter, searchTerm, position, pageSize, sortKey, sortDirection, hideByes]);
+  }, [divisionFilter, conferenceFilter, teamFilter, searchTerm, position, pageSize, sortKey, sortDirection, hideByes]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -328,6 +354,7 @@ export function PlayerTable({
   };
 
   const weekName = currentWeek === undefined ? 'this week' : `Week ${currentWeek}`;
+  const isHalloweenWeek = currentWeek !== undefined && isFcsWeek(currentWeek);
 
   const seasonPointsDisplay = (player: Player) => {
     const points = seasonStatValue(season.actuals.get(player.id), 'fantasyPoints', season.complete);
@@ -409,6 +436,22 @@ export function PlayerTable({
 
           <div className="flex items-center gap-2 flex-wrap">
             <Filter size={16} className="text-muted-foreground" />
+            {showDivision && (
+              <Select
+                value={divisionFilter}
+                onValueChange={(value) => setDivisionFilter(value as Classification | typeof ALL_DIVISIONS)}
+              >
+                <SelectTrigger className="w-full sm:w-[140px]" aria-label="Division">
+                  <SelectValue placeholder={ALL_DIVISIONS} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_DIVISIONS}>{ALL_DIVISIONS}</SelectItem>
+                  {divisions.map(division => (
+                    <SelectItem key={division} value={division}>{CLASSIFICATION_LABELS[division]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             <Select 
               value={conferenceFilter} 
               onValueChange={setConferenceFilter} 
@@ -489,6 +532,7 @@ export function PlayerTable({
             {conferences.length > 1 && (
               <Badge variant="outline" className="text-xs">
                 {conferences.length - 1} conferences
+                {showDivision && divisionFilter !== ALL_DIVISIONS ? ` in ${CLASSIFICATION_LABELS[divisionFilter]}` : ''}
               </Badge>
             )}
             {filteredTeams.length > 1 && conferenceFilter !== 'All Conferences' && (
@@ -558,6 +602,11 @@ export function PlayerTable({
                       <Badge variant={playerStatus.variant} className="text-[10px] px-1.5 py-0">
                         {playerStatus.label}
                       </Badge>
+                      {showDivision && player.classification && (
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                          {CLASSIFICATION_LABELS[player.classification]}
+                        </Badge>
+                      )}
                     </div>
                   </div>
 
@@ -610,6 +659,7 @@ export function PlayerTable({
                 <TableHead className="w-[320px]">Player</TableHead>
                 <TableHead className="w-16 text-center">Team</TableHead>
                 {showConference && <TableHead>Conf</TableHead>}
+                {showDivision && divisionFilter === ALL_DIVISIONS && <TableHead>Div</TableHead>}
                 <TableHead className="text-center">Schedule</TableHead>
                 {renderSortableHeader(
                   'fantasyPoints',
@@ -685,6 +735,11 @@ export function PlayerTable({
                     {showConference && (
                       <TableCell className="text-sm text-muted-foreground">{player.conference}</TableCell>
                     )}
+                    {showDivision && divisionFilter === ALL_DIVISIONS && (
+                      <TableCell className="text-sm text-muted-foreground">
+                        {player.classification ? CLASSIFICATION_LABELS[player.classification] : '—'}
+                      </TableCell>
+                    )}
                     <TableCell className="text-center">
                       <div className="flex items-center justify-center gap-1">
                         <WeekMatchup
@@ -744,7 +799,7 @@ export function PlayerTable({
                 )}
               </>
             ) : (
-              'No players found matching your filters.'
+              isHalloweenWeek ? 'No players found — even the ghosts left this crypt empty.' : 'No players found matching your filters.'
             )}
             {hiddenByeCount > 0 && (
               <p className="text-xs mt-1">

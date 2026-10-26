@@ -8,6 +8,8 @@
 
 import type { GameStatus, Player, PlayerStats, TeamSchedule, WeeklyGame } from '../lib/types';
 import { SCORING_RULES } from '../lib/types';
+import { isClassification } from '../lib/classification';
+import type { Classification } from '../lib/classification';
 import type {
   CfbdGame,
   CfbdGamePlayers,
@@ -117,7 +119,7 @@ export function scoreStatLine(line: StatLine): number {
 }
 
 /** Fantasy scoring produces long floats via 0.1-style rules; keep one decimal. */
-function roundPoints(points: number): number {
+export function roundPoints(points: number): number {
   return Math.round(points * 10) / 10;
 }
 
@@ -146,6 +148,16 @@ function pickLogo(team: CfbdTeam | undefined): string | undefined {
   return logo ?? team?.logos?.[0] ?? undefined;
 }
 
+/**
+ * The team's division, when CFBD reports one the app recognises.
+ *
+ * Left undefined rather than guessed: an unlabelled team is still a playable
+ * team, and inventing "fbs" would mislabel it in the UI.
+ */
+export function teamClassification(team: CfbdTeam): Classification | undefined {
+  return isClassification(team.classification) ? team.classification : undefined;
+}
+
 export function buildPlayers(options: {
   teams: CfbdTeam[];
   roster: CfbdRosterPlayer[];
@@ -163,7 +175,7 @@ export function buildPlayers(options: {
     if (!position || !SKILL_POSITIONS.has(position)) continue;
 
     const team = teamsBySchool.get(entry.team);
-    if (!team) continue; // Not an FBS team for this season.
+    if (!team) continue; // Not a team in the requested division(s) for this season.
 
     const name = [entry.firstName, entry.lastName].filter(Boolean).join(' ').trim();
     if (!entry.id || !name) continue;
@@ -183,6 +195,7 @@ export function buildPlayers(options: {
       position,
       team: entry.team,
       conference: team.conference ?? 'Independent',
+      ...(teamClassification(team) ? { classification: teamClassification(team)! } : {}),
       projectedPoints,
       headshotUrl: espnHeadshotUrl(entry.id),
       teamLogoUrl: pickLogo(team),
@@ -251,6 +264,7 @@ export function buildTeamSchedules(options: {
       teamId: String(team.id),
       teamName: team.school,
       conference: team.conference ?? 'Independent',
+      ...(teamClassification(team) ? { classification: teamClassification(team)! } : {}),
       weeklyGames: [],
       byeWeeks: [],
     });

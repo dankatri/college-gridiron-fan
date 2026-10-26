@@ -150,4 +150,44 @@ test('isolated Neon transaction and concurrency release gate', { timeout: 120_00
     assert.equal(result.auditEntry?.wasLocked, 1);
     assert.equal(result.lineup.slots.filter(slot => slot.playerId).length, 1);
   });
+
+  await suite.test('week 9 is FCS-only and every other week is FBS-only, for members and admin saves alike', async t => {
+    const f = await fixture(t, url);
+    const memberInput = { leagueId: f.leagueId, actorId: f.userId, targetUserId: f.userId };
+    const adminInput = { leagueId: f.leagueId, actorId: f.ownerId, targetUserId: f.userId, admin: true };
+
+    // a. An FBS player submitted for week 9 is rejected, naming the player.
+    await assert.rejects(
+      f.run(tx => saveLineupInTransaction(tx, { ...memberInput, week: 9, slots: partial('fbs-a') }, preseason)),
+      (error: unknown) => error instanceof HttpError && error.status === 409 && error.message.includes('Alpha FBS Receiver'),
+    );
+
+    // b. An FCS player submitted for week 9 is accepted.
+    const fcsWeek9 = await f.run(tx => saveLineupInTransaction(tx, { ...memberInput, week: 9, slots: partial('fcs-a') }, preseason));
+    assert.equal(fcsWeek9.lineup.slots.find(slot => slot.playerId === 'fcs-a')?.playerId, 'fcs-a');
+
+    // c. An FCS player submitted for an ordinary week (8) is rejected.
+    await assert.rejects(
+      f.run(tx => saveLineupInTransaction(tx, { ...memberInput, week: 8, slots: partial('fcs-a') }, preseason)),
+      (error: unknown) => error instanceof HttpError && error.status === 409 && error.message.includes('Alpha FCS Receiver'),
+    );
+
+    // d. A player with no classification (legacy snapshot) is accepted in an ordinary
+    // week and rejected in week 9.
+    const legacyOrdinary = await f.run(tx => saveLineupInTransaction(tx, { ...memberInput, week: 8, slots: partial('qb-a') }, preseason));
+    assert.equal(legacyOrdinary.lineup.slots.find(slot => slot.playerId === 'qb-a')?.playerId, 'qb-a');
+    await assert.rejects(
+      f.run(tx => saveLineupInTransaction(tx, { ...memberInput, week: 9, slots: partial('qb-a') }, preseason)),
+      (error: unknown) => error instanceof HttpError && error.status === 409 && error.message.includes('Alpha QB'),
+    );
+
+    // e. The rule also applies on the admin path — the kickoff lock is bypassable,
+    // the division rule is not.
+    await assert.rejects(
+      f.run(tx => saveLineupInTransaction(tx, { ...adminInput, week: 9, slots: partial('fbs-a') }, preseason)),
+      (error: unknown) => error instanceof HttpError && error.status === 409 && error.message.includes('Alpha FBS Receiver'),
+    );
+    const adminFcsWeek9 = await f.run(tx => saveLineupInTransaction(tx, { ...adminInput, week: 9, slots: partial('fcs-a') }, preseason));
+    assert.equal(adminFcsWeek9.lineup.slots.find(slot => slot.playerId === 'fcs-a')?.playerId, 'fcs-a');
+  });
 });

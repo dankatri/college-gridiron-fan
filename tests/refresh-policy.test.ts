@@ -94,7 +94,8 @@ test('a mid-season transfer is judged by the team whose box produced the line, n
     'the line Alpha verified must survive the transfer');
 });
 
-test('an orphaned line from a snapshot predating recorded teams is retained, not dropped', () => {  const idsWithDeparted = new Map([['1', 'qb-a'], ['3', 'rb-gone']]);
+test('an orphaned line from a snapshot predating recorded teams is retained, not dropped', () => {
+  const idsWithDeparted = new Map([['1', 'qb-a'], ['3', 'rb-gone']]);
   const gameIds = new Set(['1']);
   const legacy = buildLiveStats({ gamePlayers: [alphaBox([{ id: '3', stat: '50' }])], week: 1, idByAthlete: idsWithDeparted, gameIds })
     .map(({ team: _team, ...rest }) => rest);

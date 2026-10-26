@@ -35,3 +35,6 @@ packages
 .env*.local
 test-results/
 playwright-report/
+
+# Local FCS preview snapshot (multi-MB CFBD pull, rebuilt on demand)
+.dev-preview/

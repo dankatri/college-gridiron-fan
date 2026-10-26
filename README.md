@@ -116,6 +116,7 @@ variables; do not put credentials in source files or `VITE_*` variables.
 | `APP_URL` | Public origin used in password recovery links |
 | `WEBAUTHN_RP_ID`, `WEBAUTHN_ORIGIN` | Optional explicit passkey host/origin |
 | `CFBD_API_KEY` | Refresh jobs only; never sent to the browser |
+| `INCLUDED_DIVISIONS` | Divisions the refresh jobs publish; unset means `fbs`. Set `fbs,fcs` to include FCS — see [Division scope](#division-scope-fbs-and-fcs) |
 | `DATABASE_URL_TEST` | Optional pre-provisioned isolated Neon database; hosted gates otherwise provision a disposable project |
 
 For API-capable local development, link the appropriate Vercel project and
@@ -131,7 +132,9 @@ table or column. A new database still needs the application's schema
 provisioned through the approved database-management process.
 
 `npm run dev` and `npm run preview` are frontend-only. Browser regression
-tests deliberately mock API responses and require no real account.
+tests deliberately mock API responses and require no real account. For a
+database-free local app with real football data — including the FCS pool — use
+`npm run dev:preview`; see [Local FCS preview](#local-fcs-preview).
 
 ## Quality and release gates
 
@@ -396,13 +399,104 @@ recovery emails. Remove the preview deployment and call
 `deleteDisposableDatabase` for its project after the gate; do not claim these
 temporary projects as application databases.
 
-## FBS scope and measured changes
+## Division scope (FBS and FCS)
 
-The selectable pool remains FBS-only. Review all three CFBD selection sites
-before changing that: `getFbsTeams`, `getGames`, and `getGamePlayerStats`.
-FCS opponents remain visible in FBS schedules/box scores. Historical
-projection divisors intentionally use all divisions for promoted teams.
-The browser fixture includes a 7,648-player catalogue without enabling FCS.
+The published pool is **FBS-only by default**. FCS is opt-in through the
+server-only `INCLUDED_DIVISIONS` variable, read by
+`src/server/classifications.ts`:
+
+| `INCLUDED_DIVISIONS` | Published pool |
+| --- | --- |
+| unset (default) | FBS only — unchanged from every existing deployment |
+| `fbs,fcs` | FBS and FCS |
+
+All three CFBD selection sites take the division list: `getTeams`, `getGames`
+and `getGamePlayerStats`. A cross-division game (an FBS team hosting an FCS
+opponent) is returned under both classifications and is de-duplicated by
+upstream id, so it is never counted twice against a team's schedule. FCS
+opponents remain visible in FBS schedules and box scores regardless of the
+setting. Historical projection divisors intentionally use all divisions for
+promoted teams.
+
+Players and team schedules carry a `classification` field. It is absent on
+anything cached before FCS support, and is left absent rather than guessed when
+CFBD does not label a team — so an unlabelled team is never mislabelled as FBS.
+The player table only shows its division filter and `Div` column when the loaded
+pool actually spans more than one division, so an FBS-only deployment gains no
+new control. The browser fixture includes a 7,648-player catalogue without
+enabling FCS.
+
+Enabling FCS in production roughly doubles the catalogue (2026: 3,826 FBS and
+3,533 FCS skill-position players across 266 teams, a ~4.0 MB `/api/players`
+response), and adds a second `/games` and `/games/players` request per refresh.
+CFBD does not reliably publish box scores for the non-FBS side of an
+FBS-vs-FCS game, so those players are held at their last accepted stats rather
+than scored as zero — the same handling any lagging source already receives.
+
+### Halloween week (week 9 is FCS-only)
+
+Enabling FCS does **not** make FCS players generally selectable. Week 9 — which
+anchors on 31 October — is a one-off FCS-only slate, and it is the only week FCS
+players can ever be picked. `src/lib/week-divisions.ts` owns that rule as a
+per-week allow-list:
+
+| Week | Selectable divisions |
+| --- | --- |
+| 9 | `fcs` |
+| every other week | `fbs` |
+
+It is expressed as an allow-list rather than a week-9 exception on purpose:
+once FCS players are in the published pool, every *other* week has to actively
+exclude them, and one rule gets both halves. A player with no `classification`
+is treated as FBS, so snapshots cached before FCS support keep working instead
+of emptying every lineup.
+
+Enforcement is server-side in `src/server/save-lineup.ts`, following the same
+philosophy as kickoff locks — the client narrows the pool, but the API is what
+holds the line. Ineligible picks are rejected with a 409 naming the player.
+This applies to **admin saves too**, unlike lock bypasses: overriding a lock
+corrects a mistake after kickoff, whereas fielding the wrong division is a
+rules violation. The database-free preview API in `scripts/lib/dev-api.ts`
+calls the same check, so a local preview cannot accept a pick production
+rejects.
+
+Week 9 also carries a Halloween theme — a `:root[data-theme='halloween']`
+palette plus a decorative ghost/jack-o'-lantern layer — applied from the
+selected week and cleared on leaving it. The decoration layer must stay at a
+non-negative z-index: a negative one paints behind the app root's opaque
+`bg-background` and renders nothing at all, which is covered by a pixel-level
+regression test in `tests/browser/halloween-week.spec.ts`.
+
+Because week 9 needs FCS players in the cache, `INCLUDED_DIVISIONS=fbs,fcs` is
+set on the refresh workflow and a `players` refresh must have run before week 9
+opens, or the week opens with an empty pool.
+
+### Local FCS preview
+
+To see the FCS pick'em before committing to it, run the preview. It uses real
+CollegeFootballData content but **no database**, so it cannot read or write
+application data:
+
+```sh
+npm run dev:snapshot   # one-off CFBD pull -> .dev-preview/snapshot.json (gitignored)
+npm run dev:preview    # Vite dev server with the in-memory preview API
+```
+
+`npm run dev:snapshot` needs `CFBD_API_KEY`. It fetches serially, caches each
+raw upstream response under `.dev-preview/raw/`, and resumes from that cache if
+a run is interrupted or rate-limited. Use `DIVISIONS=fbs npm run dev:snapshot`
+to rebuild an FBS-only snapshot for an A/B comparison.
+
+The preview API (`scripts/lib/dev-api.ts`) is mounted by Vite only when
+`DEV_PREVIEW=1`; it is absent from `npm run dev` and from every build. It signs
+in a demo user and keeps leagues and lineups in process memory, reusing the real
+lineup validation and per-season usage limits. Two things are deliberately not
+real: the previewed 2026 season has not been played, so **season totals shown
+are the previous completed season's actual numbers** and live box scores are
+empty. League management, passkeys and account recovery return `501` rather than
+faking success.
+
+## Measured changes
 
 Optimisation-phase initial-asset measurements on September 7, 2026, against
 committed baseline `4c9abf2`:

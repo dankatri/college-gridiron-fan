@@ -82,7 +82,7 @@ export function assertScheduleCompleteness(previous: TeamSchedule[] | null, next
   }
   const nextTeams = new Set(next.map(team => team.teamId));
   if (previous?.some(team => !nextTeams.has(team.teamId))) {
-    throw new IncompleteSourceError('A previously available FBS team disappeared from the schedule source');
+    throw new IncompleteSourceError('A previously available team disappeared from the schedule source');
   }
   const nextGames = new Map<string, WeeklyGame[]>();
   const nextTeamGames = new Map<string, WeeklyGame[]>();

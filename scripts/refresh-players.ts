@@ -1,5 +1,8 @@
 /**
- * Refreshes FBS teams and the skill-position player pool from CFBD.
+ * Refreshes teams and the skill-position player pool from CFBD.
+ *
+ * Which divisions are included is controlled by `INCLUDED_DIVISIONS`
+ * (default `fbs`; set `fbs,fcs` to add FCS) — see src/server/classifications.ts.
  *
  * Rosters change through the season (transfers, additions), so this runs daily.
  * Projection stats come from the cached completed-season pull rather than being
@@ -10,7 +13,8 @@
 
 import { PROJECTION_YEAR, SEASON_YEAR } from '../src/lib/season-config';
 import { playersCacheKey, seasonStatsCacheKey, teamsCacheKey } from '../src/server/cache-keys';
-import { buildPlayers } from '../src/server/cfbd-transform';
+import { buildPlayers, teamClassification } from '../src/server/cfbd-transform';
+import { includedClassifications } from '../src/server/classifications';
 import type { StatLine } from '../src/server/cfbd-transform';
 import type { ProjectionCache } from './refresh-projections';
 import { beginCacheRun, readCache, refreshCache, IncompleteSourceError } from './lib/cache';
@@ -22,11 +26,12 @@ await runScript('refresh-players', async () => {
   const run = await beginCacheRun();
   await refreshCache(playersCacheKey(SEASON_YEAR), run, async () => {
 
-    const { getFbsTeams, getRoster } = await import('../src/server/cfbd');
+    const { getTeams, getRoster } = await import('../src/server/cfbd');
+    const classifications = includedClassifications();
 
-    logStep('fetching teams and roster', { season: SEASON_YEAR });
+    logStep('fetching teams and roster', { season: SEASON_YEAR, divisions: classifications });
     const [teams, roster] = await Promise.all([
-      getFbsTeams(SEASON_YEAR),
+      getTeams(SEASON_YEAR, classifications),
       getRoster(SEASON_YEAR),
     ]);
     logStep('fetched', { teams: teams.length, rosterRows: roster.length });
@@ -58,6 +63,7 @@ await runScript('refresh-players', async () => {
         id: String(team.id),
         school: team.school,
         conference: team.conference ?? 'Independent',
+        classification: teamClassification(team) ?? null,
         logo: team.logos?.find((entry) => entry && !entry.includes('logos-dark')) ?? null,
         color: team.color ?? null,
         alternateColor: team.alternateColor ?? null,
@@ -71,8 +77,15 @@ await runScript('refresh-players', async () => {
     await refreshCache(teamsCacheKey(SEASON_YEAR), run, async () => teamSummaries);
 
     const withProjection = players.filter((player) => player.projectedPoints > 0).length;
+    const byDivision = Object.fromEntries(
+      classifications.map((classification) => [
+        classification,
+        players.filter((player) => player.classification === classification).length,
+      ]),
+    );
     logStep('players cached', {
       players: players.length,
+      byDivision,
       teams: teamSummaries.length,
       withProjection,
       approxBytes: JSON.stringify(players).length,

@@ -1,4 +1,5 @@
 import { Player } from './types';
+import { CLASSIFICATIONS } from './classification';
 import { clearScheduleCache } from './schedule-data';
 import { z } from 'zod';
 import { createResource } from './async-resource';
@@ -397,6 +398,7 @@ const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
 const playerSchema = z.object({
   id: z.string().min(1), name: z.string().min(1), team: z.string().min(1),
   position: z.enum(['QB', 'RB', 'WR']), conference: z.string(), projectedPoints: z.number(),
+  classification: z.enum(CLASSIFICATIONS).optional(),
   passingYards: z.number().optional(), passingTDs: z.number().optional(),
   completions: z.number().optional(), attempts: z.number().optional(),
   interceptions: z.number().optional(), rushingYards: z.number().optional(),

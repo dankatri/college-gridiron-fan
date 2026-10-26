@@ -6,6 +6,8 @@
  * refresh scripts or from `api/` handlers, never from `src/lib` or components.
  */
 
+import { DEFAULT_CLASSIFICATIONS, type Classification } from '../lib/classification';
+
 const CFBD_BASE_URL = 'https://api.collegefootballdata.com';
 
 export type CfbdTeam = {
@@ -154,7 +156,24 @@ export async function cfbdFetch<T>(
   throw lastError instanceof Error ? lastError : new Error(`CFBD ${path} failed`);
 }
 
-export const getFbsTeams = (year: number) => cfbdFetch<CfbdTeam[]>('/teams/fbs', { year });
+/**
+ * Teams in the requested divisions.
+ *
+ * `/teams/fbs` is exactly `/teams` filtered to FBS — verified field-for-field
+ * for 2026 — so the FBS-only path keeps using the smaller, long-standing
+ * endpoint and any other division mix is filtered from the full directory.
+ */
+export async function getTeams(
+  year: number,
+  classifications: readonly Classification[] = DEFAULT_CLASSIFICATIONS,
+): Promise<CfbdTeam[]> {
+  if (classifications.length === 1 && classifications[0] === 'fbs') {
+    return cfbdFetch<CfbdTeam[]>('/teams/fbs', { year });
+  }
+  const wanted = new Set<string>(classifications);
+  const teams = await cfbdFetch<CfbdTeam[]>('/teams', { year });
+  return teams.filter((team) => team.classification !== null && wanted.has(team.classification));
+}
 
 export const getRoster = (year: number, team?: string) =>
   cfbdFetch<CfbdRosterPlayer[]>('/roster', { year, team });
@@ -162,8 +181,31 @@ export const getRoster = (year: number, team?: string) =>
 export const getSeasonStats = (year: number, category: string) =>
   cfbdFetch<CfbdSeasonStat[]>('/stats/player/season', { year, category });
 
-export const getGames = (year: number, seasonType = 'both') =>
-  cfbdFetch<CfbdGame[]>('/games', { year, seasonType, classification: 'fbs' });
+/** Keeps the first entry per upstream id, preserving request order. */
+function dedupeById<T extends { id: number }>(rows: T[]): T[] {
+  return [...new Map(rows.map((row) => [row.id, row])).values()];
+}
+
+/**
+ * Games involving the requested divisions.
+ *
+ * CFBD filters by the classification of *either* side, so a cross-division game
+ * (an FBS team hosting an FCS opponent) is returned by both requests and must
+ * be de-duplicated — otherwise one game would be counted twice against a team's
+ * schedule.
+ */
+export async function getGames(
+  year: number,
+  seasonType = 'both',
+  classifications: readonly Classification[] = DEFAULT_CLASSIFICATIONS,
+): Promise<CfbdGame[]> {
+  const batches = await Promise.all(
+    classifications.map((classification) =>
+      cfbdFetch<CfbdGame[]>('/games', { year, seasonType, classification }),
+    ),
+  );
+  return dedupeById(batches.flat());
+}
 
 /**
  * Games across every division. Needed when counting a team's completed games in
@@ -175,5 +217,22 @@ export const getAllDivisionGames = (year: number, seasonType = 'both') =>
 
 export const getCalendar = (year: number) => cfbdFetch<CfbdCalendarWeek[]>('/calendar', { year });
 
-export const getGamePlayerStats = (year: number, week: number, seasonType = 'regular') =>
-  cfbdFetch<CfbdGamePlayers[]>('/games/players', { year, week, seasonType, classification: 'fbs' });
+/**
+ * Box scores for one upstream week, across the requested divisions.
+ *
+ * De-duplicated for the same reason as `getGames`: a cross-division game
+ * appears under both classifications.
+ */
+export async function getGamePlayerStats(
+  year: number,
+  week: number,
+  seasonType = 'regular',
+  classifications: readonly Classification[] = DEFAULT_CLASSIFICATIONS,
+): Promise<CfbdGamePlayers[]> {
+  const batches = await Promise.all(
+    classifications.map((classification) =>
+      cfbdFetch<CfbdGamePlayers[]>('/games/players', { year, week, seasonType, classification }),
+    ),
+  );
+  return dedupeById(batches.flat());
+}

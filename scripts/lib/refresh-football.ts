@@ -2,7 +2,8 @@ import pLimit from 'p-limit';
 import { z } from 'zod';
 import { SEASON_YEAR, REGULAR_SEASON_LAST_WEEK, weekForDate } from '../../src/lib/season-config';
 import { buildGameStatuses, buildTeamSchedules, effectiveKickoff } from '../../src/server/cfbd-transform';
-import { getFbsTeams, getGames, getGamePlayerStats, type CfbdGame, type CfbdGamePlayers, type CfbdTeam } from '../../src/server/cfbd';
+import { getTeams, getGames, getGamePlayerStats, type CfbdGame, type CfbdGamePlayers, type CfbdTeam } from '../../src/server/cfbd';
+import { includedClassifications } from '../../src/server/classifications';
 import { liveStatsCacheKey, playersCacheKey, schedulesCacheKey, teamsCacheKey } from '../../src/server/cache-keys';
 import type { Player, TeamSchedule } from '../../src/lib/types';
 import type { CacheRun } from '../../src/server/cache-publication';
@@ -12,12 +13,16 @@ import { assertScheduleCompleteness, buildAcceptedLiveStats, refreshWeeks, type 
 import { logStep } from './runner';
 
 export async function loadGameContext(): Promise<{ teams: CfbdTeam[]; games: CfbdGame[] }> {
+  const classifications = includedClassifications();
   const directory = await readPublishedCache<Array<{
-    id: string; school: string; conference: string; logo: string | null;
+    id: string; school: string; conference: string; classification?: string | null; logo: string | null;
     color: string | null; alternateColor: string | null;
   }>>(teamsCacheKey(SEASON_YEAR));
   const parsed = z.array(z.object({
     id: z.string().regex(/^\d+$/), school: z.string(), conference: z.string(),
+    // Absent on directories cached before FCS support; such a row is still a
+    // usable team, it simply carries no division label.
+    classification: z.string().nullable().optional(),
     logo: z.string().nullable(), color: z.string().nullable(), alternateColor: z.string().nullable(),
   })).nonempty().safeParse(directory.data);
   const cachedTeams = parsed.success && directory.sourceCheckedAt &&
@@ -25,9 +30,12 @@ export async function loadGameContext(): Promise<{ teams: CfbdTeam[]; games: Cfb
     ? parsed.data.map(team => ({
       id: Number(team.id), school: team.school, conference: team.conference,
       color: team.color, alternateColor: team.alternateColor, logos: team.logo ? [team.logo] : [],
-      abbreviation: null, classification: 'fbs', mascot: null,
+      abbreviation: null, classification: team.classification ?? null, mascot: null,
     })) : null;
-  const [teams, games] = await Promise.all([cachedTeams ?? getFbsTeams(SEASON_YEAR), getGames(SEASON_YEAR, 'both')]);
+  const [teams, games] = await Promise.all([
+    cachedTeams ?? getTeams(SEASON_YEAR, classifications),
+    getGames(SEASON_YEAR, 'both', classifications),
+  ]);
   if (!teams.length || !games.length) throw new Error('CFBD discovery returned no teams/games; retaining accepted data');
   return { teams, games };
 }
@@ -68,7 +76,7 @@ export async function refreshLiveWeeks(
         });
         const pairs = new Map(weekGames.map(game => [`${game.seasonType}:${game.week}`, game]));
         for (const [pair, game] of pairs) if (!requests.has(pair)) {
-          requests.set(pair, limit(() => getGamePlayerStats(SEASON_YEAR, game.week, game.seasonType))
+          requests.set(pair, limit(() => getGamePlayerStats(SEASON_YEAR, game.week, game.seasonType, includedClassifications()))
             .then(data => ({ data }), error => ({ error })));
         }
         // A box-score source that fails for one CFBD week must not discard the

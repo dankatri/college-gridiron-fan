@@ -1,8 +1,10 @@
 import { z } from 'zod';
 import { createResource } from './async-resource';
+import { CLASSIFICATIONS } from './classification';
 
 const teamSchema = z.object({
   school: z.string(),
+  classification: z.enum(CLASSIFICATIONS).nullable().optional(),
   logo: z.string().nullable().optional(),
 });
 const payloadSchema = z.object({

@@ -1,0 +1,75 @@
+/**
+ * Halloween theme — overrides the `:root` variables from `index.css`.
+ *
+ * Scoped to the `data-theme` attribute rather than touching `:root` directly
+ * so the palette only applies while the attribute is set (Week 9), leaving
+ * every other week on the default theme with no component changes needed.
+ *
+ * The selector is qualified with `:root` deliberately. A bare
+ * `[data-theme='halloween']` ties with `:root` on specificity, so the winner
+ * would be decided by source order — and since this file is `@import`ed at the
+ * top of `index.css`, the default palette below it would silently win.
+ */
+:root[data-theme='halloween'] {
+  --background: oklch(0.16 0.02 300);
+  --foreground: oklch(0.96 0.015 80);
+  --card: oklch(0.22 0.03 300);
+  --card-foreground: oklch(0.96 0.015 80);
+  --popover: oklch(0.2 0.03 300);
+  --popover-foreground: oklch(0.96 0.015 80);
+  --primary: oklch(0.72 0.19 55);
+  --primary-foreground: oklch(0.16 0.02 300);
+  --secondary: oklch(0.5 0.17 310);
+  --secondary-foreground: oklch(0.97 0.01 310);
+  --muted: oklch(0.32 0.03 300);
+  --muted-foreground: oklch(0.78 0.02 300);
+  --accent: oklch(0.8 0.22 140);
+  --accent-foreground: oklch(0.16 0.02 300);
+  --destructive: oklch(0.58 0.24 20);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.35 0.03 300);
+  --input: oklch(0.35 0.03 300);
+  --ring: oklch(0.72 0.19 55);
+}
+
+/*
+ * Decorations (`HalloweenDecorations.tsx`) animation.
+ *
+ * The animation itself is gated on `:root[data-theme='halloween']` in
+ * addition to the component only mounting for Week 9 — belt-and-suspenders,
+ * same reasoning as the palette above, so a stray class name can never
+ * animate outside the one week it belongs to.
+ */
+:root[data-theme='halloween'] .halloween-ghost {
+  animation-name: halloween-float;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+
+:root[data-theme='halloween'] .halloween-pumpkin {
+  animation-name: halloween-flicker;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+
+@keyframes halloween-float {
+  0% { transform: translate(0, 0) rotate(0deg); }
+  25% { transform: translate(8px, -14px) rotate(-3deg); }
+  50% { transform: translate(-6px, -22px) rotate(2deg); }
+  75% { transform: translate(10px, -10px) rotate(-2deg); }
+  100% { transform: translate(0, 0) rotate(0deg); }
+}
+
+@keyframes halloween-flicker {
+  0%, 100% { opacity: 0.5; filter: brightness(0.85); }
+  45% { opacity: 1; filter: brightness(1.15); }
+  55% { opacity: 0.7; filter: brightness(0.95); }
+}
+
+/* Accessibility baseline, not an opt-out: motion stops, decorations stay. */
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme='halloween'] .halloween-ghost,
+  :root[data-theme='halloween'] .halloween-pumpkin {
+    animation: none;
+  }
+}
