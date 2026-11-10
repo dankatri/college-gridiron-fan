@@ -1,8 +1,12 @@
 import { z } from 'zod';
 import { sourceMetadataFields } from './source-metadata';
 
-export const seasonPlayerStatsSchema = z.object({
-  playerId: z.string().min(1),
+/**
+ * Only the fields that are summed across weeks. Kept separate from the player
+ * record below so a non-additive field can never leak into SEASON_STAT_FIELDS,
+ * which drives both the SQL sums and the zero-filled test fixtures.
+ */
+const seasonStatTotalsSchema = z.object({
   fantasyPoints: z.number().finite(),
   passingYards: z.number().finite(),
   passingTDs: z.number().finite(),
@@ -18,7 +22,16 @@ export const seasonPlayerStatsSchema = z.object({
   puntReturnYards: z.number().finite(),
 });
 
-export const SEASON_STAT_FIELDS = seasonPlayerStatsSchema.omit({ playerId: true }).keyof().options;
+export const SEASON_STAT_FIELDS = seasonStatTotalsSchema.keyof().options;
+
+export const seasonPlayerStatsSchema = seasonStatTotalsSchema.extend({
+  playerId: z.string().min(1),
+  /**
+   * Latest week this player recorded a stat line, or null when they never did.
+   * Optional so snapshots written before this field still parse.
+   */
+  lastPlayedWeek: z.number().int().nullable().optional(),
+});
 export type SeasonPlayerStats = z.infer<typeof seasonPlayerStatsSchema>;
 export type SeasonStatKey = typeof SEASON_STAT_FIELDS[number] | 'returnYards';
 

@@ -10,6 +10,7 @@ export function useSeasonStats() {
   );
   return {
     actuals,
+    availableWeeks: state.data?.availableWeeks ?? [],
     isLoading: state.data === undefined && !state.error,
     complete: state.data !== undefined && state.data.missingWeeks.length === 0,
     hasData: state.data !== undefined && (state.data.availableWeeks.length > 0 || state.data.missingWeeks.length === 0),
