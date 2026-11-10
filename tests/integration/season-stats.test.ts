@@ -37,6 +37,11 @@ test('season SQL sums actual opened weeks, deduplicates players and excludes una
   assert.equal(player.completions, 0);
   assert.equal(season.stats.find(row => row.playerId === 'negative')!.rushingYards, -5);
   assert.equal(season.stats.find(row => row.playerId === 'zero')!.fantasyPoints, 0);
+  // Last played week is the newest week a player has a line in, not a sum.
+  assert.equal(player.lastPlayedWeek, 1);
+  assert.equal(season.stats.find(row => row.playerId === 'negative')!.lastPlayedWeek, 0);
+  assert.equal(season.stats.find(row => row.playerId === 'zero')!.lastPlayedWeek, 1);
+  assert.equal((await read([0])).stats.find(row => row.playerId === 'p')!.lastPlayedWeek, 0);
   assert.deepEqual(season.availableWeeks, [0, 1]);
   assert.deepEqual(season.missingWeeks, []);
   assert.ok(JSON.stringify(season).length < 5000, 'Raw box scores and unrelated cache data must stay in Postgres');

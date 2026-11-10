@@ -6,6 +6,8 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { User, Trophy } from '@phosphor-icons/react';
+import { PlayerAvailabilityIndicator } from '@/components/PlayerAvailabilityIndicator';
+import type { PlayerAvailability } from '@/lib/player-availability';
 
 type GameLine = PlayerStats & {
   opponent?: string;
@@ -33,6 +35,7 @@ type Totals = {
 
 interface PlayerDetailDialogProps {
   player: Player | null;
+  availability?: PlayerAvailability;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -98,7 +101,7 @@ function resultFor(game: GameLine): { label: string; won: boolean } | null {
   return { label: `${tied ? 'T' : won ? 'W' : 'L'} ${game.teamPoints}-${game.opponentPoints}`, won };
 }
 
-export function PlayerDetailDialog({ player, open, onOpenChange }: PlayerDetailDialogProps) {
+export function PlayerDetailDialog({ player, availability, open, onOpenChange }: PlayerDetailDialogProps) {
   const [games, setGames] = useState<GameLine[]>([]);
   const [totals, setTotals] = useState<Totals | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -174,6 +177,9 @@ export function PlayerDetailDialog({ player, open, onOpenChange }: PlayerDetailD
                 <span>{player.team}</span>
                 <span>·</span>
                 <span>{player.conference}</span>
+                {availability && (
+                  <PlayerAvailabilityIndicator availability={availability} team={player.team} />
+                )}
               </DialogDescription>
             </div>
           </div>

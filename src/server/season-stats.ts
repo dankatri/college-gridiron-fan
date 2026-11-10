@@ -24,17 +24,21 @@ export function projectSeasonStats(year: number, weeks: readonly number[]) {
         to_char(c.updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as revision
       from data_cache c where ${keyFilter}
     ), snapshots as materialized (
-      select c.key, c.data->'stats' as stats
+      select c.key, (e.value)::int as week, c.data->'stats' as stats
       from cache_rows c join expected e on e.key = c.key
       where jsonb_typeof(c.data->'stats') = 'array' and c.data->>'week' = e.value
     ), latest as (
-      select distinct on (c.key, s.value->>'playerId') s.value
+      select distinct on (c.key, s.value->>'playerId') s.value, c.week
       from snapshots c
       cross join lateral jsonb_array_elements(c.stats) with ordinality as s(value, ordinality)
       order by c.key, s.value->>'playerId', s.ordinality desc
     ), totals as (
       select jsonb_build_object(
-        'playerId', value->>'playerId', ${sql.join(sums, sql`, `)}
+        'playerId', value->>'playerId', ${sql.join(sums, sql`, `)},
+        -- Presence of a stat line is the only "played" signal the box scores
+        -- carry, so the newest week a player appears in doubles as the last
+        -- week they were active.
+        'lastPlayedWeek', max(week)
       ) as stat
       from latest group by value->>'playerId'
     )

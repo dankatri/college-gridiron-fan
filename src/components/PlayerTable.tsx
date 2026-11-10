@@ -17,6 +17,9 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { LineupSlot } from '@/lib/types';
 import { ByeWeekIndicator } from '@/components/ByeWeekIndicator';
+import { PlayerAvailabilityIndicator } from '@/components/PlayerAvailabilityIndicator';
+import { playerAvailability, teamPlayedWeeks } from '@/lib/player-availability';
+import { useScheduleData } from '@/hooks/use-schedule-data';
 import { WeekMatchup } from '@/components/WeekMatchup';
 import { TeamLogo } from '@/components/TeamLogo';
 import { optionalFeature } from '@/components/optional-feature';
@@ -158,6 +161,21 @@ export function PlayerTable({
   }, [matchups]);
   const season = useSeasonStats();
   const [detailPlayer, setDetailPlayer] = useState<Player | null>(null);
+
+  // Byes and unplayed weeks have to come from the schedule: a player's own
+  // record carries no bye, and teams take more than one.
+  const { data: allSchedules } = useScheduleData();
+  const playedWeeks = useMemo(() => teamPlayedWeeks(allSchedules ?? []), [allSchedules]);
+
+  const availabilityFor = useCallback(
+    (player: Player) => playerAvailability({
+      lastPlayedWeek: season.actuals.get(player.id)?.lastPlayedWeek,
+      teamPlayedWeeks: playedWeeks.get(player.team.toLowerCase()) ?? [],
+      availableWeeks: season.availableWeeks,
+      currentWeek,
+    }),
+    [season.actuals, season.availableWeeks, playedWeeks, currentWeek],
+  );
 
   // Get teams filtered by conference for dropdown
   const filteredTeams = useMemo(() => {
@@ -607,6 +625,11 @@ export function PlayerTable({
                           {CLASSIFICATION_LABELS[player.classification]}
                         </Badge>
                       )}
+                      <PlayerAvailabilityIndicator
+                        availability={availabilityFor(player)}
+                        team={player.team}
+                        className="text-[10px] px-1.5 py-0"
+                      />
                     </div>
                   </div>
 
@@ -749,6 +772,10 @@ export function PlayerTable({
                           isLoading={isLoadingMatchups}
                         />
                         <ByeWeekIndicator player={player} currentWeek={currentWeek} />
+                        <PlayerAvailabilityIndicator
+                          availability={availabilityFor(player)}
+                          team={player.team}
+                        />
                       </div>
                     </TableCell>
                     <TableCell className="text-center font-medium">
@@ -812,6 +839,7 @@ export function PlayerTable({
         
         {detailPlayer && <PlayerDetailDialog
           player={detailPlayer}
+          availability={availabilityFor(detailPlayer)}
           open={detailPlayer !== null}
           onOpenChange={(open) => {
             if (!open) setDetailPlayer(null);
