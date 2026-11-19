@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { eq, like, sql } from 'drizzle-orm';
 import { fixture, isolatedDatabaseURL } from './fixture';
-import { dataCache } from '../../src/server/schema';
+import { dataCache, lineups } from '../../src/server/schema';
 import { liveStatsCacheKey, playersCacheKey, schedulesCacheKey } from '../../src/server/cache-keys';
-import { projectPlayerLog, projectPlayers, projectStartedWeeks, projectTeamSchedule, projectWeeklyScores } from '../../src/server/cache-projections';
+import { projectPickedPlayerIds, projectPlayerIdentities, projectPlayerLog, projectPlayers, projectSchedulePolicyFacts, projectStartedWeeks, projectTeamSchedule, projectWeeklyScores } from '../../src/server/cache-projections';
 import { hasStartedGames } from '../../src/server/lineup-utils';
 
 type Stat = { playerId: string; week: number; fantasyPoints: number; passingYards: number; lastUpdated: string };
@@ -81,9 +81,75 @@ test('isolated SQL projection parity and returned-byte gate', async t => {
   assert.deepEqual(selected.rows[0].data, [catalogue[0], catalogue[catalogue.length - 1]]);
   const none = await f.run(tx => tx.execute<{ data: unknown[] }>(projectPlayers(2026, ['missing'])));
   assert.deepEqual(none.rows[0].data, []);
+  const identities = await f.run(tx => tx.execute<{ data: Array<{ id: string; team?: string }> }>(projectPlayerIdentities(2026)));
+  assert.equal(identities.rows[0].data.length, catalogue.length);
+  assert.deepEqual(identities.rows[0].data[0], { id: 'qb-a', team: 'Alpha' });
+  assert.deepEqual(identities.rows[0].data[catalogue.length - 1], { id: 'qb-a', team: 'Beta' });
+  const fat = Array.from({ length: 500 }, (_, index) => ({
+    id: `fat-${index}`, name: `Player ${index}`, team: `Team ${index % 20}`, position: 'WR',
+    headshot: `https://a.espncdn.com/i/headshots/college-football/players/full/${index}.png`,
+    projectedPoints: 12.5, stats: { receivingYards: 80, receptions: 6, receivingTouchdowns: 1 },
+  }));
+  await f.run(tx => tx.update(dataCache).set({ data: fat }).where(eq(dataCache.key, playersCacheKey(2026))));
+  const slim = await f.run(tx => tx.execute<{ data: unknown[] }>(projectPlayerIdentities(2026)));
+  assert.deepEqual(slim.rows[0].data[1], { id: 'fat-1', team: 'Team 1' });
+  const fullPool = Buffer.byteLength(JSON.stringify(fat));
+  const identityBytes = Buffer.byteLength(JSON.stringify(slim.rows));
+  assert.ok(identityBytes < fullPool / 4, 'The identity projection must not carry whole player rows');
+  t.diagnostic(JSON.stringify({ fullPoolBytes: fullPool, identityBytes }));
+  await f.run(tx => tx.update(dataCache).set({ data: { not: 'an array' } }).where(eq(dataCache.key, playersCacheKey(2026))));
+  const malformed = await f.run(tx => tx.execute<{ data: unknown[] }>(projectPlayerIdentities(2026)));
+  assert.deepEqual(malformed.rows[0].data, []);
+  await f.run(tx => tx.update(dataCache).set({ data: catalogue }).where(eq(dataCache.key, playersCacheKey(2026))));
   const schedules = await f.run(tx => tx.select().from(dataCache).where(eq(dataCache.key, schedulesCacheKey(2026))));
   const schedule = await f.run(tx => tx.execute<{ data: unknown[] }>(projectTeamSchedule(2026, 'Alpha')));
   assert.deepEqual(schedule.rows[0].data, schedules[0].data);
   const missingTeam = await f.run(tx => tx.execute<{ data: unknown[] }>(projectTeamSchedule(2026, 'Missing')));
   assert.deepEqual(missingTeam.rows[0].data, []);
+});
+
+test('schedule policy facts keep only what the completeness check reads', async t => {
+  const f = await fixture(t, isolatedDatabaseURL());
+  const full = Array.from({ length: 40 }, (_, team) => ({
+    teamId: String(team), teamName: `Team ${team}`, conference: 'Conf', byeWeeks: [4],
+    weeklyGames: Array.from({ length: 12 }, (_, week) => week === 4
+      ? { week, isByeWeek: true, isHomeGame: false, opponent: '' }
+      : {
+        week, gameId: `${team}-${week}`, isByeWeek: false, isHomeGame: week % 2 === 0,
+        opponent: `Opponent University ${week}`, gameDate: '2026-09-05T18:00:00.000Z', gameTime: '7:00 PM',
+        ...(week < 6 ? { isCompleted: true, teamPoints: 24, opponentPoints: 17 } : { isCompleted: false }),
+      }),
+  }));
+  await f.run(tx => tx.update(dataCache).set({ data: full }).where(eq(dataCache.key, schedulesCacheKey(2026))));
+  const projected = await f.run(tx => tx.execute<{ data: unknown }>(projectSchedulePolicyFacts(2026)));
+  const keep = ['week', 'isByeWeek', 'gameId', 'isCompleted', 'teamPoints', 'opponentPoints'];
+  const expected = full.map(team => ({
+    teamId: team.teamId,
+    weeklyGames: team.weeklyGames.map(game => Object.fromEntries(
+      keep.map(field => [field, (game as Record<string, unknown>)[field] ?? null]))),
+  }));
+  assert.deepEqual(projected.rows[0].data, expected);
+  const before = Buffer.byteLength(JSON.stringify(full));
+  const after = Buffer.byteLength(JSON.stringify(projected.rows));
+  assert.ok(after < before * 0.6, 'The projection must leave opponents and kickoff times behind');
+  t.diagnostic(JSON.stringify({ fullScheduleBytes: before, projectedBytes: after }));
+
+  await f.run(tx => tx.update(dataCache).set({ data: { not: 'an array' } }).where(eq(dataCache.key, schedulesCacheKey(2026))));
+  assert.deepEqual((await f.run(tx => tx.execute<{ data: unknown }>(projectSchedulePolicyFacts(2026)))).rows[0].data, []);
+  await f.run(tx => tx.delete(dataCache).where(eq(dataCache.key, schedulesCacheKey(2026))));
+  assert.deepEqual((await f.run(tx => tx.execute(projectSchedulePolicyFacts(2026)))).rows, []);
+});
+
+test('picked player ids come from every saved lineup of the season only', async t => {
+  const f = await fixture(t, isolatedDatabaseURL());
+  const slots = (ids: Array<string | null>) => ids.map((playerId, slotIndex) => ({ slotIndex, position: 'WR', playerId }));
+  await f.run(async tx => {
+    await tx.insert(lineups).values([
+      { leagueId: f.leagueId, userId: f.userId, season: 2026, week: 9, slots: slots(['fcs-a', 'fcs-b', null]) },
+      { leagueId: f.leagueId, userId: f.userId, season: 2026, week: 8, slots: slots(['fbs-a', 'fcs-a']) },
+      { leagueId: f.leagueId, userId: f.userId, season: 2025, week: 3, slots: slots(['last-year']) },
+    ]);
+  });
+  const picked = await f.run(tx => tx.execute<{ id: string }>(projectPickedPlayerIds(2026)));
+  assert.deepEqual(picked.rows.map(row => row.id).sort(), ['fbs-a', 'fcs-a', 'fcs-b']);
 });

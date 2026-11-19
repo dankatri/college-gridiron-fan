@@ -121,6 +121,69 @@ export function projectPlayers(year: number, playerIds: string[]) {
     from data_cache c where c.key = ${playersCacheKey(year)}`;
 }
 
+/**
+ * The id and team of every pooled player, in pool order. The live refresh maps
+ * athletes to ids and teams to a roster, which needs two short fields of a row
+ * that is several megabytes. Fetching the whole pool on every poll was the
+ * largest single read against Neon's transfer quota.
+ */
+export function projectPlayerIdentities(year: number) {
+  return sql`
+    select c.key, c.updated_at as "updatedAt", (
+      select coalesce(jsonb_agg(
+        jsonb_build_object('id', p.value->'id', 'team', p.value->'team') order by p.ordinality
+      ), '[]'::jsonb)
+      from jsonb_array_elements(
+        case when jsonb_typeof(c.data) = 'array' then c.data else '[]'::jsonb end
+      ) with ordinality as p(value, ordinality)
+      where jsonb_typeof(p.value) = 'object'
+    ) as data
+    from data_cache c where c.key = ${playersCacheKey(year)}`;
+}
+
+/** Distinct player ids across every saved lineup for a season. */
+export function projectPickedPlayerIds(year: number) {
+  return sql`
+    select distinct slot->>'playerId' as id
+    from lineups l
+    cross join lateral jsonb_array_elements(
+      case when jsonb_typeof(l.slots) = 'array' then l.slots else '[]'::jsonb end
+    ) slot
+    where l.season = ${year} and slot->>'playerId' is not null`;
+}
+
+/**
+ * The facts a schedule refresh compares a candidate against: each team's id and
+ * every game's identity, week, completion and final score. Opponent names,
+ * kickoff times and home flags are the bulk of the rows and are never consulted,
+ * so they stay in the database. A missing row is a null `data`; a malformed one
+ * projects to no teams.
+ */
+export function projectSchedulePolicyFacts(year: number) {
+  return sql`
+    select (
+      select coalesce(jsonb_agg(jsonb_build_object(
+        'teamId', t.value->'teamId',
+        'weeklyGames', (
+          select coalesce(jsonb_agg(jsonb_build_object(
+            'week', g.value->'week', 'isByeWeek', g.value->'isByeWeek', 'gameId', g.value->'gameId',
+            'isCompleted', g.value->'isCompleted', 'teamPoints', g.value->'teamPoints',
+            'opponentPoints', g.value->'opponentPoints'
+          ) order by g.ordinality), '[]'::jsonb)
+          from jsonb_array_elements(
+            case when jsonb_typeof(t.value->'weeklyGames') = 'array' then t.value->'weeklyGames' else '[]'::jsonb end
+          ) with ordinality as g(value, ordinality)
+          where jsonb_typeof(g.value) = 'object'
+        )
+      ) order by t.ordinality), '[]'::jsonb)
+      from jsonb_array_elements(
+        case when jsonb_typeof(c.data) = 'array' then c.data else '[]'::jsonb end
+      ) with ordinality as t(value, ordinality)
+      where jsonb_typeof(t.value) = 'object'
+    ) as data
+    from data_cache c where c.key = ${schedulesCacheKey(year)}`;
+}
+
 export function projectTeamSchedule(year: number, team: string) {
   return sql`
     select c.key, c.updated_at as "updatedAt", (
