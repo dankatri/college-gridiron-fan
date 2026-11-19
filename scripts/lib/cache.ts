@@ -8,6 +8,7 @@
 import { eq } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 import { allocateCacheRun, claimCacheSource, failCacheSource, publishCacheSource, type CacheRun } from '../../src/server/cache-publication';
+import type { WeeklyGame } from '../../src/lib/types';
 import { logStep } from './runner';
 
 export class IncompleteSourceError extends Error {}
@@ -57,6 +58,27 @@ export async function refreshCache<T>(key: string, run: CacheRun, load: () => Pr
     }
     throw error;
   }
+}
+
+/** Every player id that appears in a saved lineup this season. */
+export async function readPickedPlayerIds(year: number): Promise<Set<string>> {
+  const { db } = await import('../../src/server/db');
+  const { projectPickedPlayerIds } = await import('../../src/server/cache-projections');
+  const result = await db.execute<{ id: string }>(projectPickedPlayerIds(year));
+  return new Set(result.rows.map(row => row.id));
+}
+
+export type SchedulePolicyFacts = Array<{
+  teamId: string;
+  weeklyGames: Array<Pick<WeeklyGame, 'week' | 'isByeWeek' | 'gameId' | 'isCompleted' | 'teamPoints' | 'opponentPoints'>>;
+}>;
+
+/** Null when no schedule is cached. See projectSchedulePolicyFacts. */
+export async function readSchedulePolicyFacts(year: number): Promise<SchedulePolicyFacts | null> {
+  const { db } = await import('../../src/server/db');
+  const { projectSchedulePolicyFacts } = await import('../../src/server/cache-projections');
+  const result = await db.execute<{ data: SchedulePolicyFacts }>(projectSchedulePolicyFacts(year));
+  return result.rows[0]?.data ?? null;
 }
 
 export type PlayerIdentity = { id: string; team: string };

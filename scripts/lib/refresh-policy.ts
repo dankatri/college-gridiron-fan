@@ -3,7 +3,7 @@ import type { GameStatus, PlayerStats, TeamSchedule, WeeklyGame } from '../../sr
 import { ALL_WEEKS, FIRST_WEEK, LAST_WEEK } from '../../src/lib/types';
 import { weekBoundary, weekForDate } from '../../src/lib/season-config';
 import { buildLiveStats, effectiveKickoff } from '../../src/server/cfbd-transform';
-import { IncompleteSourceError, type PlayerIdentity } from './cache';
+import { IncompleteSourceError, type PlayerIdentity, type SchedulePolicyFacts } from './cache';
 import { completedGameWeeks, hasWeekStarted, isFinalGame, isWeekComplete } from '../../src/lib/week-lock';
 import { scheduleCompletionSchema } from '../../src/server/week-completion';
 
@@ -73,7 +73,7 @@ export function refreshWeeks(games: CfbdGame[], now: Date, sweep: boolean, force
   return [...weeks].sort((a, b) => a - b);
 }
 
-export function assertScheduleCompleteness(previous: TeamSchedule[] | null, next: TeamSchedule[], now = new Date()) {
+export function assertScheduleCompleteness(previous: SchedulePolicyFacts | null, next: TeamSchedule[], now = new Date()) {
   if (!scheduleCompletionSchema.safeParse(next).success) {
     throw new IncompleteSourceError('The schedule source has invalid completion fields');
   }

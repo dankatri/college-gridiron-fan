@@ -10,6 +10,7 @@
 
 import type { Classification } from './classification';
 import type { Player } from './types';
+import { isWeekComplete } from './week-lock';
 
 /** The one week drawn from FCS instead of FBS. */
 export const FCS_WEEK = 9;
@@ -41,4 +42,21 @@ export function isPlayerEligibleForWeek(player: Pick<Player, 'classification'>, 
 /** `true` when `week` departs from the usual FBS slate. */
 export function isFcsWeek(week: number): boolean {
   return week === FCS_WEEK;
+}
+
+/**
+ * The pool to publish once the FCS slate is over.
+ *
+ * FCS players are selectable in exactly one week, so after it closes they are
+ * dead weight in a pool that every poll and page load pays to move — about half
+ * of it. Saved lineups hold bare player ids, so a player still picked in some
+ * lineup keeps their row: dropping it would blank that lineup's names. Before
+ * the slate closes the pool is returned untouched, because it must contain
+ * every FCS player for the week to work at all.
+ */
+export function poolAfterFcsWeek<T extends Pick<Player, 'id' | 'classification'>>(
+  players: readonly T[], pickedIds: ReadonlySet<string>, now: Date = new Date(),
+): T[] {
+  if (!isWeekComplete(FCS_WEEK, now)) return [...players];
+  return players.filter(player => divisionOf(player) !== 'fcs' || pickedIds.has(player.id));
 }

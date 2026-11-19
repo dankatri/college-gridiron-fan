@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { divisionOf, divisionsForWeek, isFcsWeek, isPlayerEligibleForWeek } from '../src/lib/week-divisions';
+import { divisionOf, divisionsForWeek, isFcsWeek, isPlayerEligibleForWeek, poolAfterFcsWeek } from '../src/lib/week-divisions';
 import type { Player } from '../src/lib/types';
 
 const fbsPlayer: Pick<Player, 'classification'> = { classification: 'fbs' };
@@ -34,4 +34,19 @@ test('isFcsWeek is true only for week 9', () => {
   for (const week of [0, 1, 8, 10, 18]) {
     assert.equal(isFcsWeek(week), false);
   }
+});
+
+test('the pool keeps every fcs player until the fcs week closes, then only those still picked', () => {
+  const pool = [
+    { id: 'fbs-1', classification: 'fbs' as const },
+    { id: 'legacy' },
+    { id: 'fcs-picked', classification: 'fcs' as const },
+    { id: 'fcs-idle', classification: 'fcs' as const },
+  ];
+  const picked = new Set(['fcs-picked']);
+  assert.deepEqual(poolAfterFcsWeek(pool, picked, new Date('2026-10-30T12:00:00Z')), pool);
+  assert.deepEqual(
+    poolAfterFcsWeek(pool, picked, new Date('2026-11-19T12:00:00Z')).map(player => player.id),
+    ['fbs-1', 'legacy', 'fcs-picked'],
+  );
 });

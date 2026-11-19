@@ -17,7 +17,9 @@ import { buildPlayers, teamClassification } from '../src/server/cfbd-transform';
 import { includedClassifications } from '../src/server/classifications';
 import type { StatLine } from '../src/server/cfbd-transform';
 import type { ProjectionCache } from './refresh-projections';
-import { beginCacheRun, readCache, refreshCache, IncompleteSourceError } from './lib/cache';
+import { poolAfterFcsWeek } from '../src/lib/week-divisions';
+import type { Player } from '../src/lib/types';
+import { beginCacheRun, readCache, readPickedPlayerIds, refreshCache, IncompleteSourceError } from './lib/cache';
 import { logStep, requireEnv, runScript } from './lib/runner';
 
 await runScript('refresh-players', async () => {
@@ -52,7 +54,16 @@ await runScript('refresh-players', async () => {
     );
     const gamesPlayed = new Map<string, number>(Object.entries(projections?.gamesPlayed ?? {}));
 
-    const players = buildPlayers({ teams, roster, statsByPlayer, gamesPlayed });
+    const built = buildPlayers({ teams, roster, statsByPlayer, gamesPlayed });
+    // Once the FCS week is over only FCS players still in a saved lineup stay
+    // published; see poolAfterFcsWeek. Failing to read the lineups must abort
+    // rather than prune everyone.
+    const pickedIds = await readPickedPlayerIds(SEASON_YEAR);
+    const now = new Date();
+    const players = poolAfterFcsWeek(built, pickedIds, now);
+    if (players.length !== built.length) {
+      logStep('FCS week is over; pruned unpicked FCS players', { before: built.length, after: players.length });
+    }
 
     if (players.length === 0) {
       throw new Error('Player build produced 0 players; refusing to overwrite cache');
@@ -70,7 +81,10 @@ await runScript('refresh-players', async () => {
       }))
       .sort((a, b) => a.school.localeCompare(b.school));
 
-    const previous = await readCache<unknown[]>(playersCacheKey(SEASON_YEAR));
+    // Compare like with like: the stored pool was pruned the same way, and
+    // the first run after the cutoff would otherwise read as a mass loss.
+    const stored = await readCache<Player[]>(playersCacheKey(SEASON_YEAR));
+    const previous = stored && poolAfterFcsWeek(stored, pickedIds, now);
     if (previous?.length && players.length < previous.length / 2) {
       throw new IncompleteSourceError('The player pool unexpectedly lost more than half its rows');
     }

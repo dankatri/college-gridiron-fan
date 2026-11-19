@@ -5,10 +5,9 @@ import { buildGameStatuses, buildTeamSchedules, effectiveKickoff } from '../../s
 import { getTeams, getGames, getGamePlayerStats, type CfbdGame, type CfbdGamePlayers, type CfbdTeam } from '../../src/server/cfbd';
 import { includedClassifications } from '../../src/server/classifications';
 import { liveStatsCacheKey, schedulesCacheKey, teamsCacheKey } from '../../src/server/cache-keys';
-import type { TeamSchedule } from '../../src/lib/types';
 import type { CacheRun } from '../../src/server/cache-publication';
 import { readPublishedCache } from '../../src/server/read-published-cache';
-import { readCache, readPlayerIdentities, refreshCache, type PlayerIdentity } from './cache';
+import { readCache, readPlayerIdentities, readSchedulePolicyFacts, refreshCache, type PlayerIdentity } from './cache';
 import { assertScheduleCompleteness, buildAcceptedLiveStats, refreshWeeks, type AcceptedLiveSnapshot } from './refresh-policy';
 import { logStep } from './runner';
 
@@ -44,7 +43,7 @@ export async function refreshSchedules(run: CacheRun, context?: Awaited<ReturnTy
   const key = schedulesCacheKey(SEASON_YEAR);
   await refreshCache(key, run, async () => {
     const { teams, games } = context ?? await loadGameContext();
-    const previous = await readCache<TeamSchedule[]>(key);
+    const previous = await readSchedulePolicyFacts(SEASON_YEAR);
     const next = buildTeamSchedules({ teams, games, weekForDate, regularSeasonLastWeek: REGULAR_SEASON_LAST_WEEK });
     assertScheduleCompleteness(previous, next);
     logStep('schedule candidate', { teams: next.length, sourceGames: games.length });
