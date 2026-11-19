@@ -1,9 +1,9 @@
 import type { CfbdGame, CfbdGamePlayers } from '../../src/server/cfbd';
-import type { GameStatus, Player, PlayerStats, TeamSchedule, WeeklyGame } from '../../src/lib/types';
+import type { GameStatus, PlayerStats, TeamSchedule, WeeklyGame } from '../../src/lib/types';
 import { ALL_WEEKS, FIRST_WEEK, LAST_WEEK } from '../../src/lib/types';
 import { weekBoundary, weekForDate } from '../../src/lib/season-config';
 import { buildLiveStats, effectiveKickoff } from '../../src/server/cfbd-transform';
-import { IncompleteSourceError } from './cache';
+import { IncompleteSourceError, type PlayerIdentity } from './cache';
 import { completedGameWeeks, hasWeekStarted, isFinalGame, isWeekComplete } from '../../src/lib/week-lock';
 import { scheduleCompletionSchema } from '../../src/server/week-completion';
 
@@ -160,7 +160,7 @@ function isOrphanedStat(stat: PlayerStats, teamsByPlayer: Map<string, string>): 
  * scoring for the rest of the week.
  */
 export function assessLiveCompleteness(
-  games: CfbdGame[], boxes: CfbdGamePlayers[], previous: AcceptedLiveSnapshot | null, players: Player[],
+  games: CfbdGame[], boxes: CfbdGamePlayers[], previous: AcceptedLiveSnapshot | null, players: PlayerIdentity[],
 ): LiveHold[] {
   const boxesById = new Map(boxes.map(box => [box.id, box]));
   const teamsByPlayer = new Map(players.map(player => [player.id, player.team]));
@@ -214,7 +214,7 @@ export function assessLiveCompleteness(
  * dropping a published score or failing the week forever.
  */
 export function buildAcceptedLiveStats(options: {
-  games: CfbdGame[]; boxes: CfbdGamePlayers[]; previous: AcceptedLiveSnapshot | null; players: Player[];
+  games: CfbdGame[]; boxes: CfbdGamePlayers[]; previous: AcceptedLiveSnapshot | null; players: PlayerIdentity[];
   idByAthlete: Map<string, string>; week: number; now?: Date;
 }): { stats: PlayerStats[]; holds: LiveHold[] } {
   const { games, boxes, previous, players, idByAthlete, week, now } = options;

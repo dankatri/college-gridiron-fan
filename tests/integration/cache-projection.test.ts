@@ -4,7 +4,7 @@ import { eq, like, sql } from 'drizzle-orm';
 import { fixture, isolatedDatabaseURL } from './fixture';
 import { dataCache } from '../../src/server/schema';
 import { liveStatsCacheKey, playersCacheKey, schedulesCacheKey } from '../../src/server/cache-keys';
-import { projectPlayerLog, projectPlayers, projectStartedWeeks, projectTeamSchedule, projectWeeklyScores } from '../../src/server/cache-projections';
+import { projectPlayerIdentities, projectPlayerLog, projectPlayers, projectStartedWeeks, projectTeamSchedule, projectWeeklyScores } from '../../src/server/cache-projections';
 import { hasStartedGames } from '../../src/server/lineup-utils';
 
 type Stat = { playerId: string; week: number; fantasyPoints: number; passingYards: number; lastUpdated: string };
@@ -81,6 +81,26 @@ test('isolated SQL projection parity and returned-byte gate', async t => {
   assert.deepEqual(selected.rows[0].data, [catalogue[0], catalogue[catalogue.length - 1]]);
   const none = await f.run(tx => tx.execute<{ data: unknown[] }>(projectPlayers(2026, ['missing'])));
   assert.deepEqual(none.rows[0].data, []);
+  const identities = await f.run(tx => tx.execute<{ data: Array<{ id: string; team?: string }> }>(projectPlayerIdentities(2026)));
+  assert.equal(identities.rows[0].data.length, catalogue.length);
+  assert.deepEqual(identities.rows[0].data[0], { id: 'qb-a', team: 'Alpha' });
+  assert.deepEqual(identities.rows[0].data[catalogue.length - 1], { id: 'qb-a', team: 'Beta' });
+  const fat = Array.from({ length: 500 }, (_, index) => ({
+    id: `fat-${index}`, name: `Player ${index}`, team: `Team ${index % 20}`, position: 'WR',
+    headshot: `https://a.espncdn.com/i/headshots/college-football/players/full/${index}.png`,
+    projectedPoints: 12.5, stats: { receivingYards: 80, receptions: 6, receivingTouchdowns: 1 },
+  }));
+  await f.run(tx => tx.update(dataCache).set({ data: fat }).where(eq(dataCache.key, playersCacheKey(2026))));
+  const slim = await f.run(tx => tx.execute<{ data: unknown[] }>(projectPlayerIdentities(2026)));
+  assert.deepEqual(slim.rows[0].data[1], { id: 'fat-1', team: 'Team 1' });
+  const fullPool = Buffer.byteLength(JSON.stringify(fat));
+  const identityBytes = Buffer.byteLength(JSON.stringify(slim.rows));
+  assert.ok(identityBytes < fullPool / 4, 'The identity projection must not carry whole player rows');
+  t.diagnostic(JSON.stringify({ fullPoolBytes: fullPool, identityBytes }));
+  await f.run(tx => tx.update(dataCache).set({ data: { not: 'an array' } }).where(eq(dataCache.key, playersCacheKey(2026))));
+  const malformed = await f.run(tx => tx.execute<{ data: unknown[] }>(projectPlayerIdentities(2026)));
+  assert.deepEqual(malformed.rows[0].data, []);
+  await f.run(tx => tx.update(dataCache).set({ data: catalogue }).where(eq(dataCache.key, playersCacheKey(2026))));
   const schedules = await f.run(tx => tx.select().from(dataCache).where(eq(dataCache.key, schedulesCacheKey(2026))));
   const schedule = await f.run(tx => tx.execute<{ data: unknown[] }>(projectTeamSchedule(2026, 'Alpha')));
   assert.deepEqual(schedule.rows[0].data, schedules[0].data);

@@ -59,6 +59,16 @@ export async function refreshCache<T>(key: string, run: CacheRun, load: () => Pr
   }
 }
 
+export type PlayerIdentity = { id: string; team: string };
+
+/** Null when no player pool is cached. Only the id and team leave the database. */
+export async function readPlayerIdentities(year: number): Promise<PlayerIdentity[] | null> {
+  const { db } = await import('../../src/server/db');
+  const { projectPlayerIdentities } = await import('../../src/server/cache-projections');
+  const result = await db.execute<{ data: PlayerIdentity[] }>(projectPlayerIdentities(year));
+  return result.rows[0]?.data ?? null;
+}
+
 export async function readCache<T>(key: string): Promise<T | null> {
   const { db } = await import('../../src/server/db');
   const { dataCache } = await import('../../src/server/schema');

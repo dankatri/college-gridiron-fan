@@ -4,11 +4,11 @@ import { SEASON_YEAR, REGULAR_SEASON_LAST_WEEK, weekForDate } from '../../src/li
 import { buildGameStatuses, buildTeamSchedules, effectiveKickoff } from '../../src/server/cfbd-transform';
 import { getTeams, getGames, getGamePlayerStats, type CfbdGame, type CfbdGamePlayers, type CfbdTeam } from '../../src/server/cfbd';
 import { includedClassifications } from '../../src/server/classifications';
-import { liveStatsCacheKey, playersCacheKey, schedulesCacheKey, teamsCacheKey } from '../../src/server/cache-keys';
-import type { Player, TeamSchedule } from '../../src/lib/types';
+import { liveStatsCacheKey, schedulesCacheKey, teamsCacheKey } from '../../src/server/cache-keys';
+import type { TeamSchedule } from '../../src/lib/types';
 import type { CacheRun } from '../../src/server/cache-publication';
 import { readPublishedCache } from '../../src/server/read-published-cache';
-import { readCache, refreshCache } from './cache';
+import { readCache, readPlayerIdentities, refreshCache, type PlayerIdentity } from './cache';
 import { assertScheduleCompleteness, buildAcceptedLiveStats, refreshWeeks, type AcceptedLiveSnapshot } from './refresh-policy';
 import { logStep } from './runner';
 
@@ -60,12 +60,12 @@ export async function refreshLiveWeeks(
   logStep('live refresh scope', { weeks, sweep, forcedWeek });
   const limit = pLimit(3);
   const requests = new Map<string, Promise<{ data: CfbdGamePlayers[] } | { error: unknown }>>();
-  let playerContext: Promise<{ players: Player[]; idByAthlete: Map<string, string> }> | undefined;
+  let playerContext: Promise<{ players: PlayerIdentity[]; idByAthlete: Map<string, string> }> | undefined;
   const failures: number[] = [];
   for (const week of weeks) {
     try {
       await refreshCache(liveStatsCacheKey(SEASON_YEAR, week), run, async () => {
-        playerContext ??= readCache<Player[]>(playersCacheKey(SEASON_YEAR)).then(players => {
+        playerContext ??= readPlayerIdentities(SEASON_YEAR).then(players => {
           if (!players?.length) throw new Error('No cached player pool; live refresh cannot safely map athlete IDs');
           return { players, idByAthlete: new Map(players.map(player => [player.id.split('_').pop()!, player.id])) };
         });

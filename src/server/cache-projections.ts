@@ -121,6 +121,26 @@ export function projectPlayers(year: number, playerIds: string[]) {
     from data_cache c where c.key = ${playersCacheKey(year)}`;
 }
 
+/**
+ * The id and team of every pooled player, in pool order. The live refresh maps
+ * athletes to ids and teams to a roster, which needs two short fields of a row
+ * that is several megabytes. Fetching the whole pool on every poll was the
+ * largest single read against Neon's transfer quota.
+ */
+export function projectPlayerIdentities(year: number) {
+  return sql`
+    select c.key, c.updated_at as "updatedAt", (
+      select coalesce(jsonb_agg(
+        jsonb_build_object('id', p.value->'id', 'team', p.value->'team') order by p.ordinality
+      ), '[]'::jsonb)
+      from jsonb_array_elements(
+        case when jsonb_typeof(c.data) = 'array' then c.data else '[]'::jsonb end
+      ) with ordinality as p(value, ordinality)
+      where jsonb_typeof(p.value) = 'object'
+    ) as data
+    from data_cache c where c.key = ${playersCacheKey(year)}`;
+}
+
 export function projectTeamSchedule(year: number, team: string) {
   return sql`
     select c.key, c.updated_at as "updatedAt", (
