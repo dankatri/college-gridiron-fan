@@ -276,10 +276,12 @@ old/new IDs. Neither discovery sweeps nor manual backfills bypass these guards.
 
 The daily job refreshes projections, rosters, schedules and live facts.
 Projection/player failures do not suppress independent schedule/live work.
-During January and August-December, gameday jobs poll every 10 minutes, but
+During January and August-December, gameday jobs poll every 30 minutes, but
 only in the UTC windows where a game can actually be in progress: these are
 derived from the season's kickoff distribution and cover every game with at
-least two polls. Polling around the clock instead spent a billed minute per
+least two polls. Polling every 10 minutes kept Neon's compute awake for most of
+each window (it suspends after 5 idle minutes), so live scores trail the source
+by up to ~30 minutes in exchange for a lower compute bill. Polling around the clock instead spent a billed minute per
 run — Actions rounds each job up to a whole minute — while roughly 90% of
 runs exited immediately with no active game window, so the early exit saved
 upstream calls but no CI time. Within a window, a run still skips upstream
