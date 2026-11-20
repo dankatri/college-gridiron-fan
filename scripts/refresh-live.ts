@@ -12,6 +12,6 @@ await runScript('refresh-live', async () => {
   const now = new Date();
   refreshWeeks([], now, true, forcedWeek);
   const run = await beginCacheRun();
-  const { games } = await loadGameContext();
-  await refreshLiveWeeks(run, games, new Date(), true, forcedWeek);
+  const { games, outOfScopeTeams } = await loadGameContext();
+  await refreshLiveWeeks(run, games, new Date(), true, forcedWeek, outOfScopeTeams);
 });

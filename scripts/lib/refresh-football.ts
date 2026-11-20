@@ -9,11 +9,14 @@ import type { CacheRun } from '../../src/server/cache-publication';
 import { readPublishedCache } from '../../src/server/read-published-cache';
 import { readCache, readPlayerIdentities, readSchedulePolicyFacts, refreshCache, type PlayerIdentity } from './cache';
 import {
-  assertScheduleCompleteness, buildAcceptedLiveStats, refreshWeeks, withoutOutOfScopeTeams, type AcceptedLiveSnapshot,
+  assertScheduleCompleteness, buildAcceptedLiveStats, refreshWeeks, withoutOutOfScopeStats, withoutOutOfScopeTeams, type AcceptedLiveSnapshot,
 } from './refresh-policy';
+import { isFcsWeek } from '../../src/lib/week-divisions';
 import { logStep } from './runner';
 
-export async function loadGameContext(): Promise<{ teams: CfbdTeam[]; games: CfbdGame[]; outOfScopeTeamIds: Set<string> }> {
+export async function loadGameContext(): Promise<{
+  teams: CfbdTeam[]; games: CfbdGame[]; outOfScopeTeamIds: Set<string>; outOfScopeTeams: Set<string>;
+}> {
   const classifications = includedClassifications();
   const directory = await readPublishedCache<Array<{
     id: string; school: string; conference: string; classification?: string | null; logo: string | null;
@@ -30,7 +33,9 @@ export async function loadGameContext(): Promise<{ teams: CfbdTeam[]; games: Cfb
   // divisions than this run. A team with no label is treated as in scope.
   const inScope = (team: { classification?: string | null }) =>
     !team.classification || (classifications as readonly string[]).includes(team.classification.toLowerCase());
-  const outOfScopeTeamIds = new Set(parsed.success ? parsed.data.filter(team => !inScope(team)).map(team => team.id) : []);
+  const outOfScope = parsed.success ? parsed.data.filter(team => !inScope(team)) : [];
+  const outOfScopeTeamIds = new Set(outOfScope.map(team => team.id));
+  const outOfScopeTeams = new Set(outOfScope.map(team => team.school));
   const cachedTeams = parsed.success && directory.sourceCheckedAt &&
     Date.now() - Date.parse(directory.sourceCheckedAt) < 36 * 60 * 60 * 1000
     ? parsed.data.filter(inScope).map(team => ({
@@ -43,7 +48,7 @@ export async function loadGameContext(): Promise<{ teams: CfbdTeam[]; games: Cfb
     getGames(SEASON_YEAR, 'both', classifications),
   ]);
   if (!teams.length || !games.length) throw new Error('CFBD discovery returned no teams/games; retaining accepted data');
-  return { teams, games, outOfScopeTeamIds };
+  return { teams, games, outOfScopeTeamIds, outOfScopeTeams };
 }
 
 export async function refreshSchedules(run: CacheRun, context?: Awaited<ReturnType<typeof loadGameContext>>) {
@@ -60,6 +65,7 @@ export async function refreshSchedules(run: CacheRun, context?: Awaited<ReturnTy
 
 export async function refreshLiveWeeks(
   run: CacheRun, games: CfbdGame[], now: Date, sweep: boolean, forcedWeek?: number,
+  outOfScopeTeams: ReadonlySet<string> = new Set(),
 ) {
   // Current play must not wait behind a slow historical correction endpoint.
   const weeks = refreshWeeks(games, now, sweep, forcedWeek).sort((a, b) => b - a);
@@ -75,7 +81,13 @@ export async function refreshLiveWeeks(
           if (!players?.length) throw new Error('No cached player pool; live refresh cannot safely map athlete IDs');
           return { players, idByAthlete: new Map(players.map(player => [player.id.split('_').pop()!, player.id])) };
         });
-        const { players, idByAthlete } = await playerContext;
+        const pool = await playerContext;
+        // Teams this run no longer fetches have no box scores to check or
+        // score, so outside their one eligible week they leave the live check
+        // instead of being held or reported missing.
+        const narrowed = outOfScopeTeams.size > 0 && !isFcsWeek(week);
+        const players = narrowed ? pool.players.filter(player => !outOfScopeTeams.has(player.team)) : pool.players;
+        const idByAthlete = narrowed ? new Map(players.map(player => [player.id.split('_').pop()!, player.id])) : pool.idByAthlete;
         const weekGames = games.filter(game => {
           const kickoff = effectiveKickoff(game);
           return kickoff !== null && weekForDate(kickoff) === week;
@@ -104,7 +116,8 @@ export async function refreshLiveWeeks(
           throw new Error(`No box-score source could be reached for week ${week}`);
         }
         const uniqueBoxes = [...new Map(boxes.map(box => [box.id, box])).values()];
-        const previous = await readCache<AcceptedLiveSnapshot>(liveStatsCacheKey(SEASON_YEAR, week));
+        const accepted = await readCache<AcceptedLiveSnapshot>(liveStatsCacheKey(SEASON_YEAR, week));
+        const previous = narrowed ? withoutOutOfScopeStats(accepted, outOfScopeTeams, pool.players) : accepted;
         const observedAt = new Date();
         const { stats, holds } = buildAcceptedLiveStats({
           games: weekGames, boxes: uniqueBoxes, previous, players, idByAthlete, week, now: observedAt,

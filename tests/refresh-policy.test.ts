@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import type { CfbdGame, CfbdGamePlayers } from '../src/server/cfbd';
 import { buildLiveStats, buildTeamSchedules } from '../src/server/cfbd-transform';
 import { weekBoundary, weekForDate } from '../src/lib/season-config';
-import { assessLiveCompleteness, assertScheduleCompleteness, buildAcceptedLiveStats, refreshWeeks, shouldDiscover, withoutOutOfScopeTeams } from '../scripts/lib/refresh-policy';
+import { assessLiveCompleteness, assertScheduleCompleteness, buildAcceptedLiveStats, refreshWeeks, shouldDiscover, withoutOutOfScopeStats, withoutOutOfScopeTeams } from '../scripts/lib/refresh-policy';
 import { cacheContentVersion, IncompleteSourceError } from '../scripts/lib/cache';
 import type { TeamSchedule, WeeklyGame } from '../src/lib/types';
 
@@ -252,4 +252,14 @@ test('narrowing the fetched divisions is not read as teams vanishing from the sc
   assert.throws(() => assertScheduleCompleteness(
     withoutOutOfScopeTeams(previous, new Set(['fcs-team'])), [schedule([], 'beta')], monday), IncompleteSourceError,
     'Only the named teams are exempt; an in-scope team disappearing is still rejected');
+});
+
+test('stat lines of teams the run no longer fetches do not read as a vanished game', () => {
+  const fcsQb = { id: 'qb-f', name: 'Fcs', team: 'FCS Opponent', position: 'QB' as const, conference: 'FCS', projectedPoints: 10 };
+  const prior = buildLiveStats({ gamePlayers: [box(1, 300)], week: 1, idByAthlete: new Map([['fcs-1', 'qb-f']]) })
+    .map(stat => ({ ...stat, team: 'FCS Opponent' }));
+  assert.throws(() => assessLiveCompleteness([], [], { stats: prior }, [fcsQb]), IncompleteSourceError);
+  const narrowed = withoutOutOfScopeStats({ stats: prior }, new Set(['FCS Opponent']), [fcsQb]);
+  assert.equal(narrowed?.stats?.length, 0);
+  assert.doesNotThrow(() => assessLiveCompleteness([], [], narrowed, []));
 });

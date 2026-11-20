@@ -82,6 +82,15 @@ export function withoutOutOfScopeTeams(previous: SchedulePolicyFacts | null, out
   return previous && outOfScopeTeamIds.size ? previous.filter(team => !outOfScopeTeamIds.has(team.teamId)) : previous;
 }
 
+/** Accepted stat lines minus those of teams the current run no longer fetches. */
+export function withoutOutOfScopeStats(
+  previous: AcceptedLiveSnapshot | null, outOfScopeTeams: ReadonlySet<string>, players: PlayerIdentity[],
+): AcceptedLiveSnapshot | null {
+  if (!previous?.stats || !outOfScopeTeams.size) return previous;
+  const teamsByPlayer = new Map(players.map(player => [player.id, player.team]));
+  return { ...previous, stats: previous.stats.filter(stat => !outOfScopeTeams.has(acceptedStatTeam(stat, teamsByPlayer) ?? '')) };
+}
+
 export function assertScheduleCompleteness(previous: SchedulePolicyFacts | null, next: TeamSchedule[], now = new Date()) {
   if (!scheduleCompletionSchema.safeParse(next).success) {
     throw new IncompleteSourceError('The schedule source has invalid completion fields');
