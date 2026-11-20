@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import type { CfbdGame, CfbdGamePlayers } from '../src/server/cfbd';
 import { buildLiveStats, buildTeamSchedules } from '../src/server/cfbd-transform';
 import { weekBoundary, weekForDate } from '../src/lib/season-config';
-import { assessLiveCompleteness, assertScheduleCompleteness, buildAcceptedLiveStats, refreshWeeks, shouldDiscover } from '../scripts/lib/refresh-policy';
+import { assessLiveCompleteness, assertScheduleCompleteness, buildAcceptedLiveStats, refreshWeeks, shouldDiscover, withoutOutOfScopeTeams } from '../scripts/lib/refresh-policy';
 import { cacheContentVersion, IncompleteSourceError } from '../scripts/lib/cache';
 import type { TeamSchedule, WeeklyGame } from '../src/lib/types';
 
@@ -241,4 +241,15 @@ test('every duplicate representation is checked, including an unfinished team ro
   ], monday), IncompleteSourceError);
   const consistent = [schedule([finalGame]), schedule([{ ...finalGame, isHomeGame: false, teamPoints: 0, opponentPoints: 21 }], 'beta')];
   assert.doesNotThrow(() => assertScheduleCompleteness(null, consistent, monday));
+});
+
+test('narrowing the fetched divisions is not read as teams vanishing from the schedule source', () => {
+  const previous = [schedule([finalGame]), schedule([finalGame], 'fcs-team')];
+  const next = [schedule([finalGame])];
+  assert.throws(() => assertScheduleCompleteness(previous, next, monday), IncompleteSourceError);
+  assert.doesNotThrow(() => assertScheduleCompleteness(
+    withoutOutOfScopeTeams(previous, new Set(['fcs-team'])), next, monday));
+  assert.throws(() => assertScheduleCompleteness(
+    withoutOutOfScopeTeams(previous, new Set(['fcs-team'])), [schedule([], 'beta')], monday), IncompleteSourceError,
+    'Only the named teams are exempt; an in-scope team disappearing is still rejected');
 });

@@ -73,6 +73,15 @@ export function refreshWeeks(games: CfbdGame[], now: Date, sweep: boolean, force
   return [...weeks].sort((a, b) => a - b);
 }
 
+/**
+ * The previous snapshot minus teams the current run deliberately no longer
+ * fetches (for example FCS once its only slate has passed). Without this,
+ * narrowing the divisions would read as those teams vanishing from the source.
+ */
+export function withoutOutOfScopeTeams(previous: SchedulePolicyFacts | null, outOfScopeTeamIds: ReadonlySet<string>) {
+  return previous && outOfScopeTeamIds.size ? previous.filter(team => !outOfScopeTeamIds.has(team.teamId)) : previous;
+}
+
 export function assertScheduleCompleteness(previous: SchedulePolicyFacts | null, next: TeamSchedule[], now = new Date()) {
   if (!scheduleCompletionSchema.safeParse(next).success) {
     throw new IncompleteSourceError('The schedule source has invalid completion fields');

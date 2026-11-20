@@ -116,7 +116,7 @@ variables; do not put credentials in source files or `VITE_*` variables.
 | `APP_URL` | Public origin used in password recovery links |
 | `WEBAUTHN_RP_ID`, `WEBAUTHN_ORIGIN` | Optional explicit passkey host/origin |
 | `CFBD_API_KEY` | Refresh jobs only; never sent to the browser |
-| `INCLUDED_DIVISIONS` | Divisions the refresh jobs publish; unset means `fbs`. Set `fbs,fcs` to include FCS — see [Division scope](#division-scope-fbs-and-fcs) |
+| `INCLUDED_DIVISIONS` | Divisions a refresh step publishes; unset means `fbs`. The workflow sets `fbs,fcs` only on the players step — see [Division scope](#division-scope-fbs-and-fcs) |
 | `DATABASE_URL_TEST` | Optional pre-provisioned isolated Neon database; hosted gates otherwise provision a disposable project |
 
 For API-capable local development, link the appropriate Vercel project and
@@ -469,9 +469,16 @@ non-negative z-index: a negative one paints behind the app root's opaque
 `bg-background` and renders nothing at all, which is covered by a pixel-level
 regression test in `tests/browser/halloween-week.spec.ts`.
 
-Because week 9 needs FCS players in the cache, `INCLUDED_DIVISIONS=fbs,fcs` is
-set on the refresh workflow and a `players` refresh must have run before week 9
-opens, or the week opens with an empty pool.
+Week 9 needed FCS players in the cache, so the workflow sets
+`INCLUDED_DIVISIONS=fbs,fcs` **only on the daily `players` step**: picked FCS
+players must keep resolving to names (`poolAfterFcsWeek` prunes the rest). The
+schedule, live and gameday refreshes run FBS-only, since FCS can never be
+selected again and each extra division doubles their CollegeFootballData
+requests. Teams the run no longer fetches are excluded from the schedule
+completeness check (`withoutOutOfScopeTeams`) so they are not mistaken for a
+vanished source; they drop out of the published schedule, which locks their
+players. To re-backfill week 9 stats, run that refresh with
+`INCLUDED_DIVISIONS=fbs,fcs`.
 
 ### Local FCS preview
 
