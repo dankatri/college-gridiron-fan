@@ -30,8 +30,10 @@ on:
     - cron: '*/30 20-23 * 1,8-12 0'
     - cron: '*/30 0-2,23 * 1,8-12 1'
     # Safety discovery still runs off-window to pick up moved games and box
-    # scores the source published late.
-    - cron: '7 */6 * 1,8-12 *'
+    # scores the source published late. Once a day rather than every 6 hours
+    # while the Free CollegeFootballData key (1,000 calls/month) covers
+    # November; restore `7 */6` when the Tier 1 key is back on Dec 1.
+    - cron: '7 19 * 1,8-12 *'
   workflow_dispatch:
     inputs:
       job:
@@ -63,10 +65,6 @@ jobs:
     env:
       CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      # Week 9 is an FCS-only slate, so the published pool has to contain FCS
-      # players. Eligibility is enforced per week in src/lib/week-divisions.ts,
-      # not here — this only controls what gets fetched and cached.
-      INCLUDED_DIVISIONS: fbs,fcs
     steps:
       - name: Require a trusted quality gate for this exact revision
         env:
@@ -112,6 +110,13 @@ jobs:
       - name: Refresh players
         if: ${{ !cancelled() && (steps.scope.outputs.job == 'all' || steps.scope.outputs.job == 'players') }}
         run: npm run refresh:players
+        env:
+          # Only the daily roster pull keeps FCS: picked week-9 FCS players must
+          # stay in the pool so lineups can still resolve their names. Every
+          # other step is FBS-only (the default) because FCS is never selectable
+          # again and each division doubles the CollegeFootballData requests.
+          # Re-backfilling week 9 needs INCLUDED_DIVISIONS=fbs,fcs on that run.
+          INCLUDED_DIVISIONS: fbs,fcs
 
       - name: Refresh schedules
         if: ${{ !cancelled() && (steps.scope.outputs.job == 'all' || steps.scope.outputs.job == 'schedules') }}
@@ -129,4 +134,4 @@ jobs:
         if: ${{ !cancelled() && steps.scope.outputs.job == 'gameday' }}
         run: npm run refresh:gameday
         env:
-          DISCOVERY_SWEEP: ${{ (github.event_name == 'workflow_dispatch' || github.event.schedule == '7 */6 * 1,8-12 *') && '1' || '' }}
+          DISCOVERY_SWEEP: ${{ (github.event_name == 'workflow_dispatch' || github.event.schedule == '7 19 * 1,8-12 *') && '1' || '' }}

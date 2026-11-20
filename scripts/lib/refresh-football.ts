@@ -8,10 +8,12 @@ import { liveStatsCacheKey, schedulesCacheKey, teamsCacheKey } from '../../src/s
 import type { CacheRun } from '../../src/server/cache-publication';
 import { readPublishedCache } from '../../src/server/read-published-cache';
 import { readCache, readPlayerIdentities, readSchedulePolicyFacts, refreshCache, type PlayerIdentity } from './cache';
-import { assertScheduleCompleteness, buildAcceptedLiveStats, refreshWeeks, type AcceptedLiveSnapshot } from './refresh-policy';
+import {
+  assertScheduleCompleteness, buildAcceptedLiveStats, refreshWeeks, withoutOutOfScopeTeams, type AcceptedLiveSnapshot,
+} from './refresh-policy';
 import { logStep } from './runner';
 
-export async function loadGameContext(): Promise<{ teams: CfbdTeam[]; games: CfbdGame[] }> {
+export async function loadGameContext(): Promise<{ teams: CfbdTeam[]; games: CfbdGame[]; outOfScopeTeamIds: Set<string> }> {
   const classifications = includedClassifications();
   const directory = await readPublishedCache<Array<{
     id: string; school: string; conference: string; classification?: string | null; logo: string | null;
@@ -24,9 +26,14 @@ export async function loadGameContext(): Promise<{ teams: CfbdTeam[]; games: Cfb
     classification: z.string().nullable().optional(),
     logo: z.string().nullable(), color: z.string().nullable(), alternateColor: z.string().nullable(),
   })).nonempty().safeParse(directory.data);
+  // The directory is written by the players refresh, which may cover more
+  // divisions than this run. A team with no label is treated as in scope.
+  const inScope = (team: { classification?: string | null }) =>
+    !team.classification || (classifications as readonly string[]).includes(team.classification.toLowerCase());
+  const outOfScopeTeamIds = new Set(parsed.success ? parsed.data.filter(team => !inScope(team)).map(team => team.id) : []);
   const cachedTeams = parsed.success && directory.sourceCheckedAt &&
     Date.now() - Date.parse(directory.sourceCheckedAt) < 36 * 60 * 60 * 1000
-    ? parsed.data.map(team => ({
+    ? parsed.data.filter(inScope).map(team => ({
       id: Number(team.id), school: team.school, conference: team.conference,
       color: team.color, alternateColor: team.alternateColor, logos: team.logo ? [team.logo] : [],
       abbreviation: null, classification: team.classification ?? null, mascot: null,
@@ -36,14 +43,14 @@ export async function loadGameContext(): Promise<{ teams: CfbdTeam[]; games: Cfb
     getGames(SEASON_YEAR, 'both', classifications),
   ]);
   if (!teams.length || !games.length) throw new Error('CFBD discovery returned no teams/games; retaining accepted data');
-  return { teams, games };
+  return { teams, games, outOfScopeTeamIds };
 }
 
 export async function refreshSchedules(run: CacheRun, context?: Awaited<ReturnType<typeof loadGameContext>>) {
   const key = schedulesCacheKey(SEASON_YEAR);
   await refreshCache(key, run, async () => {
-    const { teams, games } = context ?? await loadGameContext();
-    const previous = await readSchedulePolicyFacts(SEASON_YEAR);
+    const { teams, games, outOfScopeTeamIds } = context ?? await loadGameContext();
+    const previous = withoutOutOfScopeTeams(await readSchedulePolicyFacts(SEASON_YEAR), outOfScopeTeamIds);
     const next = buildTeamSchedules({ teams, games, weekForDate, regularSeasonLastWeek: REGULAR_SEASON_LAST_WEEK });
     assertScheduleCompleteness(previous, next);
     logStep('schedule candidate', { teams: next.length, sourceGames: games.length });
