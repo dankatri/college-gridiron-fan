@@ -20,7 +20,7 @@ await runScript('refresh-gameday', async () => {
   // One source discovery is shared, but a failed schedule publication must not
   // suppress independently valid live weeks.
   const results = await Promise.allSettled([
-    refreshSchedules(run, context), refreshLiveWeeks(run, context.games, new Date(), sweep),
+    refreshSchedules(run, context), refreshLiveWeeks(run, context.games, new Date(), sweep, undefined, context.outOfScopeTeams),
   ]);
   for (const result of results) if (result.status === 'rejected') console.error('Gameday refresh branch failed', result.reason);
   if (results.some(result => result.status === 'rejected')) throw new Error('Gameday refresh was incomplete');
